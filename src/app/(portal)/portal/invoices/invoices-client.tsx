@@ -1,12 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Receipt, Loader2 } from "lucide-react";
+import { Receipt, CreditCard, Eye, CheckCircle2 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { toast } from "sonner";
 
 type Invoice = {
   id: string;
@@ -20,29 +19,15 @@ type Invoice = {
   paidAt: Date | null;
 };
 
-const statusStyle: Record<string, { bg: string; color: string }> = {
-  DRAFT: { bg: "var(--bg-tertiary)", color: "var(--text-muted)" },
-  SENT: { bg: "var(--info-bg)", color: "var(--info)" },
-  PAID: { bg: "var(--success-bg)", color: "var(--success)" },
-  OVERDUE: { bg: "var(--error-bg)", color: "var(--error)" },
-  CANCELLED: { bg: "var(--bg-tertiary)", color: "var(--text-muted)" },
+const statusStyle: Record<string, { bg: string; color: string; label: string }> = {
+  DRAFT:     { bg: "var(--bg-tertiary)",  color: "var(--text-muted)", label: "Draft" },
+  SENT:      { bg: "var(--info-bg)",      color: "var(--info)",       label: "Awaiting Payment" },
+  PAID:      { bg: "var(--success-bg)",   color: "var(--success)",    label: "Paid" },
+  OVERDUE:   { bg: "var(--error-bg)",     color: "var(--error)",      label: "Overdue" },
+  CANCELLED: { bg: "var(--bg-tertiary)",  color: "var(--text-muted)", label: "Cancelled" },
 };
 
 export function InvoicesClient({ invoices }: { invoices: Invoice[] }) {
-  const [paying, setPaying] = useState<string | null>(null);
-
-  const handlePay = async (id: string) => {
-    setPaying(id);
-    const res = await fetch(`/api/portal/invoices/${id}/checkout`, { method: "POST" });
-    const json = await res.json();
-    setPaying(null);
-    if (!res.ok || !json.url) {
-      toast.error(json.error ?? "Failed to start payment");
-      return;
-    }
-    window.location.href = json.url;
-  };
-
   if (invoices.length === 0) {
     return (
       <div className="text-center py-16">
@@ -57,36 +42,78 @@ export function InvoicesClient({ invoices }: { invoices: Invoice[] }) {
       {invoices.map((inv) => {
         const style = statusStyle[inv.status] ?? statusStyle.DRAFT;
         const payable = inv.status === "SENT" || inv.status === "OVERDUE";
+        const total = inv.amount + inv.tax;
+
         return (
-          <Card key={inv.id} className="card-base">
+          <Card key={inv.id} className="card-base hover:shadow-sm transition-shadow">
             <CardContent className="p-4 flex items-center gap-4">
+              {/* Left: invoice info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>{inv.invoiceNumber}</span>
-                  <Badge className="text-xs" style={{ background: style.bg, color: style.color }}>{inv.status}</Badge>
+                  <Link
+                    href={`/portal/invoices/${inv.id}`}
+                    className="text-xs font-mono font-semibold hover:underline"
+                    style={{ color: "var(--brand-primary)" }}
+                  >
+                    {inv.invoiceNumber}
+                  </Link>
+                  <Badge className="text-xs" style={{ background: style.bg, color: style.color, border: "none" }}>
+                    {style.label}
+                  </Badge>
                 </div>
-                {inv.notes && <p className="text-sm truncate" style={{ color: "var(--text-secondary)" }}>{inv.notes}</p>}
-                {inv.dueDate && (
-                  <p className="text-xs" style={{ color: inv.status === "OVERDUE" ? "var(--error)" : "var(--text-muted)" }}>
-                    Due {formatDate(inv.dueDate)}
+                {inv.notes && (
+                  <p className="text-sm truncate" style={{ color: "var(--text-secondary)" }}>{inv.notes}</p>
+                )}
+                <div className="flex items-center gap-3 mt-0.5">
+                  {inv.dueDate && (
+                    <p className="text-xs" style={{ color: inv.status === "OVERDUE" ? "var(--error)" : "var(--text-muted)" }}>
+                      Due {formatDate(inv.dueDate)}
+                    </p>
+                  )}
+                  {inv.paidAt && (
+                    <p className="text-xs flex items-center gap-1" style={{ color: "var(--success)" }}>
+                      <CheckCircle2 className="h-3 w-3" />
+                      Paid {formatDate(inv.paidAt)}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Right: amount + actions */}
+              <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
+                <p className="font-bold text-base" style={{ color: "var(--text-primary)" }}>
+                  {formatCurrency(total, inv.currency)}
+                </p>
+                {inv.tax > 0 && (
+                  <p className="text-xs -mt-1.5" style={{ color: "var(--text-muted)" }}>
+                    incl. {formatCurrency(inv.tax, inv.currency)} tax
                   </p>
                 )}
-                {inv.paidAt && <p className="text-xs" style={{ color: "var(--success)" }}>Paid {formatDate(inv.paidAt)}</p>}
-              </div>
-              <div className="text-right flex-shrink-0 flex flex-col items-end gap-2">
-                <p className="font-semibold" style={{ color: "var(--text-primary)" }}>{formatCurrency(inv.amount + inv.tax, inv.currency)}</p>
-                {inv.tax > 0 && <p className="text-xs" style={{ color: "var(--text-muted)" }}>incl. {formatCurrency(inv.tax)} tax</p>}
-                {payable && (
-                  <Button
-                    size="sm"
-                    className="text-xs h-7 text-white"
-                    disabled={paying === inv.id}
-                    onClick={() => handlePay(inv.id)}
-                    style={{ background: "var(--brand-primary)" }}
-                  >
-                    {paying === inv.id ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" />Processing…</> : "Pay now"}
-                  </Button>
-                )}
+                <div className="flex items-center gap-2">
+                  <Link href={`/portal/invoices/${inv.id}`}>
+                    <Button size="sm" variant="outline" className="text-xs h-7 gap-1">
+                      <Eye className="h-3 w-3" /> View
+                    </Button>
+                  </Link>
+                  {payable && (
+                    <Link href={`/portal/invoices/${inv.id}/pay`}>
+                      <Button
+                        size="sm"
+                        className="text-xs h-7 gap-1 text-white"
+                        style={{ background: "var(--brand-primary)" }}
+                      >
+                        <CreditCard className="h-3 w-3" /> Pay now
+                      </Button>
+                    </Link>
+                  )}
+                  {inv.status === "PAID" && (
+                    <Link href={`/portal/invoices/${inv.id}/receipt`}>
+                      <Button size="sm" variant="outline" className="text-xs h-7 gap-1" style={{ color: "var(--success)" }}>
+                        <Receipt className="h-3 w-3" /> Receipt
+                      </Button>
+                    </Link>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
