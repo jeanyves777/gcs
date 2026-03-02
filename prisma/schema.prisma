@@ -47,6 +47,7 @@ model User {
   activityLogs          ActivityLog[]   @relation("ActivityActor")
   submittedRequirements Requirement[]
   assignedTickets       Ticket[]        @relation("TicketAssignee")
+  pitches               Pitch[]
 
   @@index([email])
   @@index([organizationId])
@@ -376,4 +377,22 @@ model PasswordResetToken {
 
   @@index([email])
   @@index([token])
+}
+
+model Pitch {
+  id            String   @id @default(cuid())
+  businessName  String
+  websiteUrl    String
+  pitchText     String
+  securityScore Int      @default(0)   // headers passed / total * 100
+  presenceScore Int      @default(0)   // digital presence quality 0-100
+  dealScore     Int      @default(0)   // overall deal potential 0-100
+  painCount     Int      @default(0)   // number of pain points identified
+  createdAt     DateTime @default(now())
+
+  createdById   String
+  createdBy     User     @relation(fields: [createdById], references: [id])
+
+  @@index([createdById])
+  @@index([createdAt])
 }
