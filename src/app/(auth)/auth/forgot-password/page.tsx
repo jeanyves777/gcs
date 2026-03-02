@@ -26,9 +26,13 @@ export default function ForgotPasswordPage() {
     formState: { errors, isSubmitting },
   } = useForm<FormData>({ resolver: zodResolver(schema) });
 
-  const onSubmit = async (_data: FormData) => {
-    // TODO: implement email sending when email service is configured
-    await new Promise((r) => setTimeout(r, 800));
+  const onSubmit = async (data: FormData) => {
+    await fetch("/api/auth/forgot-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: data.email }),
+    });
+    // Always show success to prevent email enumeration
     setSubmitted(true);
   };
 

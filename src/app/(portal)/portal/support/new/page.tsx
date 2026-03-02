@@ -25,9 +25,17 @@ export default function NewTicketPage() {
   const router = useRouter();
   const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<FormData>({ resolver: zodResolver(schema) });
 
-  const onSubmit = async (_data: FormData) => {
-    // TODO: implement ticket creation API in Phase 2
-    await new Promise((r) => setTimeout(r, 800));
+  const onSubmit = async (data: FormData) => {
+    const res = await fetch("/api/portal/support", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      toast.error(json.error ?? "Failed to submit ticket");
+      return;
+    }
     toast.success("Ticket submitted! We'll respond within 4 hours.");
     router.push("/portal/support");
   };
