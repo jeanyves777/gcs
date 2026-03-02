@@ -25,6 +25,7 @@ interface TopbarProps {
     image?: string | null;
     role: string;
   };
+  unreadCount?: number;
 }
 
 function Breadcrumbs() {
@@ -74,7 +75,7 @@ function Breadcrumbs() {
   );
 }
 
-export function Topbar({ user }: TopbarProps) {
+export function Topbar({ user, unreadCount = 0 }: TopbarProps) {
   const initials = user.name
     ? user.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
     : user.email?.[0]?.toUpperCase() ?? "?";
@@ -116,13 +117,14 @@ export function Topbar({ user }: TopbarProps) {
         <Link href="/portal/notifications">
           <Button variant="ghost" size="icon" className="h-9 w-9 relative">
             <Bell className="h-4 w-4" style={{ color: "var(--text-muted)" }} />
-            {/* Unread badge — placeholder */}
-            <Badge
-              className="absolute -top-0.5 -right-0.5 h-4 w-4 p-0 flex items-center justify-center text-[10px] text-white border-0"
-              style={{ background: "var(--brand-primary)" }}
-            >
-              3
-            </Badge>
+            {unreadCount > 0 && (
+              <Badge
+                className="absolute -top-0.5 -right-0.5 h-4 w-4 p-0 flex items-center justify-center text-[10px] text-white border-0"
+                style={{ background: "var(--brand-primary)" }}
+              >
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </Badge>
+            )}
           </Button>
         </Link>
 

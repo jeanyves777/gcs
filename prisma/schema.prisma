@@ -284,10 +284,12 @@ model Invoice {
   status        String    @default("DRAFT") // DRAFT | SENT | PAID | OVERDUE | CANCELLED
   dueDate       DateTime?
   paidAt        DateTime?
-  pdfUrl        String?
-  notes         String?
-  lineItems     String?   // JSON serialized
-  createdAt     DateTime  @default(now())
+  pdfUrl                String?
+  notes                 String?
+  lineItems             String?   // JSON serialized
+  stripeSessionId       String?
+  stripePaymentIntentId String?
+  createdAt             DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
 

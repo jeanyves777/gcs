@@ -12,51 +12,85 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  Shield,
+  FolderOpen,
+  MessageCircle,
+  Users,
 } from "lucide-react";
 import { Logo } from "@/components/layout/logo";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-const navItems = [
-  {
-    href: "/portal",
-    label: "Dashboard",
-    icon: LayoutDashboard,
-    exact: true,
-  },
-  {
-    href: "/portal/projects",
-    label: "Projects",
-    icon: FolderKanban,
-  },
-  {
-    href: "/portal/support",
-    label: "Support",
-    icon: Headphones,
-  },
-  {
-    href: "/portal/invoices",
-    label: "Invoices",
-    icon: Receipt,
-  },
-  {
-    href: "/portal/notifications",
-    label: "Notifications",
-    icon: Bell,
-  },
-  {
-    href: "/portal/settings",
-    label: "Settings",
-    icon: Settings,
-  },
+const clientNavItems = [
+  { href: "/portal", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { href: "/portal/projects", label: "Projects", icon: FolderKanban },
+  { href: "/portal/support", label: "Support", icon: Headphones },
+  { href: "/portal/invoices", label: "Invoices", icon: Receipt },
+  { href: "/portal/notifications", label: "Notifications", icon: Bell },
+  { href: "/portal/settings", label: "Settings", icon: Settings },
 ];
 
-export function Sidebar() {
+const adminNavItems = [
+  { href: "/portal/admin", label: "Overview", icon: LayoutDashboard, exact: true },
+  { href: "/portal/admin/projects", label: "Projects", icon: FolderOpen },
+  { href: "/portal/admin/tickets", label: "Tickets", icon: MessageCircle },
+  { href: "/portal/admin/invoices", label: "Invoices", icon: Receipt },
+  { href: "/portal/admin/users", label: "Users", icon: Users },
+];
+
+interface SidebarProps {
+  role: string;
+}
+
+export function Sidebar({ role }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const isAdmin = role === "ADMIN" || role === "STAFF";
 
   const isActive = (href: string, exact = false) =>
     exact ? pathname === href : pathname === href || pathname.startsWith(href + "/");
+
+  const renderItem = (item: { href: string; label: string; icon: React.ElementType; exact?: boolean }) => {
+    const active = isActive(item.href, item.exact);
+    const Icon = item.icon;
+
+    if (collapsed) {
+      return (
+        <Tooltip key={item.href} delayDuration={0}>
+          <TooltipTrigger asChild>
+            <Link
+              href={item.href}
+              className={cn(
+                "flex items-center justify-center w-full h-10 rounded-lg transition-colors",
+                active
+                  ? "bg-[var(--brand-primary)] text-white"
+                  : "hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              )}
+            >
+              <Icon className="h-5 w-5" />
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent side="right">{item.label}</TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        className={cn(
+          "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+          active
+            ? "bg-[var(--brand-primary)] text-white"
+            : "text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
+        )}
+      >
+        <Icon className="h-4.5 w-4.5 flex-shrink-0" />
+        <span>{item.label}</span>
+      </Link>
+    );
+  };
 
   return (
     <aside
@@ -70,11 +104,7 @@ export function Sidebar() {
       {/* Logo area */}
       <div
         className="flex items-center border-b px-4"
-        style={{
-          height: "var(--header-height)",
-          borderColor: "var(--border)",
-          minHeight: "var(--header-height)",
-        }}
+        style={{ height: "var(--header-height)", borderColor: "var(--border)", minHeight: "var(--header-height)" }}
       >
         {collapsed ? (
           <div
@@ -90,47 +120,22 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
-        {navItems.map((item) => {
-          const active = isActive(item.href, item.exact);
-          const Icon = item.icon;
+        {clientNavItems.map(renderItem)}
 
-          if (collapsed) {
-            return (
-              <Tooltip key={item.href} delayDuration={0}>
-                <TooltipTrigger asChild>
-                  <Link
-                    href={item.href}
-                    className={cn(
-                      "flex items-center justify-center w-full h-10 rounded-lg transition-colors",
-                      active
-                        ? "bg-[var(--brand-primary)] text-white"
-                        : "hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                    )}
-                  >
-                    <Icon className="h-5 w-5" />
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent side="right">{item.label}</TooltipContent>
-              </Tooltip>
-            );
-          }
-
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                active
-                  ? "bg-[var(--brand-primary)] text-white"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
-              )}
-            >
-              <Icon className="h-4.5 w-4.5 flex-shrink-0" />
-              <span>{item.label}</span>
-            </Link>
-          );
-        })}
+        {isAdmin && (
+          <>
+            <div className={cn("pt-3 pb-1", collapsed ? "hidden" : "block")}>
+              <div className="flex items-center gap-2 px-3">
+                <Shield className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
+                <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                  Admin
+                </span>
+              </div>
+            </div>
+            {collapsed && <div className="border-t my-1" style={{ borderColor: "var(--border)" }} />}
+            {adminNavItems.map(renderItem)}
+          </>
+        )}
       </nav>
 
       {/* Collapse toggle */}
@@ -138,20 +143,12 @@ export function Sidebar() {
         <button
           onClick={() => setCollapsed(!collapsed)}
           className={cn(
-            "w-full flex items-center rounded-lg p-2 text-sm transition-colors",
-            "hover:bg-[var(--bg-secondary)]",
+            "w-full flex items-center rounded-lg p-2 text-sm transition-colors hover:bg-[var(--bg-secondary)]",
             collapsed ? "justify-center" : "gap-2"
           )}
           style={{ color: "var(--text-muted)" }}
         >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <>
-              <ChevronLeft className="h-4 w-4" />
-              <span>Collapse</span>
-            </>
-          )}
+          {collapsed ? <ChevronRight className="h-4 w-4" /> : <><ChevronLeft className="h-4 w-4" /><span>Collapse</span></>}
         </button>
       </div>
     </aside>
