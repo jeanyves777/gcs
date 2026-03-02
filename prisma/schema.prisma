@@ -1,0 +1,364 @@
+// GCS — General Computing Solutions
+// Prisma Schema — SQLite (local dev) → switch to PostgreSQL for production
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// MODELS
+// ============================================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  role          String    @default("CLIENT_USER") // ADMIN | STAFF | CLIENT_ADMIN | CLIENT_USER
+  avatar        String?
+  passwordHash  String?
+  phone         String?
+  jobTitle      String?
+  is2FAEnabled  Boolean   @default(false)
+  twoFASecret   String?
+  emailVerified DateTime?
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  accounts              Account[]
+  sessions              Session[]
+  ownedProjects         Project[]       @relation("ProjectOwner")
+  assignedTasks         Task[]          @relation("TaskAssignee")
+  ticketMessages        TicketMessage[]
+  messages              Message[]
+  notifications         Notification[]
+  uploadedFiles         File[]
+  activityLogs          ActivityLog[]   @relation("ActivityActor")
+  submittedRequirements Requirement[]
+  assignedTickets       Ticket[]        @relation("TicketAssignee")
+
+  @@index([email])
+  @@index([organizationId])
+}
+
+model Organization {
+  id               String    @id @default(cuid())
+  name             String
+  domain           String?   @unique
+  logo             String?
+  website          String?
+  phone            String?
+  address          String?
+  subscriptionTier String    @default("BASIC") // BASIC | PROFESSIONAL | ENTERPRISE
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  users    User[]
+  projects Project[]
+  tickets  Ticket[]
+  invoices Invoice[]
+
+  @@index([domain])
+}
+
+model Project {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  status      String    @default("PLANNING") // PLANNING | ACTIVE | ON_HOLD | COMPLETED | CANCELLED
+  progress    Int       @default(0)
+  startDate   DateTime?
+  targetDate  DateTime?
+  completedAt DateTime?
+  isArchived  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  ownerId        String
+  owner          User         @relation("ProjectOwner", fields: [ownerId], references: [id])
+
+  milestones   Milestone[]
+  tasks        Task[]
+  requirements Requirement[]
+  messages     Message[]
+  files        File[]
+  activityLogs ActivityLog[]
+
+  @@index([organizationId])
+  @@index([ownerId])
+  @@index([status])
+}
+
+model Milestone {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  dueDate     DateTime?
+  completedAt DateTime?
+  status      String    @default("PENDING") // PENDING | IN_PROGRESS | COMPLETED | OVERDUE
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+
+  @@index([projectId])
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  status      String    @default("TODO") // TODO | IN_PROGRESS | REVIEW | DONE | CANCELLED
+  priority    String    @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  dueDate     DateTime?
+  completedAt DateTime?
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  projectId   String
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  milestoneId String?
+  milestone   Milestone? @relation(fields: [milestoneId], references: [id])
+  assigneeId  String?
+  assignee    User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
+
+  @@index([projectId])
+  @@index([milestoneId])
+  @@index([assigneeId])
+  @@index([status])
+}
+
+model Requirement {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  status      String    @default("OPEN") // OPEN | APPROVED | IN_PROGRESS | DONE | REJECTED
+  priority    String    @default("MEDIUM")
+  type        String    @default("FEATURE") // FEATURE | BUG | IMPROVEMENT | TASK
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  projectId   String
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  submittedBy String
+  submitter   User    @relation(fields: [submittedBy], references: [id])
+
+  @@index([projectId])
+  @@index([submittedBy])
+}
+
+model Ticket {
+  id           String    @id @default(cuid())
+  ticketNumber String    @unique
+  subject      String
+  description  String
+  status       String    @default("OPEN") // OPEN | IN_PROGRESS | WAITING | RESOLVED | CLOSED
+  priority     String    @default("MEDIUM")
+  category     String    @default("GENERAL") // GENERAL | BILLING | TECHNICAL | FEATURE | OTHER
+  slaDeadline  DateTime?
+  resolvedAt   DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  assignedTo     String?
+  assignee       User?        @relation("TicketAssignee", fields: [assignedTo], references: [id])
+
+  messages TicketMessage[]
+  files    File[]
+
+  @@index([organizationId])
+  @@index([assignedTo])
+  @@index([status])
+  @@index([ticketNumber])
+}
+
+model TicketMessage {
+  id         String    @id @default(cuid())
+  content    String
+  isInternal Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+
+  @@index([ticketId])
+  @@index([authorId])
+}
+
+model Message {
+  id        String    @id @default(cuid())
+  content   String
+  type      String    @default("TEXT") // TEXT | FILE | SYSTEM
+  editedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  parentId  String?
+  parent    Message?  @relation("MessageReplies", fields: [parentId], references: [id])
+  replies   Message[] @relation("MessageReplies")
+
+  @@index([projectId])
+  @@index([authorId])
+  @@index([parentId])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  type      String
+  title     String
+  content   String?
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([readAt])
+}
+
+model File {
+  id        String    @id @default(cuid())
+  name      String
+  url       String
+  size      Int
+  mimeType  String
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  projectId  String?
+  project    Project? @relation(fields: [projectId], references: [id])
+  ticketId   String?
+  ticket     Ticket?  @relation(fields: [ticketId], references: [id])
+  uploadedBy String
+  uploader   User     @relation(fields: [uploadedBy], references: [id])
+
+  @@index([projectId])
+  @@index([ticketId])
+  @@index([uploadedBy])
+}
+
+model Invoice {
+  id            String    @id @default(cuid())
+  invoiceNumber String    @unique
+  amount        Float
+  tax           Float     @default(0)
+  currency      String    @default("USD")
+  status        String    @default("DRAFT") // DRAFT | SENT | PAID | OVERDUE | CANCELLED
+  dueDate       DateTime?
+  paidAt        DateTime?
+  pdfUrl        String?
+  notes         String?
+  lineItems     String?   // JSON serialized
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([invoiceNumber])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  action     String
+  metadata   String?  // JSON serialized
+  createdAt  DateTime @default(now())
+
+  actorId   String
+  actor     User     @relation("ActivityActor", fields: [actorId], references: [id])
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([projectId])
+}
+
+// ============================================================
+// NEXT AUTH
+// ============================================================
+
+model Account {
+  id                String   @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}

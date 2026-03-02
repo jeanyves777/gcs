@@ -1,0 +1,56 @@
+import Link from "next/link";
+import Image from "next/image";
+import { cn } from "@/lib/utils";
+
+interface LogoProps {
+  className?: string;
+  size?: "sm" | "md" | "lg";
+  /** Show only the square icon mark */
+  iconOnly?: boolean;
+  /** Kept for backward compatibility — unused now that we have a real logo */
+  showTagline?: boolean;
+}
+
+const wordmarkSizes = {
+  sm: { width: 90,  height: 30 },
+  md: { width: 112, height: 38 },
+  lg: { width: 140, height: 47 },
+};
+
+const iconMarkSizes = {
+  sm: { width: 28, height: 28 },
+  md: { width: 34, height: 34 },
+  lg: { width: 42, height: 42 },
+};
+
+export function Logo({ className, size = "md", iconOnly = false }: LogoProps) {
+  if (iconOnly) {
+    const s = iconMarkSizes[size];
+    return (
+      <Link href="/" className={cn("inline-flex items-center shrink-0", className)}>
+        <Image
+          src="/logo-icon.png"
+          alt="GCS"
+          width={s.width}
+          height={s.height}
+          className="object-contain dark:[filter:brightness(0)_invert(1)]"
+          priority
+        />
+      </Link>
+    );
+  }
+
+  const s = wordmarkSizes[size];
+  return (
+    <Link href="/" className={cn("inline-flex items-center shrink-0", className)}>
+      <Image
+        src="/logo.png"
+        alt="GCS — General Computing Solutions"
+        width={s.width}
+        height={s.height}
+        className="object-contain dark:[filter:brightness(0)_invert(1)]"
+        priority
+      />
+    </Link>
+  );
+}

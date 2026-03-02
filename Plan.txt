@@ -1,0 +1,590 @@
+# GENERAL COMPUTING SOLUTIONS — Website & Client Portal Blueprint
+
+
+itatgcs.com  
+VPS details
+Server location
+Lithuania - Vilnius
+OS
+Ubuntu 25.10
+Hostname
+itatgcs.com
+VPS uptime
+4 days 12 hours
+SSH username
+root
+IPv4
+72.62.3.184
+Plan details
+Current plan
+KVM 1
+Upgrade
+Expiration date
+2026-03-07
+Renew
+Auto-renewal
+Turn on
+CPU core
+1
+Memory
+4 GB
+Disk space
+50 GB
+
+**Technical Architecture & Implementation Plan**
+Version 1.0 | February 2026 | Confidential
+
+---
+
+## 1. Executive Summary
+
+This blueprint defines the complete technical architecture for the General Computing Solutions (GCS) website and client portal. The platform consists of two major components: a public-facing marketing website and a secure client portal with full project management, ticketing, and real-time communication capabilities.
+
+The system is designed as a fully modular, component-based application with dark/light mode theming throughout, built to professional enterprise standards with comprehensive legal pages, error handling, and accessibility compliance.
+
+**Key Deliverables:**
+
+- Modern, responsive public website with full SEO optimization
+- Client portal with authentication, project dashboards, and real-time updates
+- Fully functional ticketing and support system with SLA tracking
+- Real-time communication layer (chat, comments, file sharing)
+- Email and in-app notification engine
+- Project timeline with task tracking, milestones, and progress visualization
+- Dark mode / Light mode with system preference detection
+- Complete legal pages: Privacy Policy, Terms of Service, Cookie Policy
+- Custom 404, 500, and maintenance pages
+
+---
+
+## 2. Technology Stack
+
+### Frontend
+
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| Framework | Next.js 14+ (App Router) | SSR, SSG, API routes, modular architecture |
+| Language | TypeScript | Type safety across entire codebase |
+| Styling | Tailwind CSS + CSS Variables | Utility-first styling with theme token support |
+| Components | shadcn/ui + Radix Primitives | Accessible, composable UI components |
+| State | Zustand + React Query | Client state + server state management |
+| Real-time | Socket.io Client | WebSocket connections for live updates |
+| Forms | React Hook Form + Zod | Form handling with schema validation |
+| Charts | Recharts / Chart.js | Project progress and analytics visualization |
+| Animation | Framer Motion | Smooth page transitions and micro-interactions |
+
+### Backend
+
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| Runtime | Node.js 20+ | JavaScript server runtime |
+| Framework | Next.js API Routes + tRPC | Type-safe API with end-to-end typesafety |
+| Database | PostgreSQL 16 | Primary relational data store |
+| ORM | Prisma | Type-safe database queries and migrations |
+| Cache | Redis | Session store, real-time pub/sub, rate limiting |
+| Real-time | Socket.io Server | WebSocket server for live updates |
+| Auth | NextAuth.js v5 | Authentication with JWT + session management |
+| Email | Resend + React Email | Transactional email with templated components |
+| Storage | AWS S3 / Cloudflare R2 | File uploads, attachments, assets |
+| Search | Meilisearch | Full-text search for tickets, projects, docs |
+
+### Infrastructure
+
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| Hosting | Vercel / AWS | Edge deployment, auto-scaling |
+| Database | Supabase / AWS RDS | Managed PostgreSQL |
+| CDN | Cloudflare | Global asset delivery, DDoS protection |
+| Monitoring | Sentry + Vercel Analytics | Error tracking, performance monitoring |
+| CI/CD | GitHub Actions | Automated testing, deployment pipeline |
+| Containerization | Docker | Local dev environment, staging |
+
+---
+
+## 3. Brand Design System & Color Tokens
+
+The GCS design system uses CSS custom properties (variables) for seamless dark/light mode switching. All colors are defined as tokens that automatically adjust based on the active theme.
+
+### Color Palette
+
+| Token Name | Light Mode | Dark Mode | Usage |
+|-----------|-----------|----------|-------|
+| --brand-primary | #1565C0 | #42A5F5 | Primary buttons, links, active states |
+| --brand-secondary | #0A1929 | #90CAF9 | Headers, accents, hover states |
+| --brand-accent | #42A5F5 | #1565C0 | Highlights, badges, indicators |
+| --bg-primary | #FFFFFF | #0A1929 | Page background |
+| --bg-secondary | #F5F7FA | #0D2137 | Card backgrounds, sidebars |
+| --bg-tertiary | #E8EDF2 | #132F4C | Input fields, hover backgrounds |
+| --text-primary | #0A1929 | #FFFFFF | Headings, body text |
+| --text-secondary | #455A64 | #B0BEC5 | Descriptions, secondary info |
+| --text-muted | #90A4AE | #546E7A | Timestamps, placeholders |
+| --border | #D0D7DE | #1E3A5F | Borders, dividers |
+| --success | #2E7D32 | #66BB6A | Success states, completed |
+| --warning | #F57C00 | #FFB74D | Warnings, pending states |
+| --error | #D32F2F | #EF5350 | Errors, critical alerts |
+
+### Typography
+
+| Element | Font | Weight | Size |
+|---------|------|--------|------|
+| H1 - Page Title | Inter / Plus Jakarta Sans | 700 (Bold) | 36px / 2.25rem |
+| H2 - Section Title | Inter / Plus Jakarta Sans | 600 (Semibold) | 28px / 1.75rem |
+| H3 - Subsection | Inter / Plus Jakarta Sans | 600 (Semibold) | 22px / 1.375rem |
+| Body | Inter | 400 (Regular) | 16px / 1rem |
+| Body Small | Inter | 400 (Regular) | 14px / 0.875rem |
+| Caption | Inter | 500 (Medium) | 12px / 0.75rem |
+| Button | Inter | 600 (Semibold) | 14px / 0.875rem |
+| Code / Mono | JetBrains Mono | 400 (Regular) | 14px / 0.875rem |
+
+### Spacing & Layout
+
+- Base unit: 4px (0.25rem)
+- Content max-width: 1280px (80rem)
+- Section padding: 80px (5rem) vertical, 24px horizontal
+- Card border-radius: 12px
+- Button border-radius: 8px
+- Shadows: 3-tier system (sm, md, lg) with blue-tinted shadows
+
+---
+
+## 4. Site Architecture & Page Map
+
+The website is organized into two primary zones: the public marketing site and the authenticated client portal. All routes use Next.js App Router with layout nesting for shared UI elements.
+
+### Complete Route Map
+
+| Route | Page | Zone | Auth Required |
+|-------|------|------|---------------|
+| `/` | Home / Landing Page | Public | No |
+| `/about` | About GCS | Public | No |
+| `/services` | Services Overview | Public | No |
+| `/services/managed-it` | Managed IT Services | Public | No |
+| `/services/software-dev` | Custom Software Development | Public | No |
+| `/services/enterprise` | Enterprise Solutions | Public | No |
+| `/services/cloud` | Cloud & Infrastructure | Public | No |
+| `/services/cybersecurity` | Cybersecurity Services | Public | No |
+| `/portfolio` | Case Studies & Portfolio | Public | No |
+| `/blog` | Blog / Insights | Public | No |
+| `/contact` | Contact Us | Public | No |
+| `/get-quote` | Request a Quote Form | Public | No |
+| `/careers` | Careers Page | Public | No |
+| `/privacy` | Privacy Policy | Legal | No |
+| `/terms` | Terms of Service | Legal | No |
+| `/cookies` | Cookie Policy | Legal | No |
+| `/sitemap` | HTML Sitemap | Public | No |
+| `/404` | Not Found Page | Error | No |
+| `/500` | Server Error Page | Error | No |
+| `/maintenance` | Maintenance Mode | Error | No |
+| `/auth/login` | Client Login | Auth | No |
+| `/auth/register` | Client Registration | Auth | No |
+| `/auth/forgot-password` | Password Reset | Auth | No |
+| `/portal` | Dashboard Home | Portal | Yes |
+| `/portal/projects` | All Projects List | Portal | Yes |
+| `/portal/projects/[id]` | Project Detail & Timeline | Portal | Yes |
+| `/portal/projects/[id]/tasks` | Task Board & List | Portal | Yes |
+| `/portal/projects/[id]/files` | Project Files & Docs | Portal | Yes |
+| `/portal/projects/[id]/chat` | Project Chat / Messages | Portal | Yes |
+| `/portal/support` | Support Dashboard | Portal | Yes |
+| `/portal/support/new` | Create New Ticket | Portal | Yes |
+| `/portal/support/[id]` | Ticket Detail & Thread | Portal | Yes |
+| `/portal/invoices` | Billing & Invoices | Portal | Yes |
+| `/portal/notifications` | All Notifications | Portal | Yes |
+| `/portal/settings` | Account Settings | Portal | Yes |
+| `/portal/settings/profile` | Profile Management | Portal | Yes |
+| `/portal/settings/security` | Password & 2FA | Portal | Yes |
+| `/portal/settings/notifications` | Notification Preferences | Portal | Yes |
+
+---
+
+## 5. Public Pages Specification
+
+### Home Page (/)
+
+The landing page is the primary conversion driver. It must communicate GCS's value proposition within the first viewport and guide visitors toward either requesting a quote or exploring services.
+
+1. **Hero Section:** Full-width gradient background (dark blue to primary blue), headline, subheadline, dual CTA buttons (Get a Quote, Explore Services), optional animated background element
+2. **Trust Bar:** Client logos carousel, industry certifications, uptime stats
+3. **Services Grid:** 4-6 service cards with icons, brief descriptions, hover effects, and links to detail pages
+4. **Why GCS Section:** Three-column layout highlighting differentiators with animated counters (projects delivered, uptime %, years experience)
+5. **Process Section:** Horizontal stepper showing Discovery → Design → Build → Deploy → Support
+6. **Testimonials:** Rotating client testimonials with avatar, name, company, quote
+7. **CTA Banner:** Full-width gradient with contact form or CTA button
+8. **Footer:** Multi-column with navigation, contact info, social links, legal links, newsletter signup
+
+### Services Pages (/services/*)
+
+Each service page follows a consistent template structure:
+
+- Hero with service-specific icon and overview
+- Detailed feature breakdown with visual elements
+- Use cases or industry applications
+- Technology partners and tools used
+- Related case studies
+- Service-specific FAQ accordion
+- CTA section with service-specific messaging
+
+### Legal Pages
+
+**Privacy Policy:** GDPR/CCPA compliant. Covers data collection, usage, cookies, third-party sharing, retention, user rights, and contact info.
+
+**Terms of Service:** Covers service scope, user responsibilities, payment terms, IP ownership, liability limitations, termination, and dispute resolution.
+
+**Cookie Policy:** Cookie categories, consent management, opt-out instructions, and third-party cookie disclosures.
+
+All legal pages share a clean, readable layout with a sidebar table of contents for easy navigation, clear headings, last-updated dates, and contact information for legal inquiries.
+
+### Error Pages
+
+**404 Page:** Branded illustration, friendly message, search bar, popular page links, and home button. Maintains full site navigation.
+
+**500 Page:** Minimal branded page (loads without server dependencies), apology message, auto-retry option, support contact, and status page link.
+
+**Maintenance Page:** Static HTML file (no server needed), estimated downtime, status updates, social media links for updates.
+
+---
+
+## 6. Client Portal Architecture
+
+### Portal Dashboard (/portal)
+
+The dashboard provides a single-glance overview of everything important to the client:
+
+- Welcome header with client name and company
+- Active projects summary cards with progress bars and status indicators
+- Recent activity feed (messages, ticket updates, file uploads, milestone completions)
+- Open tickets counter with priority breakdown
+- Upcoming milestones widget with countdown timers
+- Quick actions: New Ticket, Send Message, Upload File, Schedule Call
+- Pending invoices and payment status
+
+### Portal Layout Components
+
+| Component | Description | Behavior |
+|-----------|-------------|----------|
+| Sidebar Navigation | Collapsible sidebar with icons and labels for all portal sections | Persistent across all portal pages, collapses to icons on mobile |
+| Top Bar | Breadcrumbs, search, notification bell with unread count, theme toggle, user avatar menu | Sticky on scroll, notification dropdown shows latest 5 |
+| Content Area | Main content zone with consistent padding and max-width | Responsive grid layout, scroll independent of sidebar |
+| Command Palette | Ctrl+K searchable command palette for quick navigation | Global keyboard shortcut, searches projects/tickets/actions |
+
+---
+
+## 7. Ticket & Support System
+
+### Ticket Data Model
+
+| Field | Type | Description |
+|-------|------|-------------|
+| id | UUID | Unique ticket identifier |
+| ticket_number | String | Human-readable ID (e.g., GCS-2024-0001) |
+| subject | String | Ticket title / summary |
+| description | Rich Text | Detailed description with markdown support |
+| status | Enum | open, in_progress, waiting_client, waiting_gcs, resolved, closed |
+| priority | Enum | low, medium, high, critical |
+| category | Enum | bug, feature_request, support, billing, general |
+| project_id | UUID (nullable) | Linked project if applicable |
+| client_id | UUID | Submitting client/organization |
+| assigned_to | UUID (nullable) | GCS team member assigned |
+| created_at | DateTime | Submission timestamp |
+| updated_at | DateTime | Last activity timestamp |
+| resolved_at | DateTime (nullable) | Resolution timestamp |
+| sla_deadline | DateTime | SLA response deadline based on priority |
+| attachments | File[] | Uploaded screenshots, documents, files |
+| tags | String[] | Searchable labels for categorization |
+
+### Ticket Workflow
+
+1. Client creates ticket via form (subject, description, category, priority, attachments)
+2. System auto-assigns ticket number, sets SLA deadline, sends confirmation email
+3. GCS admin receives notification, assigns to team member
+4. Status transitions are logged with timestamps in the activity timeline
+5. Both client and GCS team can add replies in a threaded conversation format
+6. Each reply triggers email notification to the other party
+7. Resolution triggers satisfaction survey prompt
+8. Closed tickets are searchable in history with full conversation preserved
+
+### Ticket Views
+
+- **List View:** Sortable/filterable table with status badges, priority icons, and relative timestamps
+- **Detail View:** Full ticket with threaded conversation, activity timeline, file attachments, and metadata sidebar
+- **Kanban View:** Drag-and-drop board grouped by status columns (admin only)
+
+---
+
+## 8. Project Management & Timeline System
+
+### Project Data Model
+
+| Field | Type | Description |
+|-------|------|-------------|
+| id | UUID | Unique project identifier |
+| name | String | Project display name |
+| description | Rich Text | Project overview and scope |
+| status | Enum | discovery, planning, in_progress, review, completed, on_hold |
+| progress | Integer (0-100) | Overall completion percentage |
+| start_date | Date | Project kickoff date |
+| target_date | Date | Estimated completion date |
+| client_id | UUID | Client organization |
+| team_members | User[] | GCS team assigned |
+| milestones | Milestone[] | Key project milestones |
+| tasks | Task[] | Individual work items |
+| requirements | Requirement[] | Client requirements/features |
+| files | File[] | Project documents and deliverables |
+| budget | Decimal (nullable) | Project budget if applicable |
+
+### Timeline & Progress Features
+
+- **Interactive Gantt Chart:** Visual timeline with milestones, task dependencies, and current date indicator. Draggable for zoom/scroll.
+- **Progress Dashboard:** Overall percentage with breakdown by phase (Discovery, Design, Development, Testing, Deployment)
+- **Milestone Tracker:** Key deliverable dates with completed/upcoming/overdue indicators
+- **Task Board:** List or Kanban view of all tasks with status, assignee, and due date
+- **Activity Feed:** Chronological stream of all project events (status changes, comments, file uploads, task completions)
+- **Requirements Log:** Client can submit new feature requests or requirement changes, which are reviewed and added to the project scope with versioning
+
+### Real-Time Updates
+
+All project data updates in real-time via WebSocket connections. When a GCS team member updates a task status, progress percentage, or adds a comment, the client sees the change reflected immediately without page refresh. Key real-time events include:
+
+- Task status changes (animated transition on Kanban board)
+- Progress bar increments
+- New messages in project chat
+- File uploads and deliverable submissions
+- Milestone completion celebrations (confetti animation)
+- Team member activity presence indicators
+
+---
+
+## 9. Communication System
+
+Communication is embedded throughout the portal rather than being a separate module. Every project and ticket has its own communication thread, with a unified inbox for overview.
+
+### Communication Channels
+
+| Channel | Location | Features |
+|---------|----------|----------|
+| Project Chat | /portal/projects/[id]/chat | Real-time messaging, file sharing, @mentions, message reactions, read receipts |
+| Ticket Thread | /portal/support/[id] | Threaded replies, internal notes (staff only), status change messages |
+| Requirement Comments | Inline on requirements | Discussion threads on individual requirements or feature requests |
+| File Comments | Inline on files | Review comments on uploaded deliverables |
+
+### Message Features
+
+- Rich text editor with markdown support, code blocks, and inline images
+- File attachments (drag-and-drop, paste from clipboard)
+- @mention team members or client contacts to notify them
+- Message editing and deletion (with audit log)
+- Read receipts and typing indicators
+- Message search across all project communications
+- Pin important messages for quick reference
+
+---
+
+## 10. Notification & Email System
+
+### In-App Notifications
+
+Notifications appear via the bell icon in the portal top bar with an unread count badge. The dropdown shows the most recent 5 notifications, with a link to the full notification center.
+
+| Event | Recipients | Delivery |
+|-------|-----------|----------|
+| New ticket submitted | GCS Admin, assigned team | In-app + Email |
+| Ticket status changed | Client, assigned team | In-app + Email |
+| Ticket reply received | Other party in thread | In-app + Email |
+| New project message | Project team + client | In-app (real-time) |
+| Task completed | Client, project manager | In-app |
+| Milestone reached | Client, full team | In-app + Email |
+| File uploaded | Project participants | In-app |
+| Requirement added/updated | GCS project team | In-app + Email |
+| Invoice generated | Client billing contact | In-app + Email |
+| SLA breach warning | GCS Admin, assigned team | In-app + Email + SMS |
+| Project status changed | Client, team | In-app + Email |
+
+### Email Notification Templates
+
+All transactional emails use React Email templates with GCS branding (dark blue header, logo, consistent typography):
+
+1. Welcome / Account Created
+2. Ticket Confirmation (with ticket number and link)
+3. Ticket Status Update
+4. New Message Notification (with preview snippet)
+5. Milestone Completed
+6. Weekly Project Summary Digest
+7. Invoice / Payment Reminder
+8. Password Reset
+9. Two-Factor Authentication Code
+
+### Notification Preferences
+
+Clients can configure notification preferences per channel (in-app, email) and per event category (tickets, projects, billing). A digest mode option batches non-urgent notifications into a daily or weekly summary email.
+
+---
+
+## 11. Authentication & Security
+
+### Authentication Flow
+
+1. Client receives invitation email from GCS admin with secure registration link
+2. Registration: email, password (12+ chars, complexity requirements), company name, full name
+3. Email verification via one-time link
+4. Optional two-factor authentication (TOTP via authenticator app)
+5. Login with email/password + optional 2FA
+6. Session management: JWT tokens with refresh rotation, 30-min access token, 7-day refresh
+
+### Security Measures
+
+- HTTPS everywhere with HSTS headers
+- CSRF protection on all forms
+- Rate limiting on authentication endpoints (5 attempts per 15 minutes)
+- Input sanitization and XSS prevention
+- SQL injection prevention via parameterized queries (Prisma)
+- Content Security Policy (CSP) headers
+- Role-based access control (RBAC): Admin, Staff, Client Admin, Client User
+- Audit logging for all sensitive operations
+- File upload validation (type, size, malware scan)
+- GDPR-compliant data handling and right-to-delete support
+
+---
+
+## 12. Database Schema
+
+PostgreSQL database with the following core entities. All tables include created_at, updated_at, and soft-delete (deleted_at) columns.
+
+### Core Tables
+
+| Table | Key Fields | Relationships |
+|-------|-----------|---------------|
+| users | id, email, name, role, avatar, password_hash, is_2fa_enabled | Has many: tickets, messages, notifications |
+| organizations | id, name, domain, logo, subscription_tier | Has many: users, projects |
+| projects | id, name, status, progress, start_date, target_date, org_id | Belongs to: organization. Has many: tasks, milestones, files, messages |
+| milestones | id, title, description, due_date, status, project_id | Belongs to: project |
+| tasks | id, title, status, priority, assignee_id, milestone_id, project_id | Belongs to: project, milestone. Has: assignee (user) |
+| requirements | id, title, description, status, priority, project_id, submitted_by | Belongs to: project. Has many: comments |
+| tickets | id, ticket_number, subject, status, priority, category, org_id, assigned_to | Belongs to: organization. Has many: ticket_messages, attachments |
+| ticket_messages | id, ticket_id, author_id, content, is_internal | Belongs to: ticket, author (user) |
+| messages | id, project_id, author_id, content, type, parent_id | Belongs to: project. Has: author, replies (self-referencing) |
+| notifications | id, user_id, type, title, content, read_at, link | Belongs to: user |
+| files | id, name, url, size, type, project_id, uploaded_by | Belongs to: project, uploader (user) |
+| invoices | id, org_id, amount, status, due_date, pdf_url | Belongs to: organization |
+| activity_log | id, entity_type, entity_id, action, actor_id, metadata | Polymorphic: tracks all changes |
+
+---
+
+## 13. API Architecture
+
+The API uses tRPC for type-safe, end-to-end communication between the Next.js frontend and backend. WebSocket endpoints handle real-time features.
+
+### API Routers
+
+| Router | Key Procedures | Auth |
+|--------|---------------|------|
+| auth | login, register, forgotPassword, resetPassword, verify2FA | Public |
+| projects | list, getById, getTimeline, getTasks, getFiles, addRequirement | Client+ |
+| tasks | list, getById, updateStatus (admin), addComment | Client+ |
+| tickets | create, list, getById, reply, updateStatus, close | Client+ |
+| messages | send, list, edit, delete, markRead, pin | Client+ |
+| notifications | list, markRead, markAllRead, updatePreferences | Client+ |
+| files | upload, list, download, delete, addComment | Client+ |
+| invoices | list, getById, downloadPdf | Client+ |
+| admin.projects | create, update, delete, assignTeam, updateProgress | Staff+ |
+| admin.tickets | assign, escalate, addInternalNote, bulkUpdate | Staff+ |
+| admin.users | invite, list, updateRole, deactivate | Admin |
+
+### WebSocket Events
+
+| Event | Direction | Payload |
+|-------|-----------|---------|
+| project:progress | Server → Client | { projectId, progress, updatedField } |
+| task:statusChange | Server → Client | { taskId, oldStatus, newStatus, updatedBy } |
+| message:new | Bidirectional | { projectId, message } |
+| message:typing | Bidirectional | { projectId, userId, isTyping } |
+| ticket:update | Server → Client | { ticketId, changes } |
+| notification:new | Server → Client | { notification } |
+| presence:update | Bidirectional | { userId, status, lastSeen } |
+
+---
+
+## 14. Dark Mode / Light Mode Implementation
+
+Theme switching is implemented at the CSS variable level with three modes: Light (default), Dark, and System (auto-detect). The theme preference is persisted in a cookie to prevent flash-of-wrong-theme on page load.
+
+### Implementation Strategy
+
+1. CSS variables defined in `:root` (light) and `[data-theme='dark']` (dark) selectors
+2. Theme toggle component in the portal top bar and public site navigation
+3. System preference detection via `prefers-color-scheme` media query
+4. Cookie-based persistence with server-side rendering support
+5. Tailwind CSS `dark:` variant classes for component-level overrides
+6. Smooth 200ms transition on theme switch for all color properties
+7. Image assets provide both light and dark variants where needed (logos, illustrations)
+
+Every component in the design system is built theme-aware from the ground up — no hardcoded colors anywhere. All color references use CSS variable tokens, ensuring a single `data-theme` attribute change cascades the entire visual theme instantly.
+
+---
+
+## 15. Deployment & Infrastructure
+
+| Environment | URL | Purpose | Deploy Trigger |
+|------------|-----|---------|---------------|
+| Development | localhost:3000 | Local development | Manual |
+| Staging | staging.gcsolutions.dev | QA and client review | Push to staging branch |
+| Production | www.gcsolutions.dev | Live site | Push to main branch |
+
+### CI/CD Pipeline
+
+1. Push to GitHub triggers GitHub Actions workflow
+2. Run linting (ESLint), type checking (TypeScript), and unit tests (Vitest)
+3. Run integration tests (Playwright for E2E)
+4. Build Next.js application
+5. Run database migrations (Prisma)
+6. Deploy to Vercel (staging or production based on branch)
+7. Run post-deployment health checks
+8. Send deployment notification to team Slack channel
+
+---
+
+## 16. Development Phases & Timeline
+
+The project is divided into four development phases, each producing a deployable increment. **Total estimated timeline: 12-16 weeks.**
+
+### Phase 1: Foundation (Weeks 1-3)
+
+- Project setup: Next.js, TypeScript, Tailwind, Prisma, PostgreSQL
+- Design system: Color tokens, typography, core components, dark/light mode
+- Authentication: Registration, login, email verification, password reset, 2FA
+- Database schema: All core tables, migrations, seed data
+- Public layout: Header, footer, navigation, responsive shell
+
+### Phase 2: Public Site (Weeks 4-6)
+
+- Home page with all sections (hero, services, process, testimonials, CTA)
+- All service detail pages
+- About, Contact, Quote Request, Portfolio pages
+- Legal pages: Privacy, Terms, Cookies
+- Error pages: 404, 500, Maintenance
+- SEO: Meta tags, Open Graph, sitemap, structured data
+- Contact form with email delivery
+
+### Phase 3: Client Portal Core (Weeks 7-11)
+
+- Portal layout: Sidebar, top bar, command palette
+- Dashboard with widgets and activity feed
+- Project views: List, detail, timeline (Gantt), task board
+- Ticket system: Create, list, detail, threaded conversations, status workflow
+- Communication: Project chat, file comments, @mentions
+- File management: Upload, download, preview, comment
+- Requirements submission and tracking
+
+### Phase 4: Real-Time & Polish (Weeks 12-16)
+
+- WebSocket integration: Live project updates, chat, presence indicators
+- Notification engine: In-app notifications, email templates, preferences
+- Invoicing: Invoice list, detail view, PDF download
+- Admin panel: User management, project CRUD, ticket assignment, analytics
+- Performance optimization: Code splitting, image optimization, caching
+- Accessibility audit and WCAG 2.1 AA compliance
+- Security audit: Penetration testing, vulnerability assessment
+- End-to-end testing suite
+- Documentation: API docs, component storybook, deployment runbook
+- Production deployment and monitoring setup
+
+---
+
+**General Computing Solutions | Confidential | February 2026**
