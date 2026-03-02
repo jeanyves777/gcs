@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, HeadphonesIcon, Code2, Server, Cloud, Shield } from "lucide-react";
+import { ArrowRight, HeadphonesIcon, Code2, Server, Cloud, Shield, BrainCircuit } from "lucide-react";
 import { FadeUp, FadeIn, StaggerContainer, StaggerItem } from "@/components/shared/motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,14 @@ const services = [
     tagline: "Protect what matters",
     features: ["Vulnerability assessments", "Endpoint protection", "Security awareness training", "Incident response"],
     color: "var(--warning)",
+  },
+  {
+    icon: BrainCircuit,
+    title: "AI Integration",
+    href: "/services/ai-integration",
+    tagline: "Automate with intelligence",
+    features: ["Document processing & extraction", "Custom LLM-powered tools", "Workflow AI automation", "Chatbots & assistants"],
+    color: "var(--brand-accent)",
   },
 ];
 
