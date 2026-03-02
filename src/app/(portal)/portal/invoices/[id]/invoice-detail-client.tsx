@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { ArrowLeft, CreditCard, Printer, CheckCircle2, Clock, AlertCircle, Ban } from "lucide-react";
+import { ArrowLeft, CreditCard, Download, CheckCircle2, Clock, AlertCircle, Ban } from "lucide-react";
 
 type LineItem = { description: string; quantity: number; unitPrice: number; amount: number };
 
@@ -79,9 +79,9 @@ export function InvoiceDetailClient({ invoice }: Props) {
             variant="outline"
             size="sm"
             className="gap-1.5 text-sm"
-            onClick={() => window.print()}
+            onClick={() => window.open(`/print/invoices/${invoice.id}`, "_blank")}
           >
-            <Printer className="h-4 w-4" /> Print / Save PDF
+            <Download className="h-4 w-4" /> Download / Print
           </Button>
           {payable && (
             <Link href={`/portal/invoices/${invoice.id}/pay`}>
@@ -110,12 +110,8 @@ export function InvoiceDetailClient({ invoice }: Props) {
         >
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg"
-                style={{ background: "rgba(255,255,255,0.2)" }}
-              >
-                G
-              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo.png" alt="GCS" style={{ height: 36, width: "auto", filter: "brightness(0) invert(1)" }} />
               <div>
                 <p className="font-bold text-lg leading-tight">{GCS.name}</p>
                 <p className="text-xs opacity-75">{GCS.tagline}</p>

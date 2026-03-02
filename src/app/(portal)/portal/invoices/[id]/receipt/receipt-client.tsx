@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { CheckCircle2, Printer, ArrowLeft, Home, Clock, AlertCircle } from "lucide-react";
+import { CheckCircle2, Download, ArrowLeft, Home, Clock, AlertCircle } from "lucide-react";
 
 type Props = {
   invoice: {
@@ -121,11 +121,8 @@ export function ReceiptClient({ invoice, redirectStatus }: Props) {
           style={{ background: "var(--bg-secondary)", borderColor: "var(--border)" }}
         >
           <div className="flex items-center gap-2">
-            <div
-              className="w-6 h-6 rounded flex items-center justify-center font-black text-xs text-white"
-              style={{ background: "var(--brand-primary)" }}
-            >G</div>
-            <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{GCS.name}</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="GCS" style={{ height: 24, width: "auto" }} />
           </div>
           <span className="font-mono text-xs" style={{ color: "var(--text-muted)" }}>RECEIPT</span>
         </div>
@@ -231,9 +228,9 @@ export function ReceiptClient({ invoice, redirectStatus }: Props) {
           variant="outline"
           size="sm"
           className="gap-1.5"
-          onClick={() => window.print()}
+          onClick={() => window.open(`/print/invoices/${invoice.id}/receipt`, "_blank")}
         >
-          <Printer className="h-4 w-4" /> Print Receipt
+          <Download className="h-4 w-4" /> Download / Print
         </Button>
         <Link href={`/portal/invoices/${invoice.id}`}>
           <Button variant="outline" size="sm" className="gap-1.5">
