@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Receipt, Plus } from "lucide-react";
+import { Receipt, Plus, Eye, Pencil } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 type Invoice = {
@@ -167,16 +167,20 @@ export function AdminInvoicesClient({ invoices }: { invoices: Invoice[] }) {
                           incl. {formatCurrency(inv.tax, inv.currency)} tax
                         </p>
                       )}
-                      <Link href={`/portal/admin/invoices/${inv.id}/edit`}>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-xs h-7"
-                          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
-                        >
-                          Edit
-                        </Button>
-                      </Link>
+                      <div className="flex items-center gap-1.5">
+                        <Link href={`/portal/admin/invoices/${inv.id}`}>
+                          <Button size="sm" variant="outline" className="text-xs h-7 gap-1"
+                            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+                            <Eye className="h-3 w-3" /> View
+                          </Button>
+                        </Link>
+                        <Link href={`/portal/admin/invoices/${inv.id}/edit`}>
+                          <Button size="sm" variant="outline" className="text-xs h-7 gap-1"
+                            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+                            <Pencil className="h-3 w-3" /> Edit
+                          </Button>
+                        </Link>
+                      </div>
                     </div>
                   </div>
                 </CardContent>

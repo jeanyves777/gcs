@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FolderKanban, Plus, Calendar } from "lucide-react";
+import { FolderKanban, Plus, Calendar, Eye, Pencil } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 type ProjectStatus = "PLANNING" | "ACTIVE" | "ON_HOLD" | "COMPLETED" | "CANCELLED";
@@ -175,7 +175,7 @@ export function AdminProjectsClient({ projects }: { projects: Project[] }) {
                 className="card-base flex flex-col hover:shadow-md transition-shadow"
               >
                 <CardContent className="p-5 flex flex-col flex-1 gap-4">
-                  {/* Top row: badge + edit link */}
+                  {/* Top row: badge + actions */}
                   <div className="flex items-start justify-between gap-2">
                     <Badge
                       className="text-xs flex-shrink-0"
@@ -187,13 +187,18 @@ export function AdminProjectsClient({ projects }: { projects: Project[] }) {
                     >
                       {statusLabel[project.status as ProjectStatus] ?? project.status}
                     </Badge>
-                    <Link
-                      href={`/portal/admin/projects/${project.id}/edit`}
-                      className="text-xs font-medium transition-colors flex-shrink-0 hover:underline"
-                      style={{ color: "var(--brand-primary)" }}
-                    >
-                      Edit
-                    </Link>
+                    <div className="flex items-center gap-1">
+                      <Link href={`/portal/admin/projects/${project.id}`}>
+                        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs gap-1" style={{ color: "var(--text-muted)" }}>
+                          <Eye className="h-3 w-3" /> View
+                        </Button>
+                      </Link>
+                      <Link href={`/portal/admin/projects/${project.id}/edit`}>
+                        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs gap-1" style={{ color: "var(--brand-primary)" }}>
+                          <Pencil className="h-3 w-3" /> Edit
+                        </Button>
+                      </Link>
+                    </div>
                   </div>
 
                   {/* Project name */}

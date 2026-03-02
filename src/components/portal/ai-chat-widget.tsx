@@ -13,7 +13,7 @@ const SUGGESTIONS = [
   "How does billing work?",
 ];
 
-export function AIChatWidget() {
+export function AIChatWidget({ apiEndpoint = "/api/portal/ai/chat" }: { apiEndpoint?: string }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -44,7 +44,7 @@ export function AIChatWidget() {
     setMessages([...newMessages, assistantMsg]);
 
     try {
-      const res = await fetch("/api/portal/ai/chat", {
+      const res = await fetch(apiEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: newMessages }),
