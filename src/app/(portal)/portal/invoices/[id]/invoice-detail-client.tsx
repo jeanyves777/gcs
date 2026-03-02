@@ -113,16 +113,16 @@ export function InvoiceDetailClient({ invoice }: Props) {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/logo.png" alt="GCS" style={{ height: 36, width: "auto", filter: "brightness(0) invert(1)" }} />
               <div>
-                <p className="font-bold text-lg leading-tight">{GCS.name}</p>
-                <p className="text-xs opacity-75">{GCS.tagline}</p>
+                <p className="font-bold text-lg leading-tight" style={{ color: "white" }}>{GCS.name}</p>
+                <p className="text-xs" style={{ color: "rgba(255,255,255,0.75)" }}>{GCS.tagline}</p>
               </div>
             </div>
           </div>
           <div className="text-right">
-            <p className="text-3xl font-black tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+            <p className="text-3xl font-black tracking-tight" style={{ fontFamily: "var(--font-display)", color: "white" }}>
               INVOICE
             </p>
-            <p className="text-lg font-mono font-bold opacity-90 mt-0.5">
+            <p className="text-lg font-mono font-bold mt-0.5" style={{ color: "rgba(255,255,255,0.9)" }}>
               {invoice.invoiceNumber}
             </p>
           </div>
