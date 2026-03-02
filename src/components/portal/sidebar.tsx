@@ -16,6 +16,7 @@ import {
   FolderOpen,
   MessageCircle,
   Users,
+  Sparkles,
 } from "lucide-react";
 import { Logo } from "@/components/layout/logo";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,7 @@ const clientNavItems = [
 
 const adminNavItems = [
   { href: "/portal/admin", label: "Overview", icon: LayoutDashboard, exact: true },
+  { href: "/portal/admin/pitch-board", label: "Pitch Board", icon: Sparkles },
   { href: "/portal/admin/projects", label: "Projects", icon: FolderOpen },
   { href: "/portal/admin/tickets", label: "Tickets", icon: MessageCircle },
   { href: "/portal/admin/invoices", label: "Invoices", icon: Receipt },
