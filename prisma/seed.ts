@@ -8,12 +8,12 @@ async function main() {
 
   // Create GCS organization (internal)
   const gcsOrg = await prisma.organization.upsert({
-    where: { domain: "generalcomputingsolutions.com" },
+    where: { domain: "itatgcs.com" },
     update: {},
     create: {
-      name: "General Computing Solutions",
-      domain: "generalcomputingsolutions.com",
-      website: "https://generalcomputingsolutions.com",
+      name: "Global Computing Solutions",
+      domain: "itatgcs.com",
+      website: "https://www.itatgcs.com",
       subscriptionTier: "ENTERPRISE",
     },
   });
@@ -34,10 +34,10 @@ async function main() {
   // Admin user (GCS internal)
   const adminPasswordHash = await bcrypt.hash("Admin@123!", 12);
   const admin = await prisma.user.upsert({
-    where: { email: "admin@generalcomputingsolutions.com" },
+    where: { email: "admin@itatgcs.com" },
     update: {},
     create: {
-      email: "admin@generalcomputingsolutions.com",
+      email: "admin@itatgcs.com",
       name: "GCS Admin",
       role: "ADMIN",
       passwordHash: adminPasswordHash,
@@ -50,10 +50,10 @@ async function main() {
   // Staff user
   const staffPasswordHash = await bcrypt.hash("Staff@123!", 12);
   const staff = await prisma.user.upsert({
-    where: { email: "staff@generalcomputingsolutions.com" },
+    where: { email: "staff@itatgcs.com" },
     update: {},
     create: {
-      email: "staff@generalcomputingsolutions.com",
+      email: "staff@itatgcs.com",
       name: "Alex Johnson",
       role: "STAFF",
       passwordHash: staffPasswordHash,
@@ -234,8 +234,8 @@ async function main() {
   console.log("✅ Seed complete!");
   console.log("");
   console.log("Test accounts:");
-  console.log("  Admin:        admin@generalcomputingsolutions.com / Admin@123!");
-  console.log("  Staff:        staff@generalcomputingsolutions.com / Staff@123!");
+  console.log("  Admin:        admin@itatgcs.com / Admin@123!");
+  console.log("  Staff:        staff@itatgcs.com / Staff@123!");
   console.log("  Client Admin: admin@acmecorp.com / Client@123!");
   console.log("  Client User:  user@acmecorp.com / User@123!");
 }
