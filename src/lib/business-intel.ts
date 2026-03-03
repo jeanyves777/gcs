@@ -152,22 +152,52 @@ async function searchGooglePlaces(
   if (!apiKey) return notFound;
 
   try {
+    // Include the website domain in the search query to help Google find the
+    // correct location when a business has multiple branches.
+    let searchInput = businessName;
+    let searchDomain = "";
+    if (websiteUrl) {
+      try {
+        searchDomain = new URL(websiteUrl.startsWith("http") ? websiteUrl : `https://${websiteUrl}`).hostname.replace(/^www\./, "");
+      } catch { /* ignore */ }
+    }
+
     const findParams = new URLSearchParams({
-      input: businessName,
+      input: searchDomain ? `${businessName} ${searchDomain}` : businessName,
       inputtype: "textquery",
-      fields: "place_id,name,rating,user_ratings_total",
+      fields: "place_id,name,rating,user_ratings_total,formatted_address",
       key: apiKey,
     });
 
     const findRes = await fetchWithTimeout(`${PLACES_BASE}/findplacefromtext/json?${findParams}`);
     const findData = await findRes.json() as {
       status: string;
-      candidates?: { place_id: string; name: string }[];
+      candidates?: { place_id: string; name: string; formatted_address?: string }[];
     };
 
     if (findData.status !== "OK" || !findData.candidates?.length) return notFound;
 
-    const placeId = findData.candidates[0].place_id;
+    // If multiple candidates, try to pick the one whose website matches ours
+    let placeId = findData.candidates[0].place_id;
+    if (findData.candidates.length > 1 && searchDomain) {
+      // Quick-check each candidate's details to find matching website
+      for (const candidate of findData.candidates.slice(0, 3)) {
+        try {
+          const checkParams = new URLSearchParams({
+            place_id: candidate.place_id,
+            fields: "website",
+            key: apiKey,
+          });
+          const checkRes = await fetchWithTimeout(`${PLACES_BASE}/details/json?${checkParams}`);
+          const checkData = await checkRes.json() as { result?: { website?: string } };
+          const candidateWebsite = checkData.result?.website ?? "";
+          if (candidateWebsite && candidateWebsite.includes(searchDomain)) {
+            placeId = candidate.place_id;
+            break;
+          }
+        } catch { /* continue to next candidate */ }
+      }
+    }
 
     const detailParams = new URLSearchParams({
       place_id: placeId,
