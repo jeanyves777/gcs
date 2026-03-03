@@ -301,12 +301,28 @@ Generate the complete sales pitch and security intelligence report for this pros
       },
     });
 
-    // Encode pentest + business intel data in response headers for the client to save
+    // Encode pentest + business intel data in response headers for the client to save.
+    // Trim heavy text fields so the combined headers stay well under nginx's 64KB buffer.
     const pentestHeader = pentestResults
-      ? Buffer.from(JSON.stringify(pentestResults)).toString("base64")
+      ? Buffer.from(JSON.stringify({
+          ...pentestResults,
+          criticalFindings: pentestResults.criticalFindings.slice(0, 5),
+          highFindings: pentestResults.highFindings.slice(0, 5),
+        })).toString("base64")
       : "";
     const biHeader = businessIntelResults
-      ? Buffer.from(JSON.stringify(businessIntelResults)).toString("base64")
+      ? Buffer.from(JSON.stringify({
+          ...businessIntelResults,
+          google: businessIntelResults.google ? {
+            ...businessIntelResults.google,
+            recentReviews: businessIntelResults.google.recentReviews.slice(0, 3).map(r => ({
+              ...r, text: r.text.slice(0, 200),
+            })),
+          } : null,
+          webSearchMentions: businessIntelResults.webSearchMentions.slice(0, 3).map(m => ({
+            ...m, snippet: m.snippet.slice(0, 150),
+          })),
+        })).toString("base64")
       : "";
 
     return new NextResponse(stream, {
@@ -318,7 +334,8 @@ Generate the complete sales pitch and security intelligence report for this pros
         ...(biHeader ? { "X-Business-Intel-Data": biHeader } : {}),
       },
     });
-  } catch {
+  } catch (err) {
+    console.error("[analyze] Unhandled error:", err);
     return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
   }
 }
