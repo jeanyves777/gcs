@@ -10,8 +10,12 @@ import {
   ChevronDown, ChevronUp, X, Send, Server, Cloud, Code2, Sparkles, AlertTriangle,
   TrendingUp, CheckCircle2, Info, Quote, Share2, Lock, Wifi, Database, Terminal,
   Globe2, ShieldAlert, ShieldCheck, Search, MapPin, Phone, Clock, ExternalLink,
-  Star, Building, Network,
+  Star, Building, Network, Download,
 } from "lucide-react";
+import {
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip,
+} from "recharts";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
 
@@ -56,10 +60,38 @@ type Pitch = {
   securityScore: number; presenceScore: number; dealScore: number; painCount: number;
   pentestData?: string | null;
   businessIntelData?: string | null;
+  reportData?: string | null;
   emailsSent?: string | null;
   createdAt: Date; createdBy: { name: string | null; email: string };
 };
 type Section = { heading: string; content: string };
+
+// ─── Security Report Types ─────────────────────────────────────────────────────
+
+type SecurityCategory = "network" | "ssl" | "dns" | "headers" | "application" | "email" | "infrastructure";
+type FindingSeverity = "critical" | "high" | "medium" | "low" | "informational";
+type SecurityFinding = {
+  id: string; category: SecurityCategory; severity: FindingSeverity; cvss: number;
+  title: string; description: string; evidence: string; businessImpact: string;
+  recommendation: string; effort: "quick-win" | "short-term" | "long-term"; priority: number;
+};
+type CategoryScore = {
+  category: SecurityCategory; label: string; score: number;
+  grade: "A" | "B" | "C" | "D" | "F"; findings: number; criticalCount: number; highCount: number;
+};
+type RemediationItem = {
+  priority: number; title: string; category: SecurityCategory;
+  effort: "quick-win" | "short-term" | "long-term"; estimatedDays: number; cvss: number; gcsSolution: string;
+};
+type TechStack = {
+  server: string | null; poweredBy: string | null; cms: string | null; cdn: string | null; waf: string | null; frameworks: string[];
+};
+type SecurityReport = {
+  domain: string; scannedAt: string; riskScore: number; overallGrade: "A" | "B" | "C" | "D" | "F";
+  executiveSummary: string; findings: SecurityFinding[]; categoryScores: CategoryScore[];
+  remediationRoadmap: RemediationItem[]; techStack?: TechStack | null;
+  totalFindings: { critical: number; high: number; medium: number; low: number; informational: number };
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -566,12 +598,14 @@ function SmartSectionCard({
 }: {
   section: Section; index: number; pitch: Pitch; pentestResults: PentestResults | null;
 }) {
+  const isSalesPitch = section.heading.toLowerCase().includes("sales") || section.heading.includes("🛡️");
   const [expanded, setExpanded] = useState(true);
   const lower = section.heading.toLowerCase();
 
   const accent = ["#1565C0","#7c3aed","#dc2626","#d97706","#059669","#0891b2","#db2777","#0f766e"][index % 8];
   const Icon = lower.includes("business") ? Building2
     : lower.includes("digital") ? Globe
+    : isSalesPitch ? ShieldAlert
     : lower.includes("security") && !lower.includes("penetration") ? Shield
     : lower.includes("penetration") || lower.includes("pentest") ? ShieldAlert
     : lower.includes("pain") ? Lightbulb
@@ -580,6 +614,7 @@ function SmartSectionCard({
     : MessageSquare;
 
   const renderBody = () => {
+    if (isSalesPitch) return <SecuritySalesPitchSection content={section.content} />;
     if (lower.includes("business")) return <OverviewSection content={section.content} />;
     if (lower.includes("digital")) return <FootprintSection content={section.content} presenceScore={pitch.presenceScore} />;
     if (lower.includes("security") && !lower.includes("penetration")) return <SecuritySection content={section.content} securityScore={pitch.securityScore} />;
@@ -607,7 +642,8 @@ function SmartSectionCard({
           <div>
             <span className="font-bold text-sm" style={{ color: "var(--text-primary)" }}>{section.heading}</span>
             <p className="text-[10px] mt-0.5" style={{ color: "var(--text-muted)" }}>
-              {lower.includes("business") ? "Company profile & market position" :
+              {isSalesPitch ? "ROI-driven security sales narrative with action plan" :
+               lower.includes("business") ? "Company profile & market position" :
                lower.includes("digital") ? "Web presence & technology assessment" :
                lower.includes("penetration") || lower.includes("pentest") ? "Automated port scan, SSL, DNS & path reconnaissance" :
                lower.includes("security") ? "Vulnerability analysis & risk score" :
@@ -646,6 +682,362 @@ function DefaultSection({ content }: { content: string }) {
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+// ─── Security Report Components ───────────────────────────────────────────────
+
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: "#dc2626", high: "#f97316", medium: "#d97706", low: "#16a34a", informational: "#6b7280",
+};
+
+const GRADE_STYLES: Record<string, { bg: string; color: string; border: string }> = {
+  A: { bg: "#f0fdf4", color: "#16a34a", border: "#bbf7d0" },
+  B: { bg: "#eff6ff", color: "#1565C0", border: "#bfdbfe" },
+  C: { bg: "#fffbeb", color: "#d97706", border: "#fde68a" },
+  D: { bg: "#fff7ed", color: "#f97316", border: "#fed7aa" },
+  F: { bg: "#fef2f2", color: "#dc2626", border: "#fecaca" },
+};
+
+function GradeBadge({ grade, size = "md" }: { grade: string; size?: "sm" | "md" | "lg" }) {
+  const gs = GRADE_STYLES[grade] ?? GRADE_STYLES.F;
+  const cls = size === "lg" ? "text-2xl font-black px-4 py-1.5" : size === "sm" ? "text-xs px-2 py-0.5" : "text-sm font-bold px-3 py-1";
+  return <span className={`inline-block rounded-lg ${cls}`} style={{ background: gs.bg, color: gs.color, border: `1px solid ${gs.border}` }}>{grade}</span>;
+}
+
+function FindingCard({ finding }: { finding: SecurityFinding }) {
+  const [expanded, setExpanded] = useState(false);
+  const color = SEVERITY_COLORS[finding.severity] ?? "#6b7280";
+  const effortColor = finding.effort === "quick-win" ? "#16a34a" : finding.effort === "short-term" ? "#d97706" : "#dc2626";
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ borderLeft: `4px solid ${color}`, border: `1px solid ${color}30` }}>
+      <button className="w-full text-left p-4 flex items-start gap-3" style={{ background: `${color}08` }} onClick={() => setExpanded(!expanded)}>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full" style={{ background: color + "20", color }}>{finding.severity}</span>
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded" style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)" }}>CVSS {finding.cvss.toFixed(1)}</span>
+            <span className="text-[10px] uppercase" style={{ color: "var(--text-muted)" }}>{finding.category}</span>
+          </div>
+          <p className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{finding.title}</p>
+          <p className="text-xs mt-0.5" style={{ color: "var(--text-secondary)" }}>{finding.description}</p>
+        </div>
+        {expanded ? <ChevronUp className="h-4 w-4 flex-shrink-0 mt-1" style={{ color: "var(--text-muted)" }} /> : <ChevronDown className="h-4 w-4 flex-shrink-0 mt-1" style={{ color: "var(--text-muted)" }} />}
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 pt-3 space-y-3 border-t" style={{ borderColor: color + "20", background: "var(--bg-primary)" }}>
+          {finding.evidence && (
+            <div className="rounded-lg p-3 font-mono text-xs" style={{ background: "var(--bg-tertiary)", color: "var(--text-secondary)" }}>
+              <span className="font-bold" style={{ color: "var(--text-muted)" }}>Evidence: </span>{finding.evidence}
+            </div>
+          )}
+          <div className="rounded-lg p-3" style={{ background: "#fff7ed", border: "1px solid #fed7aa" }}>
+            <p className="text-xs font-bold mb-0.5" style={{ color: "#92400e" }}>Business Impact</p>
+            <p className="text-xs" style={{ color: "#92400e" }}>{finding.businessImpact}</p>
+          </div>
+          <div className="rounded-lg p-3" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+            <p className="text-xs font-bold mb-0.5" style={{ color: "#14532d" }}>Remediation</p>
+            <p className="text-xs" style={{ color: "#14532d" }}>{finding.recommendation}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: effortColor + "20", color: effortColor }}>{finding.effort}</span>
+            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>Priority: {finding.priority}/10</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SecurityReportSection({ report, pitchId }: { report: SecurityReport; pitchId: string }) {
+  const tf = report.totalFindings ?? { critical: 0, high: 0, medium: 0, low: 0, informational: 0 };
+  const findings = report.findings ?? [];
+  const criticalFindings = findings.filter((f) => f.severity === "critical");
+  const highFindings = findings.filter((f) => f.severity === "high");
+  const mediumFindings = findings.filter((f) => f.severity === "medium");
+  const lowFindings = findings.filter((f) => f.severity === "low");
+  const quickWins = (report.remediationRoadmap ?? []).filter((r) => r.effort === "quick-win");
+  const shortTerm = (report.remediationRoadmap ?? []).filter((r) => r.effort === "short-term");
+  const longTerm = (report.remediationRoadmap ?? []).filter((r) => r.effort === "long-term");
+
+  const radarData = (report.categoryScores ?? []).map((c) => ({
+    subject: c.label.replace(" Security", "").replace("SSL / TLS", "SSL").replace("Infrastructure", "Infra").replace("Application", "App"),
+    score: c.score,
+    fullMark: 100,
+  }));
+
+  const pieData = [
+    { name: "Critical", value: tf.critical, color: "#dc2626" },
+    { name: "High", value: tf.high, color: "#f97316" },
+    { name: "Medium", value: tf.medium, color: "#d97706" },
+    { name: "Low", value: tf.low, color: "#16a34a" },
+  ].filter((d) => d.value > 0);
+
+  return (
+    <div className="space-y-5">
+      {/* Header: grade + stats + PDF button */}
+      <div className="rounded-2xl p-5" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+        <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+          <div className="flex-1 min-w-0">
+            {report.executiveSummary && (
+              <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>{report.executiveSummary}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="text-center">
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "var(--text-muted)" }}>Grade</p>
+              <GradeBadge grade={report.overallGrade ?? "F"} size="lg" />
+            </div>
+            <a href={`/api/admin/pitch-board/pitches/${pitchId}/pdf`} target="_blank" rel="noopener noreferrer">
+              <Button size="sm" variant="outline" className="gap-1.5 text-xs">
+                <Download className="h-3.5 w-3.5" /> PDF Report
+              </Button>
+            </a>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: "Critical", value: tf.critical, color: "#dc2626", bg: "#fef2f2" },
+            { label: "High", value: tf.high, color: "#f97316", bg: "#fff7ed" },
+            { label: "Medium", value: tf.medium, color: "#d97706", bg: "#fffbeb" },
+            { label: "Low", value: tf.low, color: "#16a34a", bg: "#f0fdf4" },
+          ].map(({ label, value, color, bg }) => (
+            <div key={label} className="rounded-xl p-4 text-center" style={{ background: bg, border: `1px solid ${color}30` }}>
+              <p className="text-2xl font-black" style={{ color }}>{value}</p>
+              <p className="text-xs font-semibold mt-0.5" style={{ color }}>{label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Charts */}
+      {(radarData.length > 0 || pieData.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {radarData.length > 0 && (
+            <div className="rounded-2xl p-5" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+              <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "var(--text-muted)" }}>Security Posture by Category</p>
+              <ResponsiveContainer width="100%" height={260}>
+                <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="70%">
+                  <PolarGrid stroke="var(--border)" />
+                  <PolarAngleAxis dataKey="subject" tick={{ fill: "var(--text-muted)", fontSize: 11 }} />
+                  <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fill: "var(--text-muted)", fontSize: 9 }} />
+                  <Radar name="Score" dataKey="score" stroke="var(--brand-primary)" fill="var(--brand-primary)" fillOpacity={0.25} strokeWidth={2} />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          {pieData.length > 0 && (
+            <div className="rounded-2xl p-5" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+              <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "var(--text-muted)" }}>Finding Severity Distribution</p>
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie data={pieData} cx="50%" cy="45%" outerRadius={90} dataKey="value" label={({ name, value }) => `${name} (${value})`} labelLine={true} fontSize={11}>
+                    {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Category Score Grid */}
+      {(report.categoryScores ?? []).length > 0 && (
+        <div className="rounded-2xl p-5" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+          <p className="text-xs font-bold uppercase tracking-wider mb-4" style={{ color: "var(--text-muted)" }}>Category Scores</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {report.categoryScores.map((cat) => {
+              const gs = GRADE_STYLES[cat.grade] ?? GRADE_STYLES.F;
+              return (
+                <div key={cat.category} className="rounded-xl p-4 space-y-2" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold" style={{ color: "var(--text-primary)" }}>{cat.label}</p>
+                    <span className="text-sm font-black px-2 py-0.5 rounded" style={{ background: gs.bg, color: gs.color }}>{cat.grade}</span>
+                  </div>
+                  <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--bg-tertiary)" }}>
+                    <div className="h-full rounded-full" style={{ width: `${cat.score}%`, background: gs.color }} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold" style={{ color: gs.color }}>{cat.score}/100</span>
+                    <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{cat.findings} findings</span>
+                  </div>
+                  {cat.criticalCount > 0 && <span className="text-[10px] font-semibold" style={{ color: "#dc2626" }}>{cat.criticalCount} critical</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Tech Stack */}
+      {report.techStack && (
+        <div className="rounded-2xl px-5 py-3 flex flex-wrap items-center gap-3" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Detected Stack:</p>
+          {[
+            { label: "Server", value: report.techStack.server },
+            { label: "CDN", value: report.techStack.cdn },
+            { label: "WAF", value: report.techStack.waf },
+            { label: "CMS", value: report.techStack.cms },
+            { label: "Platform", value: report.techStack.poweredBy },
+          ].filter((t) => t.value).map(({ label, value }) => (
+            <span key={label} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
+              style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
+              <span style={{ color: "var(--text-muted)" }}>{label}:</span> {value}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Critical Findings */}
+      {criticalFindings.length > 0 && (
+        <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#dc2626" }}>⚠️ Critical Findings ({criticalFindings.length})</p>
+          {criticalFindings.map((f) => <FindingCard key={f.id} finding={f} />)}
+        </div>
+      )}
+
+      {/* High / Medium / Low */}
+      {(highFindings.length > 0 || mediumFindings.length > 0 || lowFindings.length > 0) && (
+        <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>All Findings</p>
+          {highFindings.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold" style={{ color: "#f97316" }}>High Severity ({highFindings.length})</p>
+              {highFindings.map((f) => <FindingCard key={f.id} finding={f} />)}
+            </div>
+          )}
+          {mediumFindings.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold" style={{ color: "#d97706" }}>Medium Severity ({mediumFindings.length})</p>
+              {mediumFindings.map((f) => <FindingCard key={f.id} finding={f} />)}
+            </div>
+          )}
+          {lowFindings.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold" style={{ color: "#16a34a" }}>Low Severity ({lowFindings.length})</p>
+              {lowFindings.map((f) => <FindingCard key={f.id} finding={f} />)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Remediation Roadmap */}
+      {(report.remediationRoadmap ?? []).length > 0 && (
+        <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Remediation Roadmap</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {[
+              { label: "⚡ Quick Wins", items: quickWins, color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0", days: "1–3 days" },
+              { label: "📅 Short-term", items: shortTerm, color: "#d97706", bg: "#fffbeb", border: "#fde68a", days: "1–4 weeks" },
+              { label: "🔧 Long-term", items: longTerm, color: "#dc2626", bg: "#fef2f2", border: "#fecaca", days: "1–3 months" },
+            ].map(({ label, items, color, bg, border, days }) => (
+              <div key={label} className="rounded-xl p-4 space-y-2.5" style={{ background: bg, border: `1px solid ${border}` }}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold" style={{ color }}>{label}</p>
+                  <span className="text-[10px] font-medium" style={{ color }}>{days}</span>
+                </div>
+                {items.length === 0
+                  ? <p className="text-xs" style={{ color }}>None identified</p>
+                  : <ul className="space-y-1.5">
+                      {items.slice(0, 5).map((item, i) => (
+                        <li key={i} className="text-xs flex items-start gap-2" style={{ color }}>
+                          <span className="flex-shrink-0 font-bold">#{item.priority}</span>
+                          <span>{item.title}</span>
+                        </li>
+                      ))}
+                      {items.length > 5 && <li className="text-[10px]" style={{ color }}>+{items.length - 5} more…</li>}
+                    </ul>
+                }
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Section: Security Sales Pitch ────────────────────────────────────────────
+
+function SecuritySalesPitchSection({ content }: { content: string }) {
+  const bullets = extractBullets(content);
+  const paras = extractParagraphs(content);
+
+  // Parse markdown table rows (skip header + separator rows)
+  const tableRows: string[][] = [];
+  const lines = content.split("\n");
+  let inTable = false;
+  for (const line of lines) {
+    if (/^\s*\|/.test(line)) {
+      if (/\|[-\s|]+\|/.test(line)) { inTable = true; continue; }
+      const cells = line.split("|").map((c) => c.trim()).filter(Boolean);
+      if (cells.length >= 2) tableRows.push(cells);
+      inTable = true;
+    } else if (inTable && !line.trim()) {
+      inTable = false;
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* IBM cost callout */}
+      <div className="rounded-xl p-4" style={{ background: "#fef2f2", border: "1px solid #fecaca" }}>
+        <div className="flex items-center gap-2 mb-2">
+          <AlertTriangle className="h-4 w-4" style={{ color: "#dc2626" }} />
+          <p className="text-sm font-bold" style={{ color: "#dc2626" }}>IBM 2024 Cost of a Data Breach Report</p>
+        </div>
+        <p className="text-sm leading-relaxed" style={{ color: "#991b1b" }}>
+          Average cost of a data breach: <strong>$4.88M</strong> — up 10% from 2023.
+          The vulnerabilities identified in this assessment represent direct, measurable financial risk.
+        </p>
+      </div>
+
+      {/* Paragraphs */}
+      {paras.map((p, i) => (
+        <p key={i} className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}
+          dangerouslySetInnerHTML={{ __html: b(p.replace(/\n/g, " ")) }} />
+      ))}
+
+      {/* Action Plan Table */}
+      {tableRows.length > 0 && (
+        <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+          <p className="text-xs font-bold uppercase tracking-wider px-4 py-2.5"
+            style={{ background: "var(--bg-secondary)", color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
+            Security Action Plan
+          </p>
+          <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+            {tableRows.map((row, i) => (
+              <div key={i} className="grid gap-2 px-4 py-2.5" style={{
+                gridTemplateColumns: `repeat(${row.length}, 1fr)`,
+                background: i % 2 === 0 ? "var(--bg-primary)" : "var(--bg-secondary)",
+              }}>
+                {row.map((cell, j) => (
+                  <p key={j} className="text-xs" style={{ color: j === 0 ? "var(--text-primary)" : "var(--text-secondary)", fontWeight: j === 0 ? 600 : 400 }}>
+                    {cell}
+                  </p>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Sales close bullets */}
+      {bullets.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Sales Closes</p>
+          {bullets.map((bullet, i) => (
+            <div key={i} className="flex items-start gap-3 rounded-xl p-3.5"
+              style={{ background: "var(--brand-primary)08", border: "1px solid var(--brand-primary)25" }}>
+              <span className="text-sm font-black flex-shrink-0" style={{ color: "var(--brand-primary)" }}>{i + 1}.</span>
+              <p className="text-sm leading-relaxed" style={{ color: "var(--text-primary)" }}
+                dangerouslySetInnerHTML={{ __html: b(bullet) }} />
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -1289,6 +1681,17 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
     try { return JSON.parse(pitch.pentestData) as PentestResults; } catch { return null; }
   })();
 
+  // Parse full security report (new format)
+  const securityReport: SecurityReport | null = (() => {
+    const raw = pitch.reportData || pitch.pentestData;
+    if (!raw) return null;
+    try {
+      const r = JSON.parse(raw) as SecurityReport;
+      if (!r.findings || !r.categoryScores) return null;
+      return r;
+    } catch { return null; }
+  })();
+
   // Parse stored business intel JSON
   const businessIntel: BusinessIntelData | null = (() => {
     if (!pitch.businessIntelData) return null;
@@ -1342,6 +1745,14 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
           <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setShowEmail(true)}>
             <Mail className="h-3.5 w-3.5" /> Email Prospect
           </Button>
+          {securityReport && (
+            <a href={`/api/admin/pitch-board/pitches/${pitch.id}/pdf`} target="_blank" rel="noopener noreferrer">
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs font-semibold"
+                style={{ borderColor: "#dc2626", color: "#dc2626" }}>
+                <Download className="h-3.5 w-3.5" /> Security PDF
+              </Button>
+            </a>
+          )}
           <Button
             variant="outline" size="sm" className="gap-1.5 text-xs font-semibold"
             style={{ borderColor: "var(--brand-primary)", color: "var(--brand-primary)" }}
@@ -1518,10 +1929,29 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
       {/* Business Intel Card */}
       {businessIntel && <BusinessIntelCard bi={businessIntel} />}
 
+      {/* Full Security Report Section */}
+      {securityReport && (
+        <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid var(--border)", background: "var(--bg-primary)" }}>
+          <div className="px-5 py-3 flex items-center gap-2" style={{ background: "#fef2f220", borderBottom: "1px solid var(--border)" }}>
+            <Shield className="h-4 w-4" style={{ color: "#dc2626" }} />
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#dc2626" }}>
+              Full Security Assessment Report
+            </p>
+            <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full"
+              style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca" }}>
+              {(securityReport.findings ?? []).length} findings · Grade {securityReport.overallGrade ?? "F"}
+            </span>
+          </div>
+          <div className="p-5">
+            <SecurityReportSection report={securityReport} pitchId={pitch.id} />
+          </div>
+        </div>
+      )}
+
       {/* Pitch sections */}
       <div>
         <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "var(--text-muted)" }}>
-          Full Intelligence Report — {sections.length} sections {pentestResults ? `· Pentest Risk: ${pentestResults.riskScore}/100` : ""}
+          Full Intelligence Report — {sections.length} sections {pentestResults ? `· Risk: ${pentestResults.riskScore}/100` : ""}
         </p>
         <div className="space-y-3">
           {sections.map((section, i) => (

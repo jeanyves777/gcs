@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { FadeIn } from "@/components/shared/motion";
 import { HeroIllustration } from "@/components/shared/illustrations";
+import { VulnerabilityScanner } from "@/components/home/vulnerability-scanner";
 
 export const metadata: Metadata = {
   title: "GCS — Managed IT Services & Custom Software",
@@ -88,6 +89,9 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Free Vulnerability Scanner */}
+      <VulnerabilityScanner />
 
       {/* Services */}
       <section className="section-padding" style={{ background: "var(--bg-secondary)" }}>

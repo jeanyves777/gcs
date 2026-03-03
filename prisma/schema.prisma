@@ -406,6 +406,7 @@ model Pitch {
   painCount     Int      @default(0)   // number of pain points identified
   pentestData       String?   // JSON-serialized PentestResults from runPentest()
   businessIntelData String?   // JSON-serialized BusinessIntelResults from runBusinessIntel()
+  reportData        String?   // JSON-serialized full SecurityReport (findings, categories, remediation)
   emailsSent        String?   // JSON array of { email, sentAt } records
   createdAt         DateTime @default(now())
 

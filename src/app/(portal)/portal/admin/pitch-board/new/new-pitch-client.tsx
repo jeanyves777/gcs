@@ -14,6 +14,7 @@ const PHASES: Phase[] = [
   { label: "Analyzing digital footprint...", icon: "📊" },
   { label: "Running security assessment...", icon: "🔒" },
   { label: "Running penetration scan...", icon: "🛡️" },
+  { label: "Building security report...", icon: "📋" },
   { label: "Identifying opportunities...", icon: "💡" },
   { label: "Crafting your pitch...", icon: "🎯" },
 ];
@@ -134,6 +135,11 @@ export function NewPitchClient() {
       if (biHeader) {
         try { businessIntelData = JSON.parse(atob(biHeader)); } catch { /* ignore */ }
       }
+      const reportHeader = res.headers.get("X-Report-Data");
+      let reportData: unknown = undefined;
+      if (reportHeader) {
+        try { reportData = JSON.parse(atob(reportHeader)); } catch { /* ignore */ }
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -164,6 +170,7 @@ export function NewPitchClient() {
           ...scores,
           pentestData,
           businessIntelData,
+          reportData,
         }),
       });
       if (!saveRes.ok) throw new Error("Failed to save pitch");
@@ -300,7 +307,7 @@ export function NewPitchClient() {
           {sections.length > 0 && (
             <div className="pt-2 border-t" style={{ borderColor: "var(--border)" }}>
               <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                ✨ {sections.length} of 8 sections ready — redirecting when complete...
+                ✨ {sections.length} of 9 sections ready — redirecting when complete...
               </p>
             </div>
           )}

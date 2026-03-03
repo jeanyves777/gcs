@@ -18,7 +18,7 @@ const PITCH_SYSTEM_PROMPT = `You are GCS's elite AI sales intelligence analyst A
 
 You will receive business intelligence about a prospect INCLUDING their Google Business Profile data, domain/hosting intel, web mentions, social media footprint, AND penetration test results. Generate a COMPELLING, SPECIFIC, DATA-DRIVEN sales pitch.
 
-Structure your output with EXACTLY these 8 sections using ## headings:
+Structure your output with EXACTLY these 9 sections using ## headings:
 
 ## 🏢 Business Overview
 Summarize who this business is — industry, size signals, what they do, their customer base, and their apparent digital maturity level. Reference specific content from their website.
@@ -67,6 +67,16 @@ Write an executive-ready 3-4 paragraph pitch that could be read verbatim on a sa
 
 ## 💬 Deal Talking Points
 List 6-8 punchy, specific talking points the GCS sales team can use in conversation. Each should be one line, memorable, and tied to a specific finding about this business. Include at least one about a pentest finding, one about their security header gaps, one about their Google Business Profile / review rating, one about their social/digital presence, and one about competitive risk.
+
+## 🛡️ Security Sales Pitch
+Write a dedicated cybersecurity sales pitch based on the actual penetration test findings. This section is used to close cybersecurity deals specifically:
+- Open with a headline risk statement referencing their highest CVSS finding
+- For each CRITICAL and HIGH finding: write ONE sentence in this format: "Your [specific vulnerability] puts you at risk of [specific attack] — IBM's 2024 data shows average breach cost: $4.88M."
+- Include ROI calculation: Compare GCS Managed Security package (typical SMB range: $1,500-$5,000/month) vs. average breach cost ($4.88M) + downtime cost + reputation damage
+- Write 3 strong sales closes tied to their SPECIFIC findings (not generic)
+- End with: "Your Security Action Plan" — a markdown table with columns: | Finding | Risk Level | GCS Service | Timeline | Expected Outcome |
+- Fill table with 3-5 rows from their actual findings
+- Tone: Urgent but consultative. You are the expert protecting their business, not scaring them.
 
 RULES:
 - Be SPECIFIC — always reference actual findings from website, headers, pentest results, and social presence
@@ -248,6 +258,17 @@ export async function POST(req: NextRequest) {
 
     const pentestResults = pentestResult.status === "fulfilled" ? pentestResult.value : null;
     const pentestSection = pentestResults ? formatPentestForPrompt(pentestResults) : "Penetration test unavailable for this target.";
+    // Security report for header transport (trimmed to stay under nginx buffer)
+    const securityReportForHeader = pentestResults ? {
+      ...pentestResults,
+      criticalFindings: pentestResults.criticalFindings.slice(0, 5),
+      highFindings: pentestResults.highFindings.slice(0, 5),
+      // Keep full findings but trim businessImpact text
+      findings: pentestResults.findings.slice(0, 20).map((f) => ({
+        ...f, businessImpact: f.businessImpact.slice(0, 120),
+        description: f.description.slice(0, 100),
+      })),
+    } : null;
     const businessIntelResults = biResult.status === "fulfilled" ? biResult.value : null;
     const biSection = businessIntelResults ? formatBusinessIntelForPrompt(businessIntelResults) : "";
 
@@ -280,7 +301,7 @@ Generate the complete sales pitch and security intelligence report for this pros
         try {
           const response = await client.messages.stream({
             model: "claude-sonnet-4-6",
-            max_tokens: 4500,
+            max_tokens: 5000,
             system: PITCH_SYSTEM_PROMPT,
             messages: [{ role: "user", content: userMessage }],
           });
@@ -301,14 +322,13 @@ Generate the complete sales pitch and security intelligence report for this pros
       },
     });
 
-    // Encode pentest + business intel data in response headers for the client to save.
+    // Encode pentest + security report + business intel data in response headers.
     // Trim heavy text fields so the combined headers stay well under nginx's 64KB buffer.
-    const pentestHeader = pentestResults
-      ? Buffer.from(JSON.stringify({
-          ...pentestResults,
-          criticalFindings: pentestResults.criticalFindings.slice(0, 5),
-          highFindings: pentestResults.highFindings.slice(0, 5),
-        })).toString("base64")
+    const pentestHeader = securityReportForHeader
+      ? Buffer.from(JSON.stringify(securityReportForHeader)).toString("base64")
+      : "";
+    const reportHeader = pentestResults
+      ? Buffer.from(JSON.stringify(pentestResults)).toString("base64")
       : "";
     const biHeader = businessIntelResults
       ? Buffer.from(JSON.stringify({
@@ -331,6 +351,7 @@ Generate the complete sales pitch and security intelligence report for this pros
         "Cache-Control": "no-cache",
         "X-Content-Type-Options": "nosniff",
         ...(pentestHeader ? { "X-Pentest-Data": pentestHeader } : {}),
+        ...(reportHeader ? { "X-Report-Data": reportHeader } : {}),
         ...(biHeader ? { "X-Business-Intel-Data": biHeader } : {}),
       },
     });
