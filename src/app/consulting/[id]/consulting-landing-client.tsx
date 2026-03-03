@@ -17,23 +17,59 @@ type Pitch = {
   painCount: number;
 };
 
-// ─── Content extractors ───────────────────────────────────────────────────────
+// ─── Content extractors (counts/categories only — no specifics shared) ────────
 
-function extractPainPoints(text: string): string[] {
-  const match = text.match(/## 💡 Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
-  if (!match) return [];
-  const bullets = (match[1].match(/^[-•*]\s+(.+)|^\d+\.\s+(.+)/gm) ?? [])
-    .map((b) => b.replace(/^[-•*\d.]+\s+/, "").replace(/\*\*/g, "").trim())
-    .filter(Boolean);
-  return bullets.slice(0, 4);
+function countSecurityFailures(text: string): number {
+  const match = text.match(/## 🔒 Security Assessment([\s\S]*?)(?=\n##|$)/);
+  if (!match) return 0;
+  return (match[1].match(/❌/g) ?? []).length;
 }
 
-function extractSecurityFailures(text: string): string[] {
+function countPainPoints(text: string): number {
+  const match = text.match(/## 💡 Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
+  if (!match) return 0;
+  return (match[1].match(/^[-•*]\s+|^\d+\.\s+/gm) ?? []).length;
+}
+
+/** Generic security category labels derived from section text — no specifics */
+function securityCategories(text: string): { label: string; icon: string }[] {
   const match = text.match(/## 🔒 Security Assessment([\s\S]*?)(?=\n##|$)/);
   if (!match) return [];
-  return (match[1].match(/❌\s+(.+)/g) ?? [])
-    .map((f) => f.replace(/^❌\s+/, "").replace(/\*\*/g, "").trim())
-    .slice(0, 5);
+  const t = match[1].toLowerCase();
+  const cats: { label: string; icon: string }[] = [];
+  if (t.includes("content-security") || t.includes("csp")) cats.push({ label: "Content Security", icon: "🛡️" });
+  if (t.includes("transport") || t.includes("hsts") || t.includes("ssl")) cats.push({ label: "Transport Security", icon: "🔐" });
+  if (t.includes("frame") || t.includes("clickjack")) cats.push({ label: "Clickjacking Exposure", icon: "⚠️" });
+  if (t.includes("content-type") || t.includes("mime")) cats.push({ label: "MIME Sniffing Risk", icon: "📄" });
+  if (t.includes("referrer")) cats.push({ label: "Data Leakage Controls", icon: "🔗" });
+  if (t.includes("permission") || t.includes("feature")) cats.push({ label: "Browser Permissions", icon: "🖥️" });
+  return cats.slice(0, 4);
+}
+
+/** Generic gap category labels derived from pain points section — no specifics */
+function gapCategories(text: string): { label: string; icon: string }[] {
+  const match = text.match(/## 💡 Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
+  if (!match) return [];
+  const t = match[1].toLowerCase();
+  const cats: { label: string; icon: string }[] = [];
+  if (t.includes("security") || t.includes("vulnerab") || t.includes("risk")) cats.push({ label: "Security Risk", icon: "🔴" });
+  if (t.includes("speed") || t.includes("performance") || t.includes("slow") || t.includes("load")) cats.push({ label: "Performance Gap", icon: "🟠" });
+  if (t.includes("mobile") || t.includes("responsive")) cats.push({ label: "Mobile Experience", icon: "📱" });
+  if (t.includes("seo") || t.includes("search") || t.includes("google")) cats.push({ label: "Online Visibility", icon: "🌐" });
+  if (t.includes("cloud") || t.includes("backup") || t.includes("infrastructure")) cats.push({ label: "Infrastructure", icon: "☁️" });
+  if (t.includes("software") || t.includes("workflow") || t.includes("automat")) cats.push({ label: "Workflow Efficiency", icon: "⚙️" });
+  if (t.includes("data") || t.includes("compliance") || t.includes("gdpr")) cats.push({ label: "Data & Compliance", icon: "📊" });
+  // Always include at least 3 generic ones if we didn't find enough
+  const fallbacks = [
+    { label: "Technology Gaps", icon: "🔧" },
+    { label: "Operational Risk", icon: "⚠️" },
+    { label: "Digital Presence", icon: "💻" },
+  ];
+  for (const f of fallbacks) {
+    if (cats.length >= 4) break;
+    if (!cats.find((c) => c.label === f.label)) cats.push(f);
+  }
+  return cats.slice(0, 4);
 }
 
 function extractPitchTeaser(text: string): string {
@@ -175,8 +211,10 @@ export function ConsultingLandingClient({ pitch }: { pitch: Pitch }) {
   const presenceLabel = pitch.presenceScore > 65 ? "Established" : pitch.presenceScore > 40 ? "Growing" : "Limited";
   const potentialLabel = pitch.dealScore > 70 ? "High" : pitch.dealScore > 45 ? "Strong" : "Moderate";
 
-  const painPoints = extractPainPoints(pitch.pitchText);
-  const securityFailures = extractSecurityFailures(pitch.pitchText);
+  const secFailureCount = countSecurityFailures(pitch.pitchText);
+  const painPointCount = countPainPoints(pitch.pitchText);
+  const secCats = securityCategories(pitch.pitchText);
+  const gapCats = gapCategories(pitch.pitchText);
   const pitchTeaser = extractPitchTeaser(pitch.pitchText);
 
   const scrollToForm = () => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -307,10 +345,10 @@ export function ConsultingLandingClient({ pitch }: { pitch: Pitch }) {
       <section style={{ background: "#0A1929", padding: "24px" }}>
         <div style={{ maxWidth: 780, margin: "0 auto", display: "flex", justifyContent: "center", gap: "clamp(20px, 5vw, 60px)", flexWrap: "wrap" }}>
           {[
-            { icon: Lock, label: "Security Gaps", value: securityFailures.length, color: "#ef4444" },
-            { icon: AlertTriangle, label: "Pain Points Found", value: pitch.painCount, color: "#f97316" },
+            { icon: Lock, label: "Security Issues", value: secFailureCount, color: "#ef4444" },
+            { icon: AlertTriangle, label: "Technology Gaps", value: painPointCount, color: "#f97316" },
             { icon: Globe, label: "Presence Score", value: `${pitch.presenceScore}%`, color: "#38bdf8" },
-            { icon: TrendingUp, label: "Growth Opportunity", value: `${pitch.dealScore}%`, color: "#a78bfa" },
+            { icon: TrendingUp, label: "Opportunity", value: `${pitch.dealScore}%`, color: "#a78bfa" },
           ].map(({ icon: Icon, label, value, color }) => (
             <div key={label} style={{ textAlign: "center" }}>
               <Icon style={{ width: 20, height: 20, color, margin: "0 auto 6px" }} />
@@ -321,8 +359,8 @@ export function ConsultingLandingClient({ pitch }: { pitch: Pitch }) {
         </div>
       </section>
 
-      {/* ── Security Findings ─────────────────────────────────────────── */}
-      {securityFailures.length > 0 && (
+      {/* ── Security Teaser ───────────────────────────────────────────── */}
+      {secFailureCount > 0 && (
         <section style={{ background: "white", padding: "64px 24px" }}>
           <div style={{ maxWidth: 780, margin: "0 auto" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
@@ -331,38 +369,60 @@ export function ConsultingLandingClient({ pitch }: { pitch: Pitch }) {
               </div>
               <div>
                 <p style={{ margin: 0, color: "#ef4444", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>Security Assessment</p>
-                <h2 style={{ margin: 0, color: "#0A1929", fontSize: 22, fontWeight: 800 }}>Vulnerabilities Detected</h2>
+                <h2 style={{ margin: 0, color: "#0A1929", fontSize: 22, fontWeight: 800 }}>
+                  {secFailureCount} Security {secFailureCount === 1 ? "Issue" : "Issues"} Detected
+                </h2>
               </div>
             </div>
-            <p style={{ color: "#6B7280", fontSize: 14, lineHeight: 1.6, marginBottom: 28, marginTop: 8 }}>
-              Our automated security scan of <strong style={{ color: "#0A1929" }}>{pitch.websiteUrl}</strong> identified the following gaps in your technology defenses.
+            <p style={{ color: "#6B7280", fontSize: 14, lineHeight: 1.6, marginTop: 8, marginBottom: 24 }}>
+              Our scan of <strong style={{ color: "#0A1929" }}>{pitch.websiteUrl}</strong> found security vulnerabilities across multiple layers of your technology stack. These are areas where your business may be exposed.
             </p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12 }}>
-              {securityFailures.map((f, i) => (
-                <div key={i} style={{
-                  display: "flex", alignItems: "flex-start", gap: 12,
-                  background: "#fff5f5", border: "1px solid #fecaca",
-                  borderRadius: 12, padding: "14px 16px",
+
+            {/* Category badges — no specifics */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 28 }}>
+              {secCats.map((cat) => (
+                <span key={cat.label} style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  background: "#fef2f2", border: "1px solid #fecaca",
+                  borderRadius: 99, padding: "7px 14px", fontSize: 13, color: "#991b1b", fontWeight: 600,
                 }}>
-                  <div style={{ width: 24, height: 24, borderRadius: 99, background: "#fee2e2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
-                    <span style={{ color: "#ef4444", fontSize: 12, fontWeight: 900 }}>!</span>
-                  </div>
-                  <p style={{ margin: 0, color: "#7f1d1d", fontSize: 13, lineHeight: 1.5 }}>{f}</p>
-                </div>
+                  <span>{cat.icon}</span> {cat.label}
+                </span>
               ))}
+              {secFailureCount > secCats.length && (
+                <span style={{
+                  background: "#F3F4F6", border: "1px solid #E5E7EB",
+                  borderRadius: 99, padding: "7px 14px", fontSize: 13, color: "#6B7280", fontWeight: 600,
+                }}>
+                  +{secFailureCount - secCats.length} more areas
+                </span>
+              )}
             </div>
-            {/* Security score bar */}
-            <div style={{ marginTop: 28, background: "#F8FAFC", borderRadius: 12, padding: "20px 24px", border: "1px solid #E5E7EB" }}>
+
+            {/* Score bars */}
+            <div style={{ background: "#F8FAFC", borderRadius: 12, padding: "20px 24px", border: "1px solid #E5E7EB" }}>
               <MiniBar value={securityRisk} color="#ef4444" label="Security Risk Exposure" />
-              <MiniBar value={pitch.presenceScore} color="#38bdf8" label="Online Presence Score" />
-              <MiniBar value={pitch.dealScore} color="#a78bfa" label="Improvement Opportunity" />
+              <MiniBar value={pitch.presenceScore} color="#38bdf8" label="Online Presence Strength" />
+              <MiniBar value={pitch.dealScore} color="#a78bfa" label="Improvement Potential" />
+            </div>
+
+            <div style={{ marginTop: 20, textAlign: "center" }}>
+              <p style={{ margin: "0 0 10px", color: "#6B7280", fontSize: 13 }}>
+                The full security breakdown is included in our consultation — schedule a call to review it together.
+              </p>
+              <button onClick={scrollToForm} style={{
+                background: "none", border: "1px solid #ef4444", color: "#ef4444",
+                borderRadius: 8, padding: "9px 22px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+              }}>
+                Get the Full Report →
+              </button>
             </div>
           </div>
         </section>
       )}
 
-      {/* ── Pain Points ───────────────────────────────────────────────── */}
-      {painPoints.length > 0 && (
+      {/* ── Technology Gaps Teaser ────────────────────────────────────── */}
+      {painPointCount > 0 && (
         <section style={{ background: "#F8FAFC", padding: "64px 24px" }}>
           <div style={{ maxWidth: 780, margin: "0 auto" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
@@ -370,37 +430,46 @@ export function ConsultingLandingClient({ pitch }: { pitch: Pitch }) {
                 <AlertTriangle style={{ width: 18, height: 18, color: "#f97316" }} />
               </div>
               <div>
-                <p style={{ margin: 0, color: "#f97316", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>Business Analysis</p>
-                <h2 style={{ margin: 0, color: "#0A1929", fontSize: 22, fontWeight: 800 }}>Key Challenges Identified</h2>
+                <p style={{ margin: 0, color: "#f97316", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>Technology Analysis</p>
+                <h2 style={{ margin: 0, color: "#0A1929", fontSize: 22, fontWeight: 800 }}>
+                  {painPointCount} Technology {painPointCount === 1 ? "Gap" : "Gaps"} Found
+                </h2>
               </div>
             </div>
-            <p style={{ color: "#6B7280", fontSize: 14, lineHeight: 1.6, marginBottom: 28, marginTop: 8 }}>
-              Based on our research, here are the primary technology challenges that may be affecting <strong style={{ color: "#0A1929" }}>{pitch.businessName}</strong>&apos;s growth and efficiency.
+            <p style={{ color: "#6B7280", fontSize: 14, lineHeight: 1.6, marginTop: 8, marginBottom: 24 }}>
+              Our analysis identified <strong style={{ color: "#0A1929" }}>{painPointCount} areas</strong> where {pitch.businessName}&apos;s technology may be limiting growth, efficiency, or security. Here&apos;s where they fall:
             </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {painPoints.map((point, i) => {
-                const colors = ["#ef4444", "#f97316", "#eab308", "#22c55e"];
-                const bgColors = ["#fef2f2", "#fff7ed", "#fefce8", "#f0fdf4"];
-                const borderColors = ["#fecaca", "#fed7aa", "#fde68a", "#bbf7d0"];
-                const c = colors[i] ?? colors[colors.length - 1];
-                const bg = bgColors[i] ?? bgColors[bgColors.length - 1];
-                const border = borderColors[i] ?? borderColors[borderColors.length - 1];
+
+            {/* Category chips — generic labels, no details */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
+              {gapCats.map((cat, i) => {
+                const intensities = ["#fef2f2", "#fff7ed", "#fefce8", "#eff6ff"];
+                const borders = ["#fecaca", "#fed7aa", "#fde68a", "#dbeafe"];
+                const textColors = ["#991b1b", "#92400E", "#78350F", "#1e3a8a"];
                 return (
-                  <div key={i} style={{
-                    display: "flex", alignItems: "flex-start", gap: 16,
-                    background: "white", border: `1px solid ${border}`,
-                    borderLeft: `4px solid ${c}`, borderRadius: 12, padding: "16px 20px",
-                    boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
+                  <div key={cat.label} style={{
+                    background: intensities[i % intensities.length],
+                    border: `1px solid ${borders[i % borders.length]}`,
+                    borderRadius: 12, padding: "16px",
                   }}>
-                    <div style={{
-                      width: 32, height: 32, borderRadius: 10, background: bg,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      flexShrink: 0, fontWeight: 900, fontSize: 14, color: c,
-                    }}>{i + 1}</div>
-                    <p style={{ margin: 0, color: "#374151", fontSize: 14, lineHeight: 1.6 }}>{point}</p>
+                    <span style={{ fontSize: 22 }}>{cat.icon}</span>
+                    <p style={{ margin: "8px 0 4px", fontWeight: 700, fontSize: 13, color: textColors[i % textColors.length] }}>{cat.label}</p>
+                    <p style={{ margin: 0, fontSize: 12, color: "#9CA3AF" }}>Identified · Needs attention</p>
                   </div>
                 );
               })}
+            </div>
+
+            <div style={{ marginTop: 20, textAlign: "center" }}>
+              <p style={{ margin: "0 0 10px", color: "#6B7280", fontSize: 13 }}>
+                Specific findings and recommended actions are available in your consultation — no obligation to get the details.
+              </p>
+              <button onClick={scrollToForm} style={{
+                background: "none", border: "1px solid #f97316", color: "#f97316",
+                borderRadius: 8, padding: "9px 22px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+              }}>
+                Discuss My Gaps →
+              </button>
             </div>
           </div>
         </section>
