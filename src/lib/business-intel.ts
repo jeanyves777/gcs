@@ -427,6 +427,10 @@ async function probePlatformPresence(businessName: string, websiteHtml?: string,
     { source: "BBB",          domains: ["bbb.org"],          exclude: ["search"], hrefPattern: /href=["'][^"']*bbb\.org\/[^"']{3,}/i },
     { source: "Angi",         domains: ["angi.com"],         exclude: [], hrefPattern: /href=["'][^"']*angi\.com\/[^"']{3,}/i },
     { source: "Thumbtack",    domains: ["thumbtack.com"],    exclude: [], hrefPattern: /href=["'][^"']*thumbtack\.com\/[^"']{3,}/i },
+    { source: "Yellow Pages", domains: ["yellowpages.com"],  exclude: ["search"], hrefPattern: /href=["'][^"']*yellowpages\.com\/[^"']{3,}/i },
+    { source: "Manta",        domains: ["manta.com"],        exclude: ["search"], hrefPattern: /href=["'][^"']*manta\.com\/[^"']{3,}/i },
+    { source: "MapQuest",     domains: ["mapquest.com"],     exclude: ["search"], hrefPattern: /href=["'][^"']*mapquest\.com\/[^"']{3,}/i },
+    { source: "Foursquare",   domains: ["foursquare.com"],   exclude: ["login", "signup"], hrefPattern: /href=["'][^"']*foursquare\.com\/[^"']{3,}/i },
   ];
 
   const results = new Map<string, WebMention>();
@@ -486,23 +490,27 @@ async function probePlatformPresence(businessName: string, websiteHtml?: string,
     }
   }
 
-  // ── SECONDARY SOURCE: DuckDuckGo keyword searches ──
-  // Only search for platforms NOT already found via website HTML.
-  // Include location for much better accuracy (avoids false negatives from name-only search).
+  // ── SECONDARY SOURCE: Broad DuckDuckGo searches (like a human would) ──
+  // Instead of restrictive site: filters, search broadly — just like typing
+  // "Business Name City State" in Google. The search results naturally surface
+  // Yelp, BBB, Facebook, Yellow Pages, etc. as top results.
   const stillMissing = platforms.filter(p => !results.get(p.source)?.found).map(p => p.source);
   if (stillMissing.length > 0) {
-    const locationSuffix = location ? ` "${location}"` : "";
-    // Run targeted searches with retries for reliability
+    const locationPart = location || "";
+    // Broad queries that mimic how a human would Google a business
     const queries = [
-      `"${businessName}"${locationSuffix} site:facebook.com OR site:instagram.com OR site:linkedin.com`,
-      `"${businessName}"${locationSuffix} yelp bbb tripadvisor nextdoor`,
+      // Query 1: Business name + location (this is what surfaces all the local listings)
+      `"${businessName}" ${locationPart}`.trim(),
+      // Query 2: Business name + common listing keywords (catches review sites)
+      `"${businessName}" ${locationPart} reviews listing`.trim(),
+      // Query 3: Targeted social media search for remaining platforms
+      `"${businessName}" ${locationPart} facebook instagram linkedin`.trim(),
     ];
 
-    // Run each query with a retry on failure
+    // Run all queries in parallel with retries
     await Promise.allSettled(queries.map(async (query) => {
       let html = await duckDuckGoSearch(query);
       if (!html) {
-        // Retry once after a short delay
         await new Promise(r => setTimeout(r, 1500));
         html = await duckDuckGoSearch(query);
       }
