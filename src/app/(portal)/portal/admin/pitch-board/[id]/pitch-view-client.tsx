@@ -48,6 +48,40 @@ function parseSections(text: string): Section[] {
   });
 }
 
+// ─── Digital Health Helpers ───────────────────────────────────────────────────
+
+function computeDigitalHealth(securityScore: number, presenceScore: number, painCount: number): number {
+  const techHealth = Math.max(0, 100 - painCount * 12);
+  return Math.max(5, Math.min(95, Math.round(0.40 * securityScore + 0.40 * presenceScore + 0.20 * techHealth)));
+}
+
+function healthGrade(score: number): { label: string; color: string; bg: string; border: string } {
+  if (score >= 76) return { label: "Strong",   color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" };
+  if (score >= 61) return { label: "Good",     color: "#0891b2", bg: "#ecfeff", border: "#a5f3fc" };
+  if (score >= 46) return { label: "Fair",     color: "#d97706", bg: "#fffbeb", border: "#fde68a" };
+  if (score >= 26) return { label: "Poor",     color: "#f97316", bg: "#fff7ed", border: "#fed7aa" };
+  return              { label: "Critical", color: "#ef4444", bg: "#fef2f2", border: "#fecaca" };
+}
+
+// ─── Digital Health Ring ──────────────────────────────────────────────────────
+
+function DigitalHealthRing({ score, color, size = 110 }: { score: number; color: string; size?: number }) {
+  const stroke = 11;
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = circ * (1 - Math.max(0, Math.min(100, score)) / 100);
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--bg-tertiary)" strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        strokeDasharray={circ} strokeDashoffset={offset}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`} strokeLinecap="round" />
+      <text x={size / 2} y={size / 2 - 4} textAnchor="middle" fontSize="22" fontWeight="800" fill={color}>{score}</text>
+      <text x={size / 2} y={size / 2 + 13} textAnchor="middle" fontSize="10" fill="var(--text-muted)">/100</text>
+    </svg>
+  );
+}
+
 // ─── SVG Score Ring ───────────────────────────────────────────────────────────
 
 function ScoreRing({ score, color, label, sublabel, size = 100 }: { score: number; color: string; label: string; sublabel?: string; size?: number }) {
@@ -756,6 +790,41 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
               color="#0891b2" note="Composite" />
           </div>
         </div>
+
+        {/* Digital Health Score */}
+        {(() => {
+          const healthScore = computeDigitalHealth(pitch.securityScore, pitch.presenceScore, pitch.painCount);
+          const grade = healthGrade(healthScore);
+          const techHealth = Math.max(0, 100 - pitch.painCount * 12);
+          const subMetrics = [
+            { label: "Security Health", value: pitch.securityScore, color: pitch.securityScore > 60 ? "#16a34a" : pitch.securityScore > 30 ? "#d97706" : "#ef4444" },
+            { label: "Digital Presence", value: pitch.presenceScore, color: pitch.presenceScore > 65 ? "#0891b2" : pitch.presenceScore > 40 ? "#d97706" : "#ef4444" },
+            { label: "Technology Efficiency", value: Math.max(5, Math.min(95, techHealth)), color: techHealth > 60 ? "#16a34a" : techHealth > 30 ? "#d97706" : "#ef4444" },
+          ];
+          return (
+            <div className="px-8 py-6 border-b" style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
+              <p className="text-xs font-bold uppercase tracking-wider mb-4" style={{ color: "var(--text-muted)" }}>Digital Health Score</p>
+              <div className="flex flex-col sm:flex-row items-start gap-6">
+                {/* Ring + grade */}
+                <div className="flex flex-col items-center gap-2 flex-shrink-0">
+                  <DigitalHealthRing score={healthScore} color={grade.color} size={110} />
+                  <span className="text-xs font-bold px-3 py-1 rounded-full" style={{ background: grade.bg, color: grade.color, border: `1.5px solid ${grade.border}` }}>
+                    {grade.label}
+                  </span>
+                </div>
+                {/* Sub-metrics */}
+                <div className="flex-1 w-full space-y-3">
+                  <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                    Composite score across security, presence &amp; efficiency
+                  </p>
+                  {subMetrics.map(({ label, value, color }) => (
+                    <MetricBar key={label} label={label} value={value} color={color} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Security headers */}
         {headers.length > 0 && (

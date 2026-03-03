@@ -135,6 +135,25 @@ function buildEmail(
   const secCats = securityCategories(pitchText);
   const gapCats = gapCategories(pitchText);
 
+  // Digital Health Score
+  const techHealth = Math.max(0, 100 - painCount * 12);
+  const healthScore = Math.max(5, Math.min(95, Math.round(0.40 * securityScore + 0.40 * presenceScore + 0.20 * techHealth)));
+  const healthLabel = healthScore >= 76 ? "Strong" : healthScore >= 61 ? "Good" : healthScore >= 46 ? "Fair" : healthScore >= 26 ? "Poor" : "Critical";
+  const healthColor = healthScore >= 76 ? "#16a34a" : healthScore >= 61 ? "#0891b2" : healthScore >= 46 ? "#d97706" : healthScore >= 26 ? "#f97316" : "#ef4444";
+  const healthBg    = healthScore >= 76 ? "#f0fdf4" : healthScore >= 61 ? "#ecfeff" : healthScore >= 46 ? "#fffbeb" : healthScore >= 26 ? "#fff7ed" : "#fef2f2";
+  const healthBorder= healthScore >= 76 ? "#bbf7d0" : healthScore >= 61 ? "#a5f3fc" : healthScore >= 46 ? "#fde68a" : healthScore >= 26 ? "#fed7aa" : "#fecaca";
+  // Circular ring SVG (email-safe inline)
+  const ringStroke = 11;
+  const ringR = (110 - ringStroke) / 2;
+  const ringCirc = 2 * Math.PI * ringR;
+  const ringOffset = ringCirc * (1 - healthScore / 100);
+  const healthRingSvg = `<svg width="110" height="110" viewBox="0 0 110 110" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="55" cy="55" r="${ringR}" fill="none" stroke="#e5e7eb" stroke-width="${ringStroke}"/>
+  <circle cx="55" cy="55" r="${ringR}" fill="none" stroke="${healthColor}" stroke-width="${ringStroke}" stroke-dasharray="${ringCirc.toFixed(2)}" stroke-dashoffset="${ringOffset.toFixed(2)}" transform="rotate(-90 55 55)" stroke-linecap="round"/>
+  <text x="55" y="51" text-anchor="middle" font-size="22" font-weight="800" fill="${healthColor}" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">${healthScore}</text>
+  <text x="55" y="67" text-anchor="middle" font-size="10" fill="#9ca3af" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">/100</text>
+</svg>`;
+
   // Sub-metric scores for presence card mini-bars
   const webScore  = Math.min(95, presenceScore + 8);
   const seoScore  = Math.round(presenceScore * 0.85);
@@ -218,9 +237,58 @@ function buildEmail(
     </td>
   </tr>
 
-  <!-- ── DIGITAL PRESENCE ANALYSIS CARD ─────────────────────────── -->
+  <!-- ── DIGITAL HEALTH SCORE CARD ──────────────────────────────── -->
   <tr>
     <td style="padding:24px 28px 0;background:#F8FAFC;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid #E5E7EB;border-radius:14px;overflow:hidden;">
+        <tr>
+          <td style="padding:16px 20px 4px;">
+            <p style="margin:0;font-size:10px;font-weight:700;color:${healthColor};text-transform:uppercase;letter-spacing:0.12em;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">Digital Health Score</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 20px 20px;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr valign="middle">
+                <!-- Ring -->
+                <td width="120" align="center" style="padding-right:16px;">
+                  ${healthRingSvg}
+                  <p style="margin:4px 0 0;text-align:center;">
+                    <span style="display:inline-block;background:${healthBg};border:1.5px solid ${healthBorder};border-radius:99px;padding:3px 12px;font-size:11px;font-weight:800;color:${healthColor};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">${healthLabel}</span>
+                  </p>
+                </td>
+                <!-- Sub-metrics -->
+                <td style="padding-left:4px;">
+                  <p style="margin:0 0 4px;font-size:15px;font-weight:800;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">${businessName} Digital Health</p>
+                  <p style="margin:0 0 12px;font-size:12px;color:#6B7280;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">Composite score across security, presence &amp; technology efficiency</p>
+                  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="48%" style="padding-right:12px;">
+                        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                          ${miniBar("Security Health", securityScore, secRisk > 60 ? "#ef4444" : secRisk > 30 ? "#f97316" : "#22c55e", 80)}
+                          ${miniBar("Online Presence", presenceScore, presenceScore > 65 ? "#22c55e" : presenceScore > 40 ? "#f97316" : "#ef4444", 80)}
+                        </table>
+                      </td>
+                      <td width="52%">
+                        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                          ${miniBar("Tech Efficiency", Math.max(5, Math.min(95, techHealth)), techHealth > 60 ? "#22c55e" : techHealth > 30 ? "#f97316" : "#ef4444", 80)}
+                          ${miniBar("Overall Health", healthScore, healthColor, 80)}
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- ── DIGITAL PRESENCE ANALYSIS CARD ─────────────────────────── -->
+  <tr>
+    <td style="padding:16px 28px 0;background:#F8FAFC;">
       <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid #E5E7EB;border-radius:14px;overflow:hidden;">
         <tr>
           <td style="padding:16px 20px 4px;">

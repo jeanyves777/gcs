@@ -14,7 +14,7 @@ const PITCH_SYSTEM_PROMPT = `You are GCS's elite AI sales intelligence analyst. 
 - **AI Integration**: Custom AI tools, intelligent chatbots, document processing, predictive analytics, LLM workflows
 - **Enterprise Solutions**: Microsoft 365, infrastructure management, network design, vendor management
 
-You will receive business intelligence about a prospect. Generate a COMPELLING, SPECIFIC, DATA-DRIVEN sales pitch.
+You will receive business intelligence about a prospect INCLUDING their social media footprint. Generate a COMPELLING, SPECIFIC, DATA-DRIVEN sales pitch.
 
 Structure your output with EXACTLY these 7 sections using ## headings:
 
@@ -22,32 +22,37 @@ Structure your output with EXACTLY these 7 sections using ## headings:
 Summarize who this business is — industry, size signals, what they do, their customer base, and their apparent digital maturity level. Reference specific content from their website.
 
 ## 🌐 Digital Footprint Analysis
-Analyze their web presence: website quality, technology stack hints (CMS, hosting, server), site performance indicators, content freshness, digital channels visible. Identify strengths and weaknesses in their online presence.
+Analyze their FULL digital presence:
+- Website quality, technology stack hints, performance indicators, content freshness
+- **Social Media**: Which platforms they have active, which key ones are missing, consistency of their social presence, whether their profiles appear active or stale
+- **SEO & Marketing Signals**: Open Graph tags, schema markup, meta descriptions, analytics tracking, content strategy
+- **Social Proof**: Reviews, testimonials, trust signals visible on site
+- **Overall digital maturity rating**: Beginner / Developing / Established / Advanced
+Identify specific gaps vs. what competitors in their space typically maintain.
 
 ## 🔒 Security Assessment
 Based on HTTP response headers and HTTPS posture, identify SPECIFIC security gaps. List each missing security header and explain the real risk it creates. Be technical but also explain business impact. Rate their overall security posture (Poor / Fair / Good / Excellent).
 
 ## 💡 Pain Points & Opportunities
-Identify 4-6 specific pain points this business likely faces based on their industry, size, and digital footprint. Connect each pain point to a real business risk or cost. These should feel eerily accurate to the prospect.
+Identify 4-6 specific pain points this business likely faces based on their industry, size, digital footprint, and social presence gaps. Connect each pain point to a real business risk or cost. Include at least one pain point related to their social/digital presence gaps. These should feel eerily accurate to the prospect.
 
 ## 🎯 GCS Service Recommendations
 List 3-5 specific GCS services with WHY each is the perfect fit for this prospect. Include estimated impact (e.g., "reduce downtime risk by ~70%", "eliminate $X in compliance fines"). Be specific and confident.
 
 ## 🚀 The Pitch
-Write an executive-ready 3-4 paragraph pitch that could be read verbatim on a sales call or sent as an email. Open with a hook referencing something specific about their business. Show you understand their world. Position GCS as the obvious partner. End with a clear call to action.
+Write an executive-ready 3-4 paragraph pitch that could be read verbatim on a sales call or sent as an email. Open with a hook referencing something specific about their business or digital presence. Show you understand their world. Position GCS as the obvious partner. End with a clear call to action.
 
 ## 💬 Deal Talking Points
-List 6-8 punchy, specific talking points the GCS sales team can use in conversation. Each should be one line, memorable, and tied to a specific finding about this business. Include at least one about their security gap and one about competitive risk.
+List 6-8 punchy, specific talking points the GCS sales team can use in conversation. Each should be one line, memorable, and tied to a specific finding about this business. Include at least one about their security gap, one about their social/digital presence, and one about competitive risk.
 
 RULES:
-- Be SPECIFIC — always reference actual findings from their website and headers
+- Be SPECIFIC — always reference actual findings from their website, headers, and social presence
 - Never be generic — every line should feel written specifically for THIS business
 - Quantify wherever possible (downtime costs, breach statistics, efficiency gains)
 - Tone: confident expert consultant, not a pushy salesperson
 - The prospect should feel like you already understand their business deeply`;
 
 function extractTextFromHtml(html: string): string {
-  // Remove script and style blocks entirely
   let text = html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
@@ -55,10 +60,9 @@ function extractTextFromHtml(html: string): string {
     .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
     .replace(/<header[\s\S]*?<\/header>/gi, " ");
 
-  // Convert block elements to newlines
   text = text
     .replace(/<\/?(h[1-6]|p|div|li|tr|br|section|article|main)[^>]*>/gi, "\n")
-    .replace(/<[^>]+>/g, " ") // strip remaining tags
+    .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
@@ -107,6 +111,62 @@ Missing Security Headers (${missing.length}):
 ${missing.map((m) => `❌ ${m}`).join("\n")}`;
 }
 
+function analyzeSocialPresence(html: string): string {
+  const socialPlatforms = [
+    { name: "Facebook",        pattern: /href=["'][^"']*facebook\.com\/[^"']{3,}/i },
+    { name: "LinkedIn",        pattern: /href=["'][^"']*linkedin\.com\/[^"']{3,}/i },
+    { name: "Instagram",       pattern: /href=["'][^"']*instagram\.com\/[^"']{3,}/i },
+    { name: "Twitter / X",     pattern: /href=["'][^"']*(?:twitter|x)\.com\/[^"']{3,}/i },
+    { name: "YouTube",         pattern: /href=["'][^"']*youtube\.com\/[^"']{3,}/i },
+    { name: "TikTok",          pattern: /href=["'][^"']*tiktok\.com\/[^"']{3,}/i },
+    { name: "Pinterest",       pattern: /href=["'][^"']*pinterest\.com\/[^"']{3,}/i },
+    { name: "Google Business", pattern: /(?:g\.page\/|maps\.google\.|goo\.gl\/maps)/i },
+    { name: "Yelp",            pattern: /href=["'][^"']*yelp\.com\/[^"']{3,}/i },
+    { name: "Nextdoor",        pattern: /href=["'][^"']*nextdoor\.com\/[^"']{3,}/i },
+  ];
+
+  const found  = socialPlatforms.filter(s => s.pattern.test(html)).map(s => s.name);
+  const missing = socialPlatforms.filter(s => !s.pattern.test(html)).map(s => s.name);
+
+  // SEO & marketing signals
+  const hasOG          = /property=["']og:/i.test(html);
+  const hasTwitterCard = /name=["']twitter:/i.test(html);
+  const hasSchema      = /"@type"/i.test(html) || /application\/ld\+json/i.test(html);
+  const hasMetaDesc    = /<meta[^>]*name=["']description["']/i.test(html);
+  const hasGA          = /gtag\(|google-analytics|UA-\d{4,}|G-[A-Z0-9]{5,}/i.test(html);
+  const hasGTM         = /googletagmanager/i.test(html);
+  const hasPixel       = /connect\.facebook\.net|fbq\(/i.test(html);
+  const hasBlog        = /\/blog|\/news|\/articles|\/insights|\/resources/i.test(html);
+  const hasReviews     = /testimonial|review|rating|trust|stars|5-star/i.test(html);
+  const hasLiveChat    = /tawk\.to|intercom|crisp|zendesk|livechat|drift\./i.test(html);
+  const hasCookieBanner = /cookie|gdpr|consent/i.test(html);
+
+  return `--- SOCIAL MEDIA PRESENCE ---
+Platforms linked from website (${found.length}):
+${found.length > 0 ? found.map(f => `✅ ${f}`).join("\n") : "❌ No social media links found on website"}
+
+Key platforms NOT linked (${missing.length}):
+${missing.slice(0, 6).map(m => `❌ ${m} — missing or not linked`).join("\n")}
+
+--- DIGITAL MARKETING SIGNALS ---
+SEO & Social Metadata:
+${hasOG          ? "✅ Open Graph tags (social sharing looks professional)" : "❌ Missing Open Graph tags — social shares will look broken/unprofessional"}
+${hasTwitterCard ? "✅ Twitter/X Card meta tags"                             : "❌ Missing Twitter/X Card — poor Twitter/X sharing appearance"}
+${hasSchema      ? "✅ Structured data / Schema.org markup"                  : "❌ No structured data — hurts Google rich snippets and local SEO"}
+${hasMetaDesc    ? "✅ Meta description present"                             : "❌ Missing meta description — reduces search click-through rate"}
+
+Analytics & Tracking:
+${hasGA    ? "✅ Google Analytics active"      : "❌ No Google Analytics — flying blind on website traffic"}
+${hasGTM   ? "✅ Google Tag Manager"           : "❌ No Google Tag Manager"}
+${hasPixel ? "✅ Facebook/Meta Pixel tracking" : "❌ No Meta Pixel — cannot run Facebook/Instagram retargeting ads"}
+
+Engagement & Trust:
+${hasBlog     ? "✅ Blog / content marketing section exists" : "❌ No blog or content section — missing SEO and thought leadership opportunity"}
+${hasReviews  ? "✅ Testimonials or reviews displayed"       : "❌ No social proof visible — trust gap for potential customers"}
+${hasLiveChat ? "✅ Live chat / customer support widget"     : "❌ No live chat — potential leads may leave without converting"}
+${hasCookieBanner ? "✅ Cookie consent / privacy compliance" : "❌ No cookie consent banner — potential GDPR/privacy compliance risk"}`;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const session = await auth();
@@ -119,13 +179,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "businessName and websiteUrl are required" }, { status: 400 });
     }
 
-    // Normalize URL
     let normalizedUrl = websiteUrl.trim();
     if (!normalizedUrl.startsWith("http")) normalizedUrl = "https://" + normalizedUrl;
 
-    // Fetch the website with timeout
     let websiteText = "";
     let securityAnalysis = "";
+    let socialAnalysis = "";
     let fetchError = "";
     const fetchStart = Date.now();
 
@@ -146,6 +205,7 @@ export async function POST(req: NextRequest) {
       websiteText = extractTextFromHtml(html);
       securityAnalysis = analyzeSecurityHeaders(res.headers, normalizedUrl);
       securityAnalysis += `\nResponse Time: ${responseTime}ms${responseTime > 3000 ? " (SLOW — poor user experience)" : ""}`;
+      socialAnalysis = analyzeSocialPresence(html);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Unknown error";
       fetchError = `Could not fetch website (${msg}). Analyze based on business name and domain only.`;
@@ -164,6 +224,8 @@ ${websiteText || "Could not extract website content."}
 
 --- SECURITY POSTURE ANALYSIS ---
 ${securityAnalysis || fetchError}
+
+${socialAnalysis ? socialAnalysis : ""}
 ======================================
 
 Generate the complete sales pitch for this prospect.`.trim();
@@ -174,7 +236,7 @@ Generate the complete sales pitch for this prospect.`.trim();
         try {
           const response = await client.messages.stream({
             model: "claude-sonnet-4-6",
-            max_tokens: 3500,
+            max_tokens: 4000,
             system: PITCH_SYSTEM_PROMPT,
             messages: [{ role: "user", content: userMessage }],
           });

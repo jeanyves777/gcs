@@ -72,6 +72,58 @@ function gapCategories(text: string): { label: string; icon: string }[] {
   return cats.slice(0, 4);
 }
 
+// ─── Digital Health Score ─────────────────────────────────────────────────────
+
+function computeDigitalHealth(securityScore: number, presenceScore: number, painCount: number): number {
+  const techHealth = Math.max(0, 100 - painCount * 12);
+  return Math.max(5, Math.min(95, Math.round(0.40 * securityScore + 0.40 * presenceScore + 0.20 * techHealth)));
+}
+
+function healthGrade(score: number): { label: string; color: string; bg: string; border: string } {
+  if (score >= 76) return { label: "Strong",   color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" };
+  if (score >= 61) return { label: "Good",     color: "#0891b2", bg: "#ecfeff", border: "#a5f3fc" };
+  if (score >= 46) return { label: "Fair",     color: "#d97706", bg: "#fffbeb", border: "#fde68a" };
+  if (score >= 26) return { label: "Poor",     color: "#f97316", bg: "#fff7ed", border: "#fed7aa" };
+  return              { label: "Critical", color: "#ef4444", bg: "#fef2f2", border: "#fecaca" };
+}
+
+function healthRecommendations(securityScore: number, presenceScore: number, painCount: number): string[] {
+  const recs: string[] = [];
+  if (securityScore < 50) recs.push("Security hardening should be your first priority — your current vulnerabilities put customer data at risk");
+  else if (securityScore < 70) recs.push("Security improvements are needed to meet industry standards and protect against growing cyber threats");
+  if (presenceScore < 45) recs.push("Your digital presence is significantly below industry average — potential customers may struggle to find or trust your business online");
+  else if (presenceScore < 65) recs.push("Strengthening your online presence and social media footprint could meaningfully increase your lead flow");
+  if (painCount >= 4) recs.push("Multiple technology inefficiencies are creating operational drag — each one represents a real cost to your business");
+  else if (painCount >= 2) recs.push("Key technology gaps are holding back your team's productivity and growth potential");
+  if (recs.length < 2) recs.push("A structured technology roadmap could address all identified issues and deliver measurable ROI");
+  return recs.slice(0, 3);
+}
+
+// ─── Health ring (light-background version) ───────────────────────────────────
+
+function HealthScoreRing({ score, color, size = 150 }: { score: number; color: string; size?: number }) {
+  const displayed = useCountUp(score, 1800, 200);
+  const stroke = 13;
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = circ * (1 - displayed / 100);
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ filter: `drop-shadow(0 0 10px ${color}44)` }}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#E5E7EB" strokeWidth={stroke} />
+      <circle
+        cx={size / 2} cy={size / 2} r={r} fill="none"
+        stroke={color} strokeWidth={stroke}
+        strokeDasharray={circ} strokeDashoffset={offset}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        strokeLinecap="round"
+        style={{ transition: "stroke-dashoffset 0.05s linear" }}
+      />
+      <text x={size / 2} y={size / 2 - 6} textAnchor="middle" fontSize={size * 0.24} fontWeight="800" fill={color} fontFamily="inherit">{displayed}</text>
+      <text x={size / 2} y={size / 2 + size * 0.18} textAnchor="middle" fontSize={size * 0.1} fill="#9CA3AF" fontFamily="inherit">/100</text>
+    </svg>
+  );
+}
+
 function extractPitchTeaser(text: string): string {
   const match = text.match(/## 🚀 The Pitch([\s\S]*?)(?=\n##|$)/);
   if (!match) return "";
@@ -217,6 +269,11 @@ export function ConsultingLandingClient({ pitch }: { pitch: Pitch }) {
   const gapCats = gapCategories(pitch.pitchText);
   const pitchTeaser = extractPitchTeaser(pitch.pitchText);
 
+  const healthScore = computeDigitalHealth(pitch.securityScore, pitch.presenceScore, painPointCount);
+  const grade = healthGrade(healthScore);
+  const recs = healthRecommendations(pitch.securityScore, pitch.presenceScore, painPointCount);
+  const techHealth = Math.max(0, 100 - painPointCount * 12);
+
   const scrollToForm = () => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -356,6 +413,80 @@ export function ConsultingLandingClient({ pitch }: { pitch: Pitch }) {
               <p style={{ margin: "4px 0 0", color: "rgba(255,255,255,0.45)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ── Digital Health Score ─────────────────────────────────────── */}
+      <section style={{ background: "white", padding: "72px 24px" }}>
+        <div style={{ maxWidth: 780, margin: "0 auto" }}>
+          {/* Section header */}
+          <div style={{ textAlign: "center", marginBottom: 40 }}>
+            <p style={{ margin: "0 0 6px", color: "#1565C0", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em" }}>
+              Composite Analysis
+            </p>
+            <h2 style={{ margin: "0 0 10px", color: "#0A1929", fontSize: 26, fontWeight: 900 }}>
+              Digital Health Score
+            </h2>
+            <p style={{ margin: 0, color: "#6B7280", fontSize: 14, lineHeight: 1.6, maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>
+              A composite score across security, online presence, and technology efficiency — measuring how your business stacks up digitally.
+            </p>
+          </div>
+
+          {/* Ring + grade card */}
+          <div style={{
+            display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "center",
+            gap: 40, marginBottom: 36,
+            background: grade.bg, border: `2px solid ${grade.border}`,
+            borderRadius: 20, padding: "36px 32px",
+          }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+              <HealthScoreRing score={healthScore} color={grade.color} size={150} />
+              <span style={{
+                display: "inline-block", background: grade.bg, border: `2px solid ${grade.color}`,
+                borderRadius: 99, padding: "6px 18px", fontSize: 14, fontWeight: 800, color: grade.color,
+              }}>
+                {grade.label} Health
+              </span>
+            </div>
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <p style={{ margin: "0 0 18px", color: "#0A1929", fontSize: 18, fontWeight: 800, lineHeight: 1.3 }}>
+                {pitch.businessName} scored <span style={{ color: grade.color }}>{healthScore}/100</span> on our Digital Health Index
+              </p>
+              <div style={{ background: "white", borderRadius: 12, padding: "16px 20px", border: `1px solid ${grade.border}` }}>
+                <MiniBar value={pitch.securityScore} color={securityRisk > 40 ? "#ef4444" : "#22c55e"} label="Security Health" />
+                <MiniBar value={pitch.presenceScore} color="#38bdf8" label="Digital Presence" />
+                <MiniBar value={Math.max(5, techHealth)} color="#a78bfa" label="Technology Efficiency" />
+              </div>
+            </div>
+          </div>
+
+          {/* Recommendations teaser */}
+          <div style={{ background: "#F8FAFC", borderRadius: 16, padding: "24px 28px", border: "1px solid #E5E7EB" }}>
+            <p style={{ margin: "0 0 16px", color: "#0A1929", fontWeight: 700, fontSize: 14 }}>
+              💡 Key areas for improvement identified in your assessment:
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {recs.map((rec, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <div style={{
+                    width: 22, height: 22, borderRadius: 99, background: grade.color + "20",
+                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1,
+                    fontSize: 11, fontWeight: 900, color: grade.color,
+                  }}>{i + 1}</div>
+                  <p style={{ margin: 0, color: "#374151", fontSize: 13, lineHeight: 1.6 }}>{rec}</p>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 20, textAlign: "center" }}>
+              <button onClick={scrollToForm} style={{
+                background: `linear-gradient(135deg, #1565C0, #5e35b1)`,
+                color: "white", border: "none", borderRadius: 10,
+                padding: "11px 28px", fontSize: 14, fontWeight: 700, cursor: "pointer",
+              }}>
+                Get Your Full Health Report — Free Consultation →
+              </button>
+            </div>
+          </div>
         </div>
       </section>
 
