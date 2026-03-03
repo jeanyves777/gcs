@@ -45,7 +45,7 @@ function MiniRing({ score, color }: { score: number; color: string }) {
   );
 }
 
-export function PitchBoardClient({ pitches: initial }: { pitches: Pitch[] }) {
+export function PitchBoardClient({ pitches: initial, hideHeader }: { pitches: Pitch[]; hideHeader?: boolean }) {
   const [pitches, setPitches] = useState<Pitch[]>(initial);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -66,31 +66,33 @@ export function PitchBoardClient({ pitches: initial }: { pitches: Pitch[] }) {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Sparkles className="h-5 w-5" style={{ color: "var(--brand-primary)" }} />
-            <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
-              AI Pitch Board
-            </h1>
-            <span
-              className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
-              style={{ background: "var(--brand-primary)20", color: "var(--brand-primary)" }}
-            >
-              Admin Only
-            </span>
+      {/* Header — only shown when NOT embedded in tabs */}
+      {!hideHeader && (
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Sparkles className="h-5 w-5" style={{ color: "var(--brand-primary)" }} />
+              <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
+                AI Pitch Board
+              </h1>
+              <span
+                className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
+                style={{ background: "var(--brand-primary)20", color: "var(--brand-primary)" }}
+              >
+                Admin Only
+              </span>
+            </div>
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+              {pitches.length} saved pitch{pitches.length !== 1 ? "es" : ""} — AI-generated deal intelligence for your prospects
+            </p>
           </div>
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            {pitches.length} saved pitch{pitches.length !== 1 ? "es" : ""} — AI-generated deal intelligence for your prospects
-          </p>
+          <Link href="/portal/admin/pitch-board/new">
+            <Button className="gap-2 text-white font-semibold" style={{ background: "var(--brand-primary)" }}>
+              <Plus className="h-4 w-4" /> Build New Pitch
+            </Button>
+          </Link>
         </div>
-        <Link href="/portal/admin/pitch-board/new">
-          <Button className="gap-2 text-white font-semibold" style={{ background: "var(--brand-primary)" }}>
-            <Plus className="h-4 w-4" /> Build New Pitch
-          </Button>
-        </Link>
-      </div>
+      )}
 
       {/* Stats bar */}
       {pitches.length > 0 && (

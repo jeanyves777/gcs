@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Sparkles, Globe, ArrowLeft, Check, Loader2 } from "lucide-react";
@@ -66,8 +66,9 @@ function parseSections(text: string) {
 
 export function NewPitchClient() {
   const router = useRouter();
-  const [businessName, setBusinessName] = useState("");
-  const [websiteUrl, setWebsiteUrl] = useState("");
+  const searchParams = useSearchParams();
+  const [businessName, setBusinessName] = useState(searchParams.get("name") ?? "");
+  const [websiteUrl, setWebsiteUrl] = useState(searchParams.get("url") ?? "");
   const [state, setState] = useState<"idle" | "loading" | "saving">("idle");
   const [pitchText, setPitchText] = useState("");
   const [sections, setSections] = useState<{ heading: string; content: string }[]>([]);

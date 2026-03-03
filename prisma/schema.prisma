@@ -48,6 +48,7 @@ model User {
   submittedRequirements Requirement[]
   assignedTickets       Ticket[]        @relation("TicketAssignee")
   pitches               Pitch[]
+  leadSearches          LeadSearch[]
 
   @@index([email])
   @@index([organizationId])
@@ -377,6 +378,21 @@ model PasswordResetToken {
 
   @@index([email])
   @@index([token])
+}
+
+model LeadSearch {
+  id           String   @id @default(cuid())
+  query        String
+  location     String
+  resultsCount Int      @default(0)
+  results      String?  // JSON array of LeadResult
+  createdAt    DateTime @default(now())
+
+  searchedById String
+  searchedBy   User   @relation(fields: [searchedById], references: [id])
+
+  @@index([searchedById])
+  @@index([createdAt])
 }
 
 model Pitch {
