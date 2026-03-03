@@ -566,7 +566,15 @@ function EmailModal({ pitch, onClose }: { pitch: Pitch; onClose: () => void }) {
       const res = await fetch("/api/admin/pitch-board/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipientEmail: email.trim(), businessName: pitch.businessName, pitchText: pitch.pitchText, pitchId: pitch.id }),
+        body: JSON.stringify({
+          recipientEmail: email.trim(),
+          businessName: pitch.businessName,
+          pitchText: pitch.pitchText,
+          pitchId: pitch.id,
+          securityScore: pitch.securityScore,
+          presenceScore: pitch.presenceScore,
+          dealScore: pitch.dealScore,
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed");
