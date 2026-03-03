@@ -8,7 +8,7 @@ import {
   ArrowLeft, Copy, Check, Mail, Trash2, Loader2, Globe, Calendar, User2,
   Building2, Shield, Lightbulb, Target, Rocket, MessageSquare,
   ChevronDown, ChevronUp, X, Send, Server, Cloud, Code2, Sparkles, AlertTriangle,
-  TrendingUp, CheckCircle2, Info, Quote,
+  TrendingUp, CheckCircle2, Info, Quote, Share2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
@@ -616,6 +616,7 @@ function EmailModal({ pitch, onClose }: { pitch: Pitch; onClose: () => void }) {
 export function PitchViewClient({ pitch }: { pitch: Pitch }) {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [showEmail, setShowEmail] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -630,6 +631,13 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
     await navigator.clipboard.writeText(pitch.pitchText);
     setCopied(true); toast.success("Pitch copied");
     setTimeout(() => setCopied(false), 2500);
+  };
+
+  const handleShareLink = async () => {
+    const url = `https://www.itatgcs.com/consulting/${pitch.id}`;
+    await navigator.clipboard.writeText(url);
+    setLinkCopied(true); toast.success("Landing page link copied!");
+    setTimeout(() => setLinkCopied(false), 2500);
   };
 
   const handleDelete = async () => {
@@ -655,6 +663,13 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
         <div className="flex items-center gap-2 flex-wrap">
           <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setShowEmail(true)}>
             <Mail className="h-3.5 w-3.5" /> Email Prospect
+          </Button>
+          <Button
+            variant="outline" size="sm" className="gap-1.5 text-xs font-semibold"
+            style={{ borderColor: "var(--brand-primary)", color: "var(--brand-primary)" }}
+            onClick={handleShareLink}
+          >
+            {linkCopied ? <><Check className="h-3.5 w-3.5" /> Link Copied!</> : <><Share2 className="h-3.5 w-3.5" /> Share Landing Page</>}
           </Button>
           <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={handleCopy}>
             {copied ? <><Check className="h-3.5 w-3.5" /> Copied!</> : <><Copy className="h-3.5 w-3.5" /> Copy Pitch</>}
