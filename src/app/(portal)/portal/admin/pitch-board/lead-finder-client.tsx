@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Search, MapPin, Star, Phone, Globe, ExternalLink, Loader2,
-  ChevronDown, ChevronUp, FileDown, Sparkles, TrendingUp, AlertTriangle, CheckSquare, Square,
+  ChevronDown, ChevronUp, FileDown, Sparkles, TrendingUp, AlertTriangle, CheckSquare, Square, X,
 } from "lucide-react";
+
+const LS_KEY = "gcs_lead_finder_state";
 import { toast } from "sonner";
 import type { LeadResult } from "@/app/api/admin/pitch-board/lead-finder/route";
 
@@ -201,6 +203,39 @@ export function LeadFinderClient({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<SortKey>("dealPotential");
   const [searched, setSearched] = useState(false);
+
+  // ── Restore persisted results on mount ──────────────────────────────────────
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { query: string; location: string; results: LeadResult[] };
+      if (saved.results?.length) {
+        setQuery(saved.query ?? "");
+        setLocation(saved.location ?? "");
+        setResults(saved.results);
+        setSearched(true);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  // ── Persist results to localStorage whenever they change ────────────────────
+  useEffect(() => {
+    if (results.length === 0) return;
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify({ query, location, results }));
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [results]);
+
+  const handleClear = () => {
+    setResults([]);
+    setSearched(false);
+    setSelected(new Set());
+    setQuery("");
+    setLocation("");
+    try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
+  };
 
   const pitchedSet = useMemo(() => new Set(pitchedUrls.map((u) => u.toLowerCase())), [pitchedUrls]);
 
@@ -428,6 +463,16 @@ export function LeadFinderClient({
                 >
                   <FileDown className="h-3.5 w-3.5" />
                   Export {selected.size > 0 ? `(${selected.size})` : "CSV"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleClear}
+                  className="gap-1.5 text-xs"
+                  style={{ height: 32, color: "var(--error)", borderColor: "var(--error)" }}
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Clear
                 </Button>
               </div>
             </div>
