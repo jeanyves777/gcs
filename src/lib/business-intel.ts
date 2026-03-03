@@ -69,6 +69,15 @@ export type WebSearchMention = {
   url: string;
 };
 
+export type FacebookDiscoveryResult = {
+  found: boolean;
+  facebookUrl: string | null;
+  pageName: string | null;
+  discoveredWebsite: string | null;
+  about: string | null;
+  likes: string | null;
+};
+
 export type BusinessIntelResults = {
   searchedAt: string;
   businessName: string;
@@ -80,6 +89,7 @@ export type BusinessIntelResults = {
   domainRegistry: DomainRegistry | null;
   ipGeo: IpGeoInfo | null;
   webSearchMentions: WebSearchMention[];
+  facebookDiscovery?: FacebookDiscoveryResult | null;
 };
 
 // ─── Benchmark ratings by category ───────────────────────────────────────────
@@ -109,7 +119,7 @@ function getBenchmark(categories: string[]): number {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs = 12000): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -224,7 +234,7 @@ async function probeYelp(businessName: string): Promise<WebMention> {
       .replace(/[^a-z0-9\s]+/g, "").replace(/\s+/g, "-").replace(/^-|-$/g, "");
 
     const controller = new AbortController();
-    setTimeout(() => controller.abort(), 5000);
+    setTimeout(() => controller.abort(), 10000);
 
     const res = await fetch(`https://www.yelp.com/biz/${slug}`, {
       method: "HEAD",
@@ -238,7 +248,7 @@ async function probeYelp(businessName: string): Promise<WebMention> {
     }
 
     const searchController = new AbortController();
-    setTimeout(() => searchController.abort(), 5000);
+    setTimeout(() => searchController.abort(), 10000);
     const searchRes = await fetch(
       `https://www.yelp.com/search?find_desc=${encodeURIComponent(businessName)}`,
       { signal: searchController.signal, headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" } }
@@ -267,7 +277,7 @@ async function probeBBB(businessName: string): Promise<WebMention> {
 
   try {
     const controller = new AbortController();
-    setTimeout(() => controller.abort(), 5000);
+    setTimeout(() => controller.abort(), 10000);
 
     const searchUrl = `https://www.bbb.org/search?find_text=${encodeURIComponent(businessName)}`;
     const res = await fetch(searchUrl, {
@@ -290,38 +300,102 @@ async function probeBBB(businessName: string): Promise<WebMention> {
   return base;
 }
 
-// ─── Other mentions from website HTML ────────────────────────────────────────
+// ─── Platform presence detection (independent search) ────────────────────────
 
-async function probeOtherMentions(businessName: string, html: string): Promise<WebMention[]> {
-  const results: WebMention[] = [];
+async function duckDuckGoSearch(query: string, timeoutMs = 15000): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}&kl=us-en`;
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    });
+    clearTimeout(timer);
+    if (!res.ok) return "";
+    return await res.text();
+  } catch {
+    clearTimeout(timer);
+    return "";
+  }
+}
 
+async function probePlatformPresence(businessName: string): Promise<WebMention[]> {
   const platforms = [
-    { source: "TripAdvisor",  pattern: /href=["'][^"']*tripadvisor\.com\/[^"']{5,}/i },
-    { source: "Facebook",     pattern: /href=["'][^"']*facebook\.com\/(?!sharer)[^"']{3,}/i },
-    { source: "Instagram",    pattern: /href=["'][^"']*instagram\.com\/[^"']{3,}/i },
-    { source: "LinkedIn",     pattern: /href=["'][^"']*linkedin\.com\/company\/[^"']{3,}/i },
-    { source: "Nextdoor",     pattern: /href=["'][^"']*nextdoor\.com\/[^"']{3,}/i },
-    { source: "Google Maps",  pattern: /(?:g\.page\/|maps\.google\.|goo\.gl\/maps|google\.com\/maps)/i },
-    { source: "Yelp",         pattern: /href=["'][^"']*yelp\.com\/biz\/[^"']{3,}/i },
-    { source: "Angi",         pattern: /href=["'][^"']*angi\.com\/[^"']{3,}/i },
-    { source: "Houzz",        pattern: /href=["'][^"']*houzz\.com\/[^"']{3,}/i },
-    { source: "Thumbtack",    pattern: /href=["'][^"']*thumbtack\.com\/[^"']{3,}/i },
-    { source: "Healthgrades", pattern: /href=["'][^"']*healthgrades\.com\/[^"']{3,}/i },
-    { source: "Zocdoc",       pattern: /href=["'][^"']*zocdoc\.com\/[^"']{3,}/i },
+    { source: "Facebook",     domains: ["facebook.com"],     exclude: ["sharer", "login", "help", "groups", "watch", "events"] },
+    { source: "Instagram",    domains: ["instagram.com"],    exclude: ["accounts/login"] },
+    { source: "LinkedIn",     domains: ["linkedin.com"],     exclude: ["login", "signup", "jobs/"] },
+    { source: "TripAdvisor",  domains: ["tripadvisor.com"],  exclude: [] },
+    { source: "Nextdoor",     domains: ["nextdoor.com"],     exclude: [] },
+    { source: "Google Maps",  domains: ["google.com/maps", "g.page", "maps.google.com", "goo.gl/maps"], exclude: [] },
+    { source: "Yelp",         domains: ["yelp.com"],         exclude: ["search", "writeareview"] },
+    { source: "BBB",          domains: ["bbb.org"],          exclude: ["search"] },
+    { source: "Angi",         domains: ["angi.com"],         exclude: [] },
+    { source: "Thumbtack",    domains: ["thumbtack.com"],    exclude: [] },
+    { source: "Healthgrades", domains: ["healthgrades.com"], exclude: [] },
   ];
 
-  for (const { source, pattern } of platforms) {
-    const match = html.match(pattern);
-    if (match) {
-      const urlMatch = match[0].match(/href=["']([^"']+)/);
-      results.push({ source, url: urlMatch?.[1] ?? null, rating: null, reviewCount: null, found: true, snippet: null });
-    } else {
-      results.push({ source, url: null, rating: null, reviewCount: null, found: false, snippet: null });
+  const results = new Map<string, WebMention>();
+  for (const p of platforms) {
+    results.set(p.source, { source: p.source, url: null, rating: null, reviewCount: null, found: false, snippet: null });
+  }
+
+  // Helper to scan HTML for platform URLs
+  function scanForPlatforms(html: string) {
+    const htmlLower = html.toLowerCase();
+    // Extract all links from the HTML
+    const allLinks = [...html.matchAll(/href="(https?:\/\/[^"]+)"/gi)].map(m => m[1]);
+    // Also extract URLs that appear in text (DuckDuckGo shows URLs in result snippets)
+    const textUrls = [...html.matchAll(/(https?:\/\/[^\s<"']+)/gi)].map(m => m[1]);
+    const allUrls = [...new Set([...allLinks, ...textUrls])];
+
+    for (const p of platforms) {
+      if (results.get(p.source)?.found) continue;
+      for (const domain of p.domains) {
+        // Check URLs for this domain
+        const matchUrl = allUrls.find(u => {
+          const lower = u.toLowerCase();
+          if (!lower.includes(domain)) return false;
+          if (lower.includes("duckduckgo")) return false;
+          if (p.exclude.some(ex => lower.includes(ex))) return false;
+          return true;
+        });
+        if (matchUrl) {
+          results.set(p.source, { ...results.get(p.source)!, found: true, url: matchUrl });
+          break;
+        }
+        // Fallback: domain mentioned in text content (not just URLs)
+        if (htmlLower.includes(domain) && !results.get(p.source)?.found) {
+          // Verify it's in a result context (near the business name or in a result snippet)
+          const domainIdx = htmlLower.indexOf(domain);
+          const nearbyText = htmlLower.slice(Math.max(0, domainIdx - 200), domainIdx + 200);
+          if (nearbyText.includes(businessName.toLowerCase().split(" ")[0].toLowerCase())) {
+            results.set(p.source, { ...results.get(p.source)!, found: true });
+            break;
+          }
+        }
+      }
     }
   }
 
-  void businessName;
-  return results;
+  // Run 4 parallel DuckDuckGo searches with KEYWORD-based queries (NOT site: operator)
+  const queries = [
+    `"${businessName}"`,                                           // Direct name — returns diverse results
+    `"${businessName}" reviews yelp facebook`,                     // Reviews + social
+    `"${businessName}" instagram linkedin tripadvisor`,            // Social + travel
+    `"${businessName}" bbb nextdoor angi`,                         // Directories
+  ];
+
+  await Promise.allSettled(queries.map(async (query) => {
+    const html = await duckDuckGoSearch(query);
+    if (html) scanForPlatforms(html);
+  }));
+
+  return [...results.values()];
 }
 
 // ─── Domain Registry (RDAP) ───────────────────────────────────────────────────
@@ -329,7 +403,7 @@ async function probeOtherMentions(businessName: string, html: string): Promise<W
 async function fetchDomainRegistry(domain: string): Promise<DomainRegistry | null> {
   try {
     const controller = new AbortController();
-    setTimeout(() => controller.abort(), 7000);
+    setTimeout(() => controller.abort(), 12000);
 
     const res = await fetch(`https://rdap.org/domain/${encodeURIComponent(domain)}`, {
       signal: controller.signal,
@@ -465,7 +539,7 @@ async function fetchWebSearchMentions(businessName: string, domain: string): Pro
   for (const query of queries) {
     try {
       const controller = new AbortController();
-      setTimeout(() => controller.abort(), 6000);
+      setTimeout(() => controller.abort(), 10000);
 
       const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}&kl=us-en`;
       const res = await fetch(url, {
@@ -494,6 +568,106 @@ async function fetchWebSearchMentions(businessName: string, domain: string): Pro
 
   void domain;
   return results.slice(0, 4);
+}
+
+// ─── Facebook Page Discovery (for businesses without a website) ──────────────
+
+export async function discoverFacebookPage(businessName: string): Promise<FacebookDiscoveryResult> {
+  const notFound: FacebookDiscoveryResult = {
+    found: false, facebookUrl: null, pageName: null,
+    discoveredWebsite: null, about: null, likes: null,
+  };
+
+  try {
+    // Step 1: DuckDuckGo site search for Facebook page
+    const query = `site:facebook.com "${businessName}"`;
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 6000);
+
+    const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}&kl=us-en`;
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html",
+      },
+    });
+    if (!res.ok) return notFound;
+    const html = await res.text();
+
+    // Extract first Facebook page link from results
+    const linkMatches = [...html.matchAll(/<a[^>]+class="[^"]*result-link[^"]*"[^>]+href="([^"]+)"/gi)];
+
+    let fbUrl: string | null = null;
+    for (const match of linkMatches) {
+      const href = match[1];
+      if (
+        /facebook\.com\/(?!sharer|login|help|groups|watch|events|marketplace|gaming|stories)[^/\s"]{3,}/i.test(href) &&
+        !href.includes("/posts/") &&
+        !href.includes("/photos/")
+      ) {
+        fbUrl = href;
+        break;
+      }
+    }
+
+    if (!fbUrl) return notFound;
+
+    // Step 2: Fetch the Facebook page to extract info
+    let discoveredWebsite: string | null = null;
+    let about: string | null = null;
+    let pageName: string | null = null;
+    let likes: string | null = null;
+
+    try {
+      const pageRes = await fetchWithTimeout(fbUrl, 8000);
+      if (pageRes.ok) {
+        const pageHtml = await pageRes.text();
+
+        // Extract page name from og:title or <title>
+        const ogTitle = pageHtml.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i);
+        pageName = ogTitle?.[1] ?? null;
+        if (!pageName) {
+          const titleMatch = pageHtml.match(/<title[^>]*>([^<]+)<\/title>/i);
+          pageName = titleMatch?.[1]?.replace(/\s*[|\-–—].*$/, "").trim() ?? null;
+        }
+
+        // Extract website URL from Facebook page (external links, not social platforms)
+        const externalLinks = [...pageHtml.matchAll(/href=["'](https?:\/\/[^"']+)["']/gi)]
+          .map(m => m[1])
+          .filter(u =>
+            !u.includes("facebook.com") && !u.includes("instagram.com") &&
+            !u.includes("twitter.com") && !u.includes("youtube.com") &&
+            !u.includes("google.com") && !u.includes("fbcdn.net") &&
+            !u.includes("fbsbx.com") && !u.includes("l.facebook.com") &&
+            /^https?:\/\/[a-z0-9][a-z0-9.-]+\.[a-z]{2,}/i.test(u)
+          );
+        if (externalLinks.length > 0) {
+          discoveredWebsite = externalLinks[0];
+        }
+
+        // Also check og:see_also
+        if (!discoveredWebsite) {
+          const ogSeeAlso = pageHtml.match(/<meta[^>]*property=["']og:see_also["'][^>]*content=["'](https?:\/\/[^"']+)["']/i);
+          if (ogSeeAlso?.[1] && !ogSeeAlso[1].includes("facebook.com")) {
+            discoveredWebsite = ogSeeAlso[1];
+          }
+        }
+
+        // Extract about/description
+        const ogDesc = pageHtml.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
+        about = ogDesc?.[1]?.slice(0, 500) ?? null;
+
+        // Extract likes/followers count
+        const likesMatch = pageHtml.match(/([\d,]+)\s*(?:people like|likes?|followers?)/i);
+        likes = likesMatch?.[1] ?? null;
+      }
+    } catch { /* Facebook fetch failed — we still have the URL from DuckDuckGo */ }
+
+    return { found: true, facebookUrl: fbUrl, pageName, discoveredWebsite, about, likes };
+  } catch {
+    return notFound;
+  }
 }
 
 // ─── Prompt formatter ─────────────────────────────────────────────────────────
@@ -536,6 +710,15 @@ Server Location: ${[results.ipGeo.city, results.ipGeo.region, results.ipGeo.coun
 --- WEB SEARCH MENTIONS ---
 ${results.webSearchMentions.map(m => `• ${m.snippet}${m.url ? ` [${m.url}]` : ""}`).join("\n")}` : "";
 
+  const fbSection = results.facebookDiscovery?.found ? `
+--- FACEBOOK PAGE DISCOVERY ---
+Facebook Page: ${results.facebookDiscovery.facebookUrl}
+Page Name: ${results.facebookDiscovery.pageName ?? "N/A"}
+Website Found on FB: ${results.facebookDiscovery.discoveredWebsite ?? "None — business likely has NO website at all"}
+About: ${results.facebookDiscovery.about ?? "N/A"}
+Followers/Likes: ${results.facebookDiscovery.likes ?? "Unknown"}
+NOTE: This business was found via Facebook because they have NO website. This is a MAJOR opportunity — they need a website built from scratch.` : "";
+
   return `--- GOOGLE BUSINESS PROFILE ---
 ${gbp?.found ? `✅ Google Business Profile FOUND
 Name: ${gbp.name ?? "N/A"}
@@ -565,15 +748,15 @@ ${bbb?.found ? `✅ BBB listing found — ${bbb.url}${bbb.snippet ? ` — ${bbb.
 ${mentionsList || "No additional platform mentions detected"}
 ${domainSection}
 ${ipSection}
-${webSection}`;
+${webSection}
+${fbSection}`;
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export async function runBusinessIntel(
   businessName: string,
-  websiteUrl: string,
-  websiteHtml: string = ""
+  websiteUrl: string
 ): Promise<BusinessIntelResults> {
   let domain = "";
   try {
@@ -587,7 +770,7 @@ export async function runBusinessIntel(
       searchGooglePlaces(businessName, websiteUrl),
       probeYelp(businessName),
       probeBBB(businessName),
-      probeOtherMentions(businessName, websiteHtml),
+      probePlatformPresence(businessName),
       fetchDomainRegistry(domain),
       (async (): Promise<IpGeoInfo | null> => {
         try {
@@ -599,14 +782,50 @@ export async function runBusinessIntel(
       fetchWebSearchMentions(businessName, domain),
     ]);
 
+  // Merge all results: dedicated probes override platform presence detection
+  const google = googleResult.status === "fulfilled" ? googleResult.value : null;
+  const yelp = yelpResult.status === "fulfilled" ? yelpResult.value : null;
+  const bbb = bbbResult.status === "fulfilled" ? bbbResult.value : null;
+  const mentions = mentionResults.status === "fulfilled" ? [...mentionResults.value] : [];
+
+  // If Google Places found the business, ensure Google Maps shows as found
+  if (google?.found) {
+    const gmIdx = mentions.findIndex(m => m.source === "Google Maps");
+    if (gmIdx !== -1 && !mentions[gmIdx].found) {
+      mentions[gmIdx] = { ...mentions[gmIdx], found: true, url: google.googleMapsUrl };
+    }
+  }
+
+  // If dedicated Yelp probe found it, ensure Yelp shows as found in mentions
+  if (yelp?.found) {
+    const yelpIdx = mentions.findIndex(m => m.source === "Yelp");
+    if (yelpIdx !== -1 && !mentions[yelpIdx].found) {
+      mentions[yelpIdx] = { ...mentions[yelpIdx], found: true, url: yelp.url, rating: yelp.rating, reviewCount: yelp.reviewCount };
+    }
+  }
+
+  // If dedicated BBB probe found it, ensure BBB shows as found in mentions
+  if (bbb?.found) {
+    const bbbIdx = mentions.findIndex(m => m.source === "BBB");
+    if (bbbIdx !== -1 && !mentions[bbbIdx].found) {
+      mentions[bbbIdx] = { ...mentions[bbbIdx], found: true, url: bbb.url, snippet: bbb.snippet };
+    }
+  }
+
+  // Conversely: if platform presence found Yelp/BBB but dedicated probes missed, update dedicated results
+  const yelpFromMentions = mentions.find(m => m.source === "Yelp");
+  const bbbFromMentions = mentions.find(m => m.source === "BBB");
+  const mergedYelp = yelp?.found ? yelp : (yelpFromMentions?.found ? yelpFromMentions : yelp);
+  const mergedBbb = bbb?.found ? bbb : (bbbFromMentions?.found ? bbbFromMentions : bbb);
+
   return {
     searchedAt: new Date().toISOString(),
     businessName,
     domain,
-    google: googleResult.status === "fulfilled" ? googleResult.value : null,
-    yelp: yelpResult.status === "fulfilled" ? yelpResult.value : null,
-    bbb: bbbResult.status === "fulfilled" ? bbbResult.value : null,
-    otherMentions: mentionResults.status === "fulfilled" ? mentionResults.value : [],
+    google,
+    yelp: mergedYelp,
+    bbb: mergedBbb,
+    otherMentions: mentions,
     domainRegistry: rdapResult.status === "fulfilled" ? rdapResult.value : null,
     ipGeo: ipResult.status === "fulfilled" ? (ipResult.value ?? null) : null,
     webSearchMentions: webSearchResult.status === "fulfilled" ? webSearchResult.value : [],

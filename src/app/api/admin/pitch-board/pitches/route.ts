@@ -30,17 +30,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
-    const { businessName, websiteUrl, pitchText, securityScore, presenceScore, dealScore, painCount, pentestData, businessIntelData, reportData } =
+    const { businessName, websiteUrl, pitchText, securityScore, presenceScore, dealScore, painCount, pentestData, businessIntelData, reportData, brandColor, brandLogoUrl, contactEmail, facebookPageUrl } =
       await req.json();
 
-    if (!businessName || !websiteUrl || !pitchText) {
-      return NextResponse.json({ error: "businessName, websiteUrl, and pitchText are required" }, { status: 400 });
+    if (!businessName || !pitchText) {
+      return NextResponse.json({ error: "businessName and pitchText are required" }, { status: 400 });
     }
 
     const pitch = await db.pitch.create({
       data: {
         businessName,
-        websiteUrl,
+        websiteUrl: websiteUrl || "",
         pitchText,
         securityScore: securityScore ?? 0,
         presenceScore: presenceScore ?? 0,
@@ -49,6 +49,10 @@ export async function POST(req: NextRequest) {
         pentestData: pentestData ? JSON.stringify(pentestData) : null,
         businessIntelData: businessIntelData ? JSON.stringify(businessIntelData) : null,
         reportData: reportData ? JSON.stringify(reportData) : null,
+        brandColor: brandColor || null,
+        brandLogoUrl: brandLogoUrl || null,
+        contactEmail: contactEmail || null,
+        facebookPageUrl: facebookPageUrl || null,
         createdById: session.user.id,
       },
     });

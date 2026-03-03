@@ -4,39 +4,51 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Globe, ArrowLeft, Check, Loader2 } from "lucide-react";
+import {
+  Sparkles, Globe, ArrowLeft, Check, Loader2,
+  Search, BarChart3, Lock, Shield, ClipboardList, Lightbulb, Target,
+  type LucideIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 
-type Phase = { label: string; icon: string };
+type Phase = { label: string; Icon: LucideIcon };
 
 const PHASES: Phase[] = [
-  { label: "Connecting to business website...", icon: "🔍" },
-  { label: "Analyzing digital footprint...", icon: "📊" },
-  { label: "Running security assessment...", icon: "🔒" },
-  { label: "Running penetration scan...", icon: "🛡️" },
-  { label: "Building security report...", icon: "📋" },
-  { label: "Identifying opportunities...", icon: "💡" },
-  { label: "Crafting your pitch...", icon: "🎯" },
+  { label: "Connecting to business website...", Icon: Search },
+  { label: "Analyzing digital footprint...", Icon: BarChart3 },
+  { label: "Running security assessment...", Icon: Lock },
+  { label: "Running penetration scan...", Icon: Shield },
+  { label: "Building security report...", Icon: ClipboardList },
+  { label: "Identifying opportunities...", Icon: Lightbulb },
+  { label: "Crafting your pitch...", Icon: Target },
+];
+
+const PHASES_NO_WEBSITE: Phase[] = [
+  { label: "Searching for Facebook page...", Icon: Search },
+  { label: "Analyzing digital footprint...", Icon: BarChart3 },
+  { label: "Running business intelligence...", Icon: ClipboardList },
+  { label: "Identifying opportunities...", Icon: Lightbulb },
+  { label: "Crafting your pitch...", Icon: Target },
 ];
 
 // ─── Score computation from pitch text ──────────────────────────────────────
 
 function computeScores(pitchText: string) {
-  // Security score: ratio of ✅ to total header checks
-  const secMatch = pitchText.match(/## 🔒 Security Assessment([\s\S]*?)(?=\n##|$)/);
+  // Security score: ratio of PRESENT to total header checks
+  const secMatch = pitchText.match(/## (?:.*)?Security Assessment([\s\S]*?)(?=\n##|$)/i);
   const secText = secMatch ? secMatch[1] : "";
-  const passed = (secText.match(/✅/g) || []).length;
-  const failed = (secText.match(/❌/g) || []).length;
+  const passed = (secText.match(/PRESENT|Present|\[x\]/gi) || []).length;
+  const failed = (secText.match(/MISSING|Missing|\[ \]/gi) || []).length;
   const total = passed + failed;
   const securityScore = total > 0 ? Math.round((passed / total) * 100) : 50;
 
   // Pain count: bullet points in pain points section
-  const painMatch = pitchText.match(/## 💡 Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
+  const painMatch = pitchText.match(/## (?:.*)?Pain Points[^#]*([\s\S]*?)(?=\n##|$)/i);
   const painText = painMatch ? painMatch[1] : "";
   const painCount = (painText.match(/^[-•*\d]\s/gm) || []).length || (painText.match(/\n-\s/g) || []).length;
 
   // Presence score: keyword analysis in digital footprint section
-  const footprintMatch = pitchText.match(/## 🌐 Digital Footprint[^#]*([\s\S]*?)(?=\n##|$)/);
+  const footprintMatch = pitchText.match(/## (?:.*)?Digital Footprint[^#]*([\s\S]*?)(?=\n##|$)/i);
   const footprintText = (footprintMatch ? footprintMatch[1] : "").toLowerCase();
   const posWords = ["professional", "modern", "well-designed", "active", "strong", "comprehensive", "robust", "clean", "responsive"];
   const negWords = ["outdated", "basic", "limited", "minimal", "weak", "poor", "lacks", "missing", "old", "static", "no ssl", "slow"];
@@ -75,6 +87,7 @@ export function NewPitchClient() {
   const [sections, setSections] = useState<{ heading: string; content: string }[]>([]);
   const [phaseIndex, setPhaseIndex] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [activePhases, setActivePhases] = useState<Phase[]>(PHASES);
   const phaseTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -83,15 +96,17 @@ export function NewPitchClient() {
     if (progressTimer.current) clearInterval(progressTimer.current);
   }, []);
 
-  const startTimers = () => {
+  const startTimers = (hasUrl: boolean) => {
+    const phases = hasUrl ? PHASES : PHASES_NO_WEBSITE;
+    setActivePhases(phases);
     setPhaseIndex(0);
     setProgress(0);
     phaseTimer.current = setInterval(() => {
-      setPhaseIndex((i) => (i < PHASES.length - 1 ? i + 1 : i));
-    }, 5000);
+      setPhaseIndex((i) => (i < phases.length - 1 ? i + 1 : i));
+    }, 12000);
     progressTimer.current = setInterval(() => {
-      setProgress((p) => p >= 90 ? p : Math.min(90, p + (90 - p) * 0.035));
-    }, 300);
+      setProgress((p) => p >= 90 ? p : Math.min(90, p + (90 - p) * 0.015));
+    }, 400);
   };
 
   const stopTimers = () => {
@@ -100,20 +115,24 @@ export function NewPitchClient() {
   };
 
   const handleBuild = async () => {
-    if (!businessName.trim() || !websiteUrl.trim()) {
-      toast.error("Please enter a business name and website URL");
+    if (!businessName.trim()) {
+      toast.error("Please enter a business name");
       return;
     }
+    const hasUrl = !!websiteUrl.trim();
     setState("loading");
     setPitchText("");
     setSections([]);
-    startTimers();
+    startTimers(hasUrl);
 
     try {
       const res = await fetch("/api/admin/pitch-board/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessName: businessName.trim(), websiteUrl: websiteUrl.trim() }),
+        body: JSON.stringify({
+          businessName: businessName.trim(),
+          ...(hasUrl ? { websiteUrl: websiteUrl.trim() } : {}),
+        }),
       });
       if (!res.ok) {
         const ct = res.headers.get("content-type") ?? "";
@@ -140,11 +159,21 @@ export function NewPitchClient() {
       if (reportHeader) {
         try { reportData = JSON.parse(atob(reportHeader)); } catch { /* ignore */ }
       }
+      const brandColor = res.headers.get("X-Brand-Color");
+      const brandLogoUrlRaw = res.headers.get("X-Brand-Logo-Url");
+      const brandLogoUrl = brandLogoUrlRaw ? decodeURIComponent(brandLogoUrlRaw) : null;
+      const contactEmail = res.headers.get("X-Contact-Email");
+      // Facebook discovery headers
+      const fbPageRaw = res.headers.get("X-Facebook-Page-Url");
+      const facebookPageUrl = fbPageRaw ? decodeURIComponent(fbPageRaw) : null;
+      const effectiveUrlRaw = res.headers.get("X-Effective-Url");
+      const effectiveUrl = effectiveUrlRaw ? decodeURIComponent(effectiveUrlRaw) : null;
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let accumulated = "";
 
+      const phases = hasUrl ? PHASES : PHASES_NO_WEBSITE;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -155,22 +184,27 @@ export function NewPitchClient() {
 
       stopTimers();
       setProgress(100);
-      setPhaseIndex(PHASES.length - 1);
+      setPhaseIndex(phases.length - 1);
 
       // Auto-save
       setState("saving");
       const scores = computeScores(accumulated);
+      const saveWebsiteUrl = hasUrl ? websiteUrl.trim() : (effectiveUrl || "");
       const saveRes = await fetch("/api/admin/pitch-board/pitches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           businessName: businessName.trim(),
-          websiteUrl: websiteUrl.trim(),
+          websiteUrl: saveWebsiteUrl,
           pitchText: accumulated,
           ...scores,
           pentestData,
           businessIntelData,
           reportData,
+          brandColor,
+          brandLogoUrl,
+          contactEmail,
+          facebookPageUrl,
         }),
       });
       if (!saveRes.ok) throw new Error("Failed to save pitch");
@@ -230,7 +264,7 @@ export function NewPitchClient() {
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-              Website URL
+              Website URL <span className="normal-case font-normal">(optional)</span>
             </label>
             <div className="relative">
               <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--text-muted)" }} />
@@ -282,7 +316,7 @@ export function NewPitchClient() {
 
           {/* Phase steps */}
           <div className="space-y-3">
-            {PHASES.map((phase, i) => (
+            {activePhases.map((phase, i) => (
               <div key={i} className="flex items-center gap-3">
                 <div
                   className="w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0"
@@ -294,7 +328,7 @@ export function NewPitchClient() {
                     ? <Check className="h-4 w-4" style={{ color: "var(--success)" }} />
                     : i === phaseIndex
                     ? <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--brand-primary)" }} />
-                    : <span style={{ color: "var(--text-muted)", fontSize: 14 }}>{phase.icon}</span>}
+                    : <phase.Icon className="h-4 w-4" style={{ color: "var(--text-muted)" }} />}
                 </div>
                 <span className="text-sm font-medium" style={{ color: i <= phaseIndex ? "var(--text-primary)" : "var(--text-muted)", opacity: i > phaseIndex ? 0.4 : 1 }}>
                   {phase.label}
@@ -307,7 +341,7 @@ export function NewPitchClient() {
           {sections.length > 0 && (
             <div className="pt-2 border-t" style={{ borderColor: "var(--border)" }}>
               <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                ✨ {sections.length} of 9 sections ready — redirecting when complete...
+                {sections.length} sections ready — redirecting when complete...
               </p>
             </div>
           )}

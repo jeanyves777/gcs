@@ -408,6 +408,10 @@ model Pitch {
   businessIntelData String?   // JSON-serialized BusinessIntelResults from runBusinessIntel()
   reportData        String?   // JSON-serialized full SecurityReport (findings, categories, remediation)
   emailsSent        String?   // JSON array of { email, sentAt } records
+  brandColor        String?   // Hex color from client website (e.g. "#1565C0")
+  brandLogoUrl      String?   // URL to client logo (og:image, apple-touch-icon, favicon)
+  contactEmail      String?   // Contact email found on client website
+  facebookPageUrl   String?   // Facebook page URL discovered for no-website businesses
   createdAt         DateTime @default(now())
 
   createdById   String

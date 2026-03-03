@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { isGCSStaff } from "@/lib/auth-utils";
 import { sendMail } from "@/lib/email";
 import { db } from "@/lib/db";
+import { generatePitchPDF } from "@/lib/pitch-pdf";
 
 // ─── Parsers ──────────────────────────────────────────────────────────────────
 
@@ -608,6 +609,65 @@ export async function POST(req: NextRequest) {
       ? `https://www.itatgcs.com/consulting/${pitchId}`
       : "https://www.itatgcs.com/contact";
 
+    // Fetch full pitch record for brand data + PDF generation
+    let pitch: {
+      brandColor: string | null;
+      brandLogoUrl: string | null;
+      reportData: string | null;
+      painCount: number;
+      websiteUrl: string;
+      createdAt: Date;
+      emailsSent: string | null;
+    } | null = null;
+    if (pitchId) {
+      pitch = await db.pitch.findUnique({
+        where: { id: pitchId },
+        select: { brandColor: true, brandLogoUrl: true, reportData: true, painCount: true, websiteUrl: true, createdAt: true, emailsSent: true },
+      });
+    }
+
+    // Fetch client logo buffer for PDF (non-fatal, 5s timeout)
+    let logoBuffer: Buffer | null = null;
+    if (pitch?.brandLogoUrl) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const logoRes = await fetch(pitch.brandLogoUrl, { signal: controller.signal });
+        clearTimeout(timeout);
+        if (logoRes.ok) {
+          const contentType = logoRes.headers.get("content-type") || "";
+          if (contentType.includes("png") || contentType.includes("jpeg") || contentType.includes("jpg")) {
+            logoBuffer = Buffer.from(await logoRes.arrayBuffer());
+          }
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    // Generate PDF (non-fatal — email still sends without attachment)
+    let pdfBuffer: Buffer | null = null;
+    try {
+      pdfBuffer = await generatePitchPDF(
+        {
+          businessName,
+          websiteUrl: pitch?.websiteUrl || "",
+          pitchText,
+          securityScore: securityScore ?? 50,
+          presenceScore: presenceScore ?? 50,
+          dealScore: dealScore ?? 50,
+          painCount: pitch?.painCount ?? 0,
+          businessIntelData: businessIntelData ?? null,
+          reportData: pitch?.reportData ?? null,
+          brandColor: pitch?.brandColor ?? null,
+          createdAt: pitch?.createdAt ?? new Date(),
+        },
+        logoBuffer
+      );
+    } catch (err) {
+      console.error("[send-email] PDF generation failed (sending email without attachment):", err);
+    }
+
+    const safeName = businessName.replace(/[^a-z0-9]/gi, "-").slice(0, 40).toLowerCase();
+
     await sendMail({
       to: recipientEmail,
       subject: `We reviewed ${businessName}'s technology — GCS Consulting`,
@@ -621,14 +681,20 @@ export async function POST(req: NextRequest) {
         businessIntelData
       ),
       replyTo: "info@itatgcs.com",
+      ...(pdfBuffer ? {
+        attachments: [{
+          filename: `${safeName}-technology-assessment.pdf`,
+          content: pdfBuffer,
+          contentType: "application/pdf",
+        }],
+      } : {}),
     });
 
     // Log this email send to the pitch record
-    if (pitchId) {
+    if (pitchId && pitch) {
       try {
-        const pitch = await db.pitch.findUnique({ where: { id: pitchId }, select: { emailsSent: true } });
         const existing: Array<{ email: string; sentAt: string }> = [];
-        if (pitch?.emailsSent) {
+        if (pitch.emailsSent) {
           try { existing.push(...JSON.parse(pitch.emailsSent)); } catch { /* ignore */ }
         }
         existing.push({ email: recipientEmail, sentAt: new Date().toISOString() });

@@ -62,6 +62,10 @@ type Pitch = {
   businessIntelData?: string | null;
   reportData?: string | null;
   emailsSent?: string | null;
+  brandColor?: string | null;
+  brandLogoUrl?: string | null;
+  contactEmail?: string | null;
+  facebookPageUrl?: string | null;
   createdAt: Date; createdBy: { name: string | null; email: string };
 };
 type Section = { heading: string; content: string };
@@ -195,10 +199,11 @@ function MetricBar({ label, value, color, note }: { label: string; value: number
 
 // ─── Section: Business Overview ───────────────────────────────────────────────
 
+const OVERVIEW_ICONS = [Building2, MapPin, User2, Building, Globe2, TrendingUp, Lock, Target];
+
 function OverviewSection({ content }: { content: string }) {
   const paras = extractParagraphs(content);
   const bullets = extractBullets(content);
-  const icons = ["🏢", "📍", "👥", "💼", "🌐", "📊", "🔑", "📈"];
   return (
     <div className="space-y-4">
       {paras.slice(0, 1).map((p, i) => (
@@ -208,12 +213,15 @@ function OverviewSection({ content }: { content: string }) {
       ))}
       {bullets.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {bullets.map((bullet, i) => (
-            <div key={i} className="flex items-start gap-3 p-3 rounded-xl" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
-              <span className="text-lg flex-shrink-0 mt-0.5">{icons[i % icons.length]}</span>
-              <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(bullet) }} />
-            </div>
-          ))}
+          {bullets.map((bullet, i) => {
+            const Icon = OVERVIEW_ICONS[i % OVERVIEW_ICONS.length];
+            return (
+              <div key={i} className="flex items-start gap-3 p-3 rounded-xl" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+                <Icon className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: "var(--brand-primary)" }} />
+                <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(bullet) }} />
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -259,13 +267,13 @@ function FootprintSection({ content, presenceScore }: { content: string; presenc
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {positive.length > 0 && (
             <div className="rounded-xl p-4 space-y-2" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
-              <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#16a34a" }}>✅ Strengths</p>
+              <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1" style={{ color: "#16a34a" }}><CheckCircle2 className="h-3.5 w-3.5" /> Strengths</p>
               {positive.map((p, i) => <p key={i} className="text-xs leading-relaxed" style={{ color: "#166534" }} dangerouslySetInnerHTML={{ __html: b(p) }} />)}
             </div>
           )}
           {concern.length > 0 && (
             <div className="rounded-xl p-4 space-y-2" style={{ background: "#fef2f2", border: "1px solid #fecaca" }}>
-              <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#dc2626" }}>⚠️ Gaps Identified</p>
+              <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1" style={{ color: "#dc2626" }}><AlertTriangle className="h-3.5 w-3.5" /> Gaps Identified</p>
               {concern.map((p, i) => <p key={i} className="text-xs leading-relaxed" style={{ color: "#991b1b" }} dangerouslySetInnerHTML={{ __html: b(p) }} />)}
             </div>
           )}
@@ -289,8 +297,8 @@ function SecuritySection({ content, securityScore }: { content: string; security
   const riskLabel = secRisk > 60 ? "Critical Risk" : secRisk > 30 ? "High Risk" : "Low Risk";
   const paras = extractParagraphs(content);
   const bullets = extractBullets(content);
-  const missing = bullets.filter(b => /❌|missing|no |without|lack/.test(b));
-  const passing = bullets.filter(b => /✅|present|enabled|configured/.test(b));
+  const missing = bullets.filter(b => /❌|MISSING|\[MISSING\]|missing|no |without|lack/.test(b));
+  const passing = bullets.filter(b => /✅|PRESENT|\[PRESENT\]|present|enabled|configured/.test(b));
 
   return (
     <div className="space-y-4">
@@ -323,7 +331,7 @@ function SecuritySection({ content, securityScore }: { content: string; security
                 <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: "#dc2626", minWidth: 20 }}>
                   <span className="text-white font-bold" style={{ fontSize: 10 }}>{i + 1}</span>
                 </div>
-                <p className="text-xs leading-relaxed" style={{ color: "#991b1b" }} dangerouslySetInnerHTML={{ __html: b(issue.replace(/❌\s*/g, "")) }} />
+                <p className="text-xs leading-relaxed" style={{ color: "#991b1b" }} dangerouslySetInnerHTML={{ __html: b(issue.replace(/\[MISSING\]\s*/g, "").replace(/❌\s*/g, "")) }} />
               </div>
             ))}
           </div>
@@ -336,7 +344,7 @@ function SecuritySection({ content, securityScore }: { content: string; security
           {passing.map((p, i) => (
             <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
               style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" }}>
-              ✅ {p.replace(/✅\s*/g, "").split("—")[0].trim()}
+              <CheckCircle2 className="h-3 w-3 inline" style={{ color: "#16a34a" }} /> {p.replace(/✅\s*/g, "").replace(/\[PRESENT\]\s*/g, "").split("—")[0].trim()}
             </span>
           ))}
         </div>
@@ -565,7 +573,7 @@ function TalkingPointsSection({ content }: { content: string }) {
     <div className="space-y-3">
       <div className="rounded-xl p-3" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
         <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-          💡 Use these one-liners in your next sales call, email, or meeting with this prospect.
+          Use these one-liners in your next sales call, email, or meeting with this prospect.
         </p>
       </div>
 
@@ -598,7 +606,7 @@ function SmartSectionCard({
 }: {
   section: Section; index: number; pitch: Pitch; pentestResults: PentestResults | null;
 }) {
-  const isSalesPitch = section.heading.toLowerCase().includes("sales") || section.heading.includes("🛡️");
+  const isSalesPitch = section.heading.toLowerCase().includes("sales") || section.heading.toLowerCase().includes("security sales");
   const [expanded, setExpanded] = useState(true);
   const lower = section.heading.toLowerCase();
 
@@ -894,7 +902,7 @@ function SecurityReportSection({ report, pitchId }: { report: SecurityReport; pi
       {/* Critical Findings */}
       {criticalFindings.length > 0 && (
         <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
-          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#dc2626" }}>⚠️ Critical Findings ({criticalFindings.length})</p>
+          <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1" style={{ color: "#dc2626" }}><AlertTriangle className="h-3.5 w-3.5" /> Critical Findings ({criticalFindings.length})</p>
           {criticalFindings.map((f) => <FindingCard key={f.id} finding={f} />)}
         </div>
       )}
@@ -930,9 +938,9 @@ function SecurityReportSection({ report, pitchId }: { report: SecurityReport; pi
           <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Remediation Roadmap</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
-              { label: "⚡ Quick Wins", items: quickWins, color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0", days: "1–3 days" },
-              { label: "📅 Short-term", items: shortTerm, color: "#d97706", bg: "#fffbeb", border: "#fde68a", days: "1–4 weeks" },
-              { label: "🔧 Long-term", items: longTerm, color: "#dc2626", bg: "#fef2f2", border: "#fecaca", days: "1–3 months" },
+              { label: "Quick Wins", items: quickWins, color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0", days: "1–3 days" },
+              { label: "Short-term", items: shortTerm, color: "#d97706", bg: "#fffbeb", border: "#fde68a", days: "1–4 weeks" },
+              { label: "Long-term", items: longTerm, color: "#dc2626", bg: "#fef2f2", border: "#fecaca", days: "1–3 months" },
             ].map(({ label, items, color, bg, border, days }) => (
               <div key={label} className="rounded-xl p-4 space-y-2.5" style={{ background: bg, border: `1px solid ${border}` }}>
                 <div className="flex items-center justify-between">
@@ -1140,7 +1148,7 @@ function PentestCard({ pentest }: { pentest: PentestResults }) {
           {closedPorts.slice(0, 12).map((p) => (
             <span key={p.port} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium"
               style={{ background: "var(--bg-secondary)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
-              ✅ {p.port}
+              <CheckCircle2 className="h-3 w-3 inline" style={{ color: "#16a34a" }} /> {p.port}
             </span>
           ))}
         </div>
@@ -1161,16 +1169,16 @@ function PentestCard({ pentest }: { pentest: PentestResults }) {
                   Grade {pentest.ssl.grade}
                 </span>
                 <span className="text-xs" style={{ color: pentest.ssl.valid ? "#16a34a" : "#dc2626" }}>
-                  {pentest.ssl.valid ? "✅ Valid" : "❌ Invalid"}
+                  {pentest.ssl.valid ? <><CheckCircle2 className="h-3 w-3 inline" style={{ color: "#16a34a" }} /> Valid</> : <><X className="h-3 w-3 inline" style={{ color: "#dc2626" }} /> Invalid</>}
                 </span>
               </div>
               {pentest.ssl.daysUntilExpiry !== null && (
                 <p className="text-xs" style={{ color: pentest.ssl.daysUntilExpiry < 14 ? "#dc2626" : pentest.ssl.daysUntilExpiry < 30 ? "#f97316" : "var(--text-secondary)" }}>
-                  {pentest.ssl.daysUntilExpiry < 0 ? "⚠️ EXPIRED" : `Expires in ${pentest.ssl.daysUntilExpiry} days`}
+                  {pentest.ssl.daysUntilExpiry < 0 ? <><AlertTriangle className="h-3 w-3 inline" style={{ color: "#dc2626" }} /> EXPIRED</> : `Expires in ${pentest.ssl.daysUntilExpiry} days`}
                 </p>
               )}
               <p className="text-xs" style={{ color: "var(--text-muted)" }}>TLS: {pentest.ssl.tlsVersion ?? "Unknown"}</p>
-              {pentest.ssl.selfSigned && <p className="text-xs font-semibold" style={{ color: "#dc2626" }}>⚠️ Self-signed certificate</p>}
+              {pentest.ssl.selfSigned && <p className="text-xs font-semibold flex items-center gap-1" style={{ color: "#dc2626" }}><AlertTriangle className="h-3 w-3" /> Self-signed certificate</p>}
               {pentest.ssl.issuer && <p className="text-xs" style={{ color: "var(--text-muted)" }}>Issuer: {pentest.ssl.issuer}</p>}
             </div>
           ) : (
@@ -1227,13 +1235,13 @@ function PentestCard({ pentest }: { pentest: PentestResults }) {
             {exposedPaths.map((p) => (
               <span key={p.path} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold"
                 style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca" }}>
-                🔴 {p.path} <span style={{ opacity: 0.7 }}>({p.statusCode})</span>
+                <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "#dc2626" }} />{p.path} <span style={{ opacity: 0.7 }}>({p.statusCode})</span>
               </span>
             ))}
             {blockedPaths.map((p) => (
               <span key={p.path} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
                 style={{ background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a" }}>
-                🟡 {p.path} <span style={{ opacity: 0.7 }}>(403)</span>
+                <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "#eab308" }} />{p.path} <span style={{ opacity: 0.7 }}>(403)</span>
               </span>
             ))}
           </div>
@@ -1266,8 +1274,8 @@ function PentestCard({ pentest }: { pentest: PentestResults }) {
             {pentest.cookies.slice(0, 5).map((c, i) => (
               <div key={i} className="flex items-center gap-3 text-xs" style={{ color: "var(--text-secondary)" }}>
                 <span className="font-mono font-semibold" style={{ color: "var(--text-primary)", minWidth: 120 }}>{c.name}</span>
-                <span style={{ color: c.hasHttpOnly ? "#16a34a" : "#dc2626" }}>{c.hasHttpOnly ? "✅" : "❌"} HttpOnly</span>
-                <span style={{ color: c.hasSecure ? "#16a34a" : "#dc2626" }}>{c.hasSecure ? "✅" : "❌"} Secure</span>
+                <span className="inline-flex items-center gap-0.5" style={{ color: c.hasHttpOnly ? "#16a34a" : "#dc2626" }}>{c.hasHttpOnly ? <CheckCircle2 className="h-3 w-3 inline" style={{ color: "#16a34a" }} /> : <X className="h-3 w-3 inline" style={{ color: "#dc2626" }} />} HttpOnly</span>
+                <span className="inline-flex items-center gap-0.5" style={{ color: c.hasSecure ? "#16a34a" : "#dc2626" }}>{c.hasSecure ? <CheckCircle2 className="h-3 w-3 inline" style={{ color: "#16a34a" }} /> : <X className="h-3 w-3 inline" style={{ color: "#dc2626" }} />} Secure</span>
                 <span style={{ color: "var(--text-muted)" }}>SameSite: {c.sameSite ?? "missing"}</span>
               </div>
             ))}
@@ -1358,7 +1366,7 @@ function BusinessIntelCard({ bi }: { bi: BusinessIntelData }) {
             <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Google Business Profile</p>
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
               style={{ background: gbp?.found ? "#f0fdf4" : "#fef2f2", color: gbp?.found ? "#16a34a" : "#dc2626", border: `1px solid ${gbp?.found ? "#bbf7d0" : "#fecaca"}` }}>
-              {gbp?.found ? "✅ Listed" : "❌ Not Found"}
+              {gbp?.found ? <><CheckCircle2 className="h-3 w-3 inline" style={{ color: "#16a34a" }} /> Listed</> : <><X className="h-3 w-3 inline" style={{ color: "#dc2626" }} /> Not Found</>}
             </span>
           </div>
 
@@ -1379,12 +1387,12 @@ function BusinessIntelCard({ bi }: { bi: BusinessIntelData }) {
                 <div className="flex flex-col gap-1">
                   <span className="text-[10px] font-bold px-2.5 py-1 rounded-full"
                     style={{ background: aboveBenchmark ? "#f0fdf4" : "#fef2f2", color: aboveBenchmark ? "#16a34a" : "#dc2626", border: `1px solid ${aboveBenchmark ? "#bbf7d0" : "#fecaca"}` }}>
-                    {aboveBenchmark ? "✅ Above benchmark" : `❌ ${(gbp.ratingBenchmark - (gbp.rating ?? 0)).toFixed(1)} below benchmark`}
+                    {aboveBenchmark ? <><CheckCircle2 className="h-3 w-3 inline" style={{ color: "#16a34a" }} /> Above benchmark</> : <><X className="h-3 w-3 inline" style={{ color: "#dc2626" }} /> {(gbp.ratingBenchmark - (gbp.rating ?? 0)).toFixed(1)} below benchmark</>}
                   </span>
                   {gbp.isOpenNow !== null && (
                     <span className="text-[10px] font-bold px-2.5 py-1 rounded-full text-center"
                       style={{ background: gbp.isOpenNow ? "#f0fdf4" : "#fef2f2", color: gbp.isOpenNow ? "#16a34a" : "#dc2626", border: `1px solid ${gbp.isOpenNow ? "#bbf7d0" : "#fecaca"}` }}>
-                      {gbp.isOpenNow ? "🟢 Open Now" : "🔴 Closed Now"}
+                      {gbp.isOpenNow ? <><span className="inline-block w-2 h-2 rounded-full mr-0.5" style={{ background: "#16a34a" }} />Open Now</> : <><span className="inline-block w-2 h-2 rounded-full mr-0.5" style={{ background: "#dc2626" }} />Closed Now</>}
                     </span>
                   )}
                 </div>
@@ -1475,8 +1483,8 @@ function BusinessIntelCard({ bi }: { bi: BusinessIntelData }) {
             {bi.yelp && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
                 style={{ background: bi.yelp.found ? "#f0fdf4" : "#fef2f2", border: `1px solid ${bi.yelp.found ? "#bbf7d0" : "#fecaca"}` }}>
-                <span className="text-xs font-semibold" style={{ color: bi.yelp.found ? "#16a34a" : "#dc2626" }}>
-                  {bi.yelp.found ? "✅" : "❌"} Yelp
+                <span className="text-xs font-semibold inline-flex items-center gap-0.5" style={{ color: bi.yelp.found ? "#16a34a" : "#dc2626" }}>
+                  {bi.yelp.found ? <CheckCircle2 className="h-3 w-3" style={{ color: "#16a34a" }} /> : <X className="h-3 w-3" style={{ color: "#dc2626" }} />} Yelp
                 </span>
                 {bi.yelp.rating && <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{bi.yelp.rating}/5</span>}
               </div>
@@ -1484,8 +1492,8 @@ function BusinessIntelCard({ bi }: { bi: BusinessIntelData }) {
             {bi.bbb && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
                 style={{ background: bi.bbb.found ? "#f0fdf4" : "#fef2f2", border: `1px solid ${bi.bbb.found ? "#bbf7d0" : "#fecaca"}` }}>
-                <span className="text-xs font-semibold" style={{ color: bi.bbb.found ? "#16a34a" : "#dc2626" }}>
-                  {bi.bbb.found ? "✅" : "❌"} BBB
+                <span className="text-xs font-semibold inline-flex items-center gap-0.5" style={{ color: bi.bbb.found ? "#16a34a" : "#dc2626" }}>
+                  {bi.bbb.found ? <CheckCircle2 className="h-3 w-3" style={{ color: "#16a34a" }} /> : <X className="h-3 w-3" style={{ color: "#dc2626" }} />} BBB
                 </span>
                 {bi.bbb.snippet && <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{bi.bbb.snippet}</span>}
               </div>
@@ -1497,14 +1505,14 @@ function BusinessIntelCard({ bi }: { bi: BusinessIntelData }) {
                 <a key={m.source} href={m.url ?? "#"} target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
                   style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" }}>
-                  ✅ {m.source}
+                  <CheckCircle2 className="h-3 w-3" style={{ color: "#16a34a" }} /> {m.source}
                 </a>
               ))}
               {missing.slice(0, 6).map((m) => (
                 <span key={m.source}
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
                   style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
-                  ❌ {m.source}
+                  <X className="h-3 w-3" style={{ color: "#dc2626" }} /> {m.source}
                 </span>
               ))}
             </div>
@@ -1581,15 +1589,15 @@ function BusinessIntelCard({ bi }: { bi: BusinessIntelData }) {
 // ─── Parse security headers ────────────────────────────────────────────────────
 
 function parseSecurityHeaders(pitchText: string): Array<{ name: string; present: boolean }> {
-  const secMatch = pitchText.match(/## 🔒 Security Assessment([\s\S]*?)(?=\n##|$)/);
+  const secMatch = pitchText.match(/## (?:.*)?Security Assessment([\s\S]*?)(?=\n##|$)/i);
   if (!secMatch) return [];
   const headers: Array<{ name: string; present: boolean }> = [];
   for (const line of secMatch[1].split("\n")) {
-    if (line.includes("✅")) {
-      const raw = line.replace(/✅/g, "").replace(/^[-*•\s]+/, "").split(/—|–/)[0].trim();
+    if (line.includes("✅") || line.includes("[PRESENT]")) {
+      const raw = line.replace(/✅/g, "").replace(/\[PRESENT\]/g, "").replace(/^[-*•\s]+/, "").split(/—|–/)[0].trim();
       if (raw.length > 2 && raw.length < 60) headers.push({ name: raw, present: true });
-    } else if (line.includes("❌")) {
-      const raw = line.replace(/❌/g, "").replace(/^[-*•\s]+/, "").split(/—|–/)[0].trim();
+    } else if (line.includes("❌") || line.includes("[MISSING]")) {
+      const raw = line.replace(/❌/g, "").replace(/\[MISSING\]/g, "").replace(/^[-*•\s]+/, "").split(/—|–/)[0].trim();
       if (raw.length > 2 && raw.length < 60) headers.push({ name: raw, present: false });
     }
   }
@@ -1599,7 +1607,27 @@ function parseSecurityHeaders(pitchText: string): Array<{ name: string; present:
 // ─── Email modal ───────────────────────────────────────────────────────────────
 
 function EmailModal({ pitch, onClose }: { pitch: Pitch; onClose: () => void }) {
-  const [email, setEmail] = useState("");
+  // Pre-fill with contact email found during analysis, or from Google Business Profile
+  const defaultEmail = (() => {
+    if (pitch.contactEmail) return pitch.contactEmail;
+    if (pitch.businessIntelData) {
+      try {
+        const bi = JSON.parse(pitch.businessIntelData);
+        if (bi?.google?.phone) return ""; // phone exists but no email
+      } catch { /* ignore */ }
+    }
+    return "";
+  })();
+  // Extract Google phone for display
+  const googlePhone = (() => {
+    if (!pitch.businessIntelData) return null;
+    try {
+      const bi = JSON.parse(pitch.businessIntelData);
+      return bi?.google?.phone ?? null;
+    } catch { return null; }
+  })();
+
+  const [email, setEmail] = useState(defaultEmail);
   const [sending, setSending] = useState(false);
 
   const handleSend = async () => {
@@ -1640,9 +1668,17 @@ function EmailModal({ pitch, onClose }: { pitch: Pitch; onClose: () => void }) {
         <div className="rounded-xl p-3" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
           <p className="text-xs font-semibold mb-1" style={{ color: "var(--text-primary)" }}>What will be sent:</p>
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            A professional consulting email from <strong>GCS Technology Consulting</strong> with our tailored pitch for <strong>{pitch.businessName}</strong>, including a "Book a Consultation" call-to-action. No mention of AI analysis.
+            A professional consulting email from <strong>GCS Technology Consulting</strong> with our tailored pitch for <strong>{pitch.businessName}</strong>, including a branded PDF assessment report attached. No mention of AI analysis.
           </p>
         </div>
+        {/* Contact info found */}
+        {(defaultEmail || googlePhone) && (
+          <div className="rounded-xl p-3" style={{ background: "var(--success-bg)", border: "1px solid var(--success)" }}>
+            <p className="text-xs font-semibold mb-1" style={{ color: "var(--success)" }}>Contact info found:</p>
+            {defaultEmail && <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Email: <strong>{defaultEmail}</strong> (pre-filled below)</p>}
+            {googlePhone && <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Phone: <strong>{googlePhone}</strong></p>}
+          </div>
+        )}
         <div className="space-y-1">
           <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Prospect&apos;s Email Address</label>
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
@@ -1745,6 +1781,12 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
           <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setShowEmail(true)}>
             <Mail className="h-3.5 w-3.5" /> Email Prospect
           </Button>
+          <a href={`/api/admin/pitch-board/pitches/${pitch.id}/pitch-pdf`} target="_blank" rel="noopener noreferrer">
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs font-semibold"
+              style={{ borderColor: "var(--brand-primary)", color: "var(--brand-primary)" }}>
+              <Download className="h-3.5 w-3.5" /> Pitch PDF
+            </Button>
+          </a>
           {securityReport && (
             <a href={`/api/admin/pitch-board/pitches/${pitch.id}/pdf`} target="_blank" rel="noopener noreferrer">
               <Button variant="outline" size="sm" className="gap-1.5 text-xs font-semibold"
@@ -1786,13 +1828,18 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
             </h1>
             <div className="flex flex-wrap gap-4 mt-2">
               {[
-                { icon: Globe, text: pitch.websiteUrl },
+                { icon: Globe, text: pitch.websiteUrl || (pitch.facebookPageUrl ? "No website" : "No website") },
+                ...(pitch.facebookPageUrl ? [{ icon: Share2, text: "Facebook Page" }] : []),
                 { icon: Calendar, text: formatDate(new Date(pitch.createdAt)) },
                 { icon: User2, text: pitch.createdBy.name ?? pitch.createdBy.email },
               ].map(({ icon: Icon, text }, i) => (
                 <div key={i} className="flex items-center gap-1.5">
                   <Icon className="h-3.5 w-3.5" style={{ color: "rgba(255,255,255,0.65)" }} />
-                  <span className="text-sm" style={{ color: "rgba(255,255,255,0.85)" }}>{text}</span>
+                  {text === "Facebook Page" && pitch.facebookPageUrl ? (
+                    <a href={pitch.facebookPageUrl} target="_blank" rel="noopener noreferrer" className="text-sm underline" style={{ color: "rgba(255,255,255,0.85)" }}>{text}</a>
+                  ) : (
+                    <span className="text-sm" style={{ color: "rgba(255,255,255,0.85)" }}>{text}</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -1894,7 +1941,7 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
                     color: h.present ? "#16a34a" : "#dc2626",
                     border: `1px solid ${h.present ? "#bbf7d0" : "#fecaca"}`,
                   }}>
-                  {h.present ? "✅" : "❌"} {h.name}
+                  {h.present ? <CheckCircle2 className="h-3 w-3" style={{ color: "#16a34a" }} /> : <X className="h-3 w-3" style={{ color: "#dc2626" }} />} {h.name}
                 </span>
               ))}
             </div>

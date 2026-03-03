@@ -38,8 +38,9 @@ export default async function ConsultingLandingPage({
       presenceScore: true,
       dealScore: true,
       painCount: true,
+      createdAt: true,
     },
   });
   if (!pitch) notFound();
-  return <ConsultingLandingClient pitch={pitch} />;
+  return <ConsultingLandingClient pitch={{ ...pitch, createdAt: pitch.createdAt.toISOString() }} />;
 }

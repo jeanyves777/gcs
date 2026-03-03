@@ -17,15 +17,21 @@ interface SendMailOptions {
   subject: string;
   html: string;
   replyTo?: string;
+  attachments?: Array<{
+    filename: string;
+    content: Buffer;
+    contentType: string;
+  }>;
 }
 
-export async function sendMail({ to, subject, html, replyTo }: SendMailOptions) {
+export async function sendMail({ to, subject, html, replyTo, attachments }: SendMailOptions) {
   return transporter.sendMail({
     from: FROM,
     to,
     subject,
     html,
     replyTo,
+    attachments,
   });
 }
 
