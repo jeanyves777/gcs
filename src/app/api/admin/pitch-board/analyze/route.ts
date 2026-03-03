@@ -346,7 +346,7 @@ export async function POST(req: NextRequest) {
     const [fetchResult, pentestResult, biResult] = await Promise.allSettled([
       websiteFetchTask,
       pentestTask,
-      runBusinessIntel(businessName, normalizedUrl || businessName),
+      runBusinessIntel(businessName, normalizedUrl || businessName, undefined),
     ]);
 
     let brandColor: string | null = null;
@@ -384,6 +384,47 @@ export async function POST(req: NextRequest) {
       })),
     } : null;
     const businessIntelResults = biResult.status === "fulfilled" ? biResult.value : null;
+
+    // Merge social links found on the website HTML into business intel platform presence.
+    // This is the most reliable source — the business's own website linking to their profiles.
+    if (businessIntelResults && fetchResult.status === "fulfilled" && fetchResult.value) {
+      const html = fetchResult.value.html;
+      const socialPatterns: { source: string; pattern: RegExp; urlPattern: RegExp }[] = [
+        { source: "Facebook",    pattern: /href=["'][^"']*facebook\.com\/(?!sharer|login|help|groups|watch|events)[^"']{3,}/i, urlPattern: /href=["'](https?:\/\/[^"']*facebook\.com\/[^"']+)/i },
+        { source: "Instagram",   pattern: /href=["'][^"']*instagram\.com\/(?!accounts\/login)[^"']{3,}/i, urlPattern: /href=["'](https?:\/\/[^"']*instagram\.com\/[^"']+)/i },
+        { source: "LinkedIn",    pattern: /href=["'][^"']*linkedin\.com\/(?!login|signup|jobs\/)[^"']{3,}/i, urlPattern: /href=["'](https?:\/\/[^"']*linkedin\.com\/[^"']+)/i },
+        { source: "TripAdvisor", pattern: /href=["'][^"']*tripadvisor\.com\/[^"']{3,}/i, urlPattern: /href=["'](https?:\/\/[^"']*tripadvisor\.com\/[^"']+)/i },
+        { source: "Nextdoor",    pattern: /href=["'][^"']*nextdoor\.com\/[^"']{3,}/i, urlPattern: /href=["'](https?:\/\/[^"']*nextdoor\.com\/[^"']+)/i },
+        { source: "Google Maps", pattern: /(?:g\.page\/|maps\.google\.|goo\.gl\/maps|google\.com\/maps)/i, urlPattern: /href=["'](https?:\/\/[^"']*(?:g\.page|maps\.google|google\.com\/maps)[^"']*)/i },
+        { source: "Yelp",        pattern: /href=["'][^"']*yelp\.com\/biz\/[^"']{3,}/i, urlPattern: /href=["'](https?:\/\/[^"']*yelp\.com\/[^"']+)/i },
+        { source: "BBB",         pattern: /href=["'][^"']*bbb\.org\/[^"']{3,}/i, urlPattern: /href=["'](https?:\/\/[^"']*bbb\.org\/[^"']+)/i },
+        { source: "Angi",        pattern: /href=["'][^"']*angi\.com\/[^"']{3,}/i, urlPattern: /href=["'](https?:\/\/[^"']*angi\.com\/[^"']+)/i },
+        { source: "Thumbtack",   pattern: /href=["'][^"']*thumbtack\.com\/[^"']{3,}/i, urlPattern: /href=["'](https?:\/\/[^"']*thumbtack\.com\/[^"']+)/i },
+      ];
+      for (const sp of socialPatterns) {
+        if (sp.pattern.test(html)) {
+          const urlMatch = html.match(sp.urlPattern);
+          // Update otherMentions
+          const idx = businessIntelResults.otherMentions.findIndex(m => m.source === sp.source);
+          if (idx !== -1 && !businessIntelResults.otherMentions[idx].found) {
+            businessIntelResults.otherMentions[idx] = {
+              ...businessIntelResults.otherMentions[idx],
+              found: true,
+              url: urlMatch ? urlMatch[1] : null,
+              snippet: "Linked from website",
+            };
+          }
+          // Also update dedicated yelp/bbb if applicable
+          if (sp.source === "Yelp" && businessIntelResults.yelp && !businessIntelResults.yelp.found) {
+            businessIntelResults.yelp = { ...businessIntelResults.yelp, found: true, url: urlMatch ? urlMatch[1] : null };
+          }
+          if (sp.source === "BBB" && businessIntelResults.bbb && !businessIntelResults.bbb.found) {
+            businessIntelResults.bbb = { ...businessIntelResults.bbb, found: true, url: urlMatch ? urlMatch[1] : null };
+          }
+        }
+      }
+    }
+
     const biSection = businessIntelResults ? formatBusinessIntelForPrompt(businessIntelResults) : "";
 
     const fbContext = facebookDiscovery?.found ? `

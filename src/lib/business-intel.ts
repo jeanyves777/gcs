@@ -354,19 +354,18 @@ async function duckDuckGoSearch(query: string, timeoutMs = 15000): Promise<strin
   }
 }
 
-async function probePlatformPresence(businessName: string): Promise<WebMention[]> {
+async function probePlatformPresence(businessName: string, websiteHtml?: string): Promise<WebMention[]> {
   const platforms = [
-    { source: "Facebook",     domains: ["facebook.com"],     exclude: ["sharer", "login", "help", "groups", "watch", "events"] },
-    { source: "Instagram",    domains: ["instagram.com"],    exclude: ["accounts/login"] },
-    { source: "LinkedIn",     domains: ["linkedin.com"],     exclude: ["login", "signup", "jobs/"] },
-    { source: "TripAdvisor",  domains: ["tripadvisor.com"],  exclude: [] },
-    { source: "Nextdoor",     domains: ["nextdoor.com"],     exclude: [] },
-    { source: "Google Maps",  domains: ["google.com/maps", "g.page", "maps.google.com", "goo.gl/maps"], exclude: [] },
-    { source: "Yelp",         domains: ["yelp.com"],         exclude: ["search", "writeareview"] },
-    { source: "BBB",          domains: ["bbb.org"],          exclude: ["search"] },
-    { source: "Angi",         domains: ["angi.com"],         exclude: [] },
-    { source: "Thumbtack",    domains: ["thumbtack.com"],    exclude: [] },
-    { source: "Healthgrades", domains: ["healthgrades.com"], exclude: [] },
+    { source: "Facebook",     domains: ["facebook.com"],     exclude: ["sharer", "login", "help", "groups", "watch", "events"], hrefPattern: /href=["'][^"']*facebook\.com\/(?!sharer|login|help|groups|watch|events)[^"']{3,}/i },
+    { source: "Instagram",    domains: ["instagram.com"],    exclude: ["accounts/login"], hrefPattern: /href=["'][^"']*instagram\.com\/(?!accounts\/login)[^"']{3,}/i },
+    { source: "LinkedIn",     domains: ["linkedin.com"],     exclude: ["login", "signup", "jobs/"], hrefPattern: /href=["'][^"']*linkedin\.com\/(?!login|signup|jobs\/)[^"']{3,}/i },
+    { source: "TripAdvisor",  domains: ["tripadvisor.com"],  exclude: [], hrefPattern: /href=["'][^"']*tripadvisor\.com\/[^"']{3,}/i },
+    { source: "Nextdoor",     domains: ["nextdoor.com"],     exclude: [], hrefPattern: /href=["'][^"']*nextdoor\.com\/[^"']{3,}/i },
+    { source: "Google Maps",  domains: ["google.com/maps", "g.page", "maps.google.com", "goo.gl/maps"], exclude: [], hrefPattern: /(?:g\.page\/|maps\.google\.|goo\.gl\/maps|google\.com\/maps)/i },
+    { source: "Yelp",         domains: ["yelp.com"],         exclude: ["search", "writeareview"], hrefPattern: /href=["'][^"']*yelp\.com\/biz\/[^"']{3,}/i },
+    { source: "BBB",          domains: ["bbb.org"],          exclude: ["search"], hrefPattern: /href=["'][^"']*bbb\.org\/[^"']{3,}/i },
+    { source: "Angi",         domains: ["angi.com"],         exclude: [], hrefPattern: /href=["'][^"']*angi\.com\/[^"']{3,}/i },
+    { source: "Thumbtack",    domains: ["thumbtack.com"],    exclude: [], hrefPattern: /href=["'][^"']*thumbtack\.com\/[^"']{3,}/i },
   ];
 
   const results = new Map<string, WebMention>();
@@ -374,19 +373,34 @@ async function probePlatformPresence(businessName: string): Promise<WebMention[]
     results.set(p.source, { source: p.source, url: null, rating: null, reviewCount: null, found: false, snippet: null });
   }
 
-  // Helper to scan HTML for platform URLs
+  // ── PRIMARY SOURCE: Scan website HTML for social/platform links ──
+  // This is the most reliable source — the business's own website linking to their profiles.
+  if (websiteHtml) {
+    for (const p of platforms) {
+      if (results.get(p.source)?.found) continue;
+      if (p.hrefPattern.test(websiteHtml)) {
+        // Extract the actual URL
+        const urlMatch = websiteHtml.match(new RegExp(`href=["'](https?://[^"']*(?:${p.domains.map(d => d.replace(/\./g, "\\.")).join("|")})[^"']*)`, "i"));
+        results.set(p.source, {
+          ...results.get(p.source)!,
+          found: true,
+          url: urlMatch ? urlMatch[1] : null,
+          snippet: "Found on website",
+        });
+      }
+    }
+  }
+
+  // Helper to scan DuckDuckGo result HTML for platform URLs
   function scanForPlatforms(html: string) {
     const htmlLower = html.toLowerCase();
-    // Extract all links from the HTML
     const allLinks = [...html.matchAll(/href="(https?:\/\/[^"]+)"/gi)].map(m => m[1]);
-    // Also extract URLs that appear in text (DuckDuckGo shows URLs in result snippets)
     const textUrls = [...html.matchAll(/(https?:\/\/[^\s<"']+)/gi)].map(m => m[1]);
     const allUrls = [...new Set([...allLinks, ...textUrls])];
 
     for (const p of platforms) {
       if (results.get(p.source)?.found) continue;
       for (const domain of p.domains) {
-        // Check URLs for this domain
         const matchUrl = allUrls.find(u => {
           const lower = u.toLowerCase();
           if (!lower.includes(domain)) return false;
@@ -398,9 +412,8 @@ async function probePlatformPresence(businessName: string): Promise<WebMention[]
           results.set(p.source, { ...results.get(p.source)!, found: true, url: matchUrl });
           break;
         }
-        // Fallback: domain mentioned in text content (not just URLs)
+        // Fallback: domain mentioned in text near business name
         if (htmlLower.includes(domain) && !results.get(p.source)?.found) {
-          // Verify it's in a result context (near the business name or in a result snippet)
           const domainIdx = htmlLower.indexOf(domain);
           const nearbyText = htmlLower.slice(Math.max(0, domainIdx - 200), domainIdx + 200);
           if (nearbyText.includes(businessName.toLowerCase().split(" ")[0].toLowerCase())) {
@@ -412,18 +425,27 @@ async function probePlatformPresence(businessName: string): Promise<WebMention[]
     }
   }
 
-  // Run 4 parallel DuckDuckGo searches with KEYWORD-based queries (NOT site: operator)
-  const queries = [
-    `"${businessName}"`,                                           // Direct name — returns diverse results
-    `"${businessName}" reviews yelp facebook`,                     // Reviews + social
-    `"${businessName}" instagram linkedin tripadvisor`,            // Social + travel
-    `"${businessName}" bbb nextdoor angi`,                         // Directories
-  ];
+  // ── SECONDARY SOURCE: DuckDuckGo keyword searches ──
+  // Only search for platforms NOT already found via website HTML.
+  const stillMissing = platforms.filter(p => !results.get(p.source)?.found).map(p => p.source);
+  if (stillMissing.length > 0) {
+    // Run targeted searches with retries for reliability
+    const queries = [
+      `"${businessName}" site:facebook.com OR site:instagram.com OR site:linkedin.com`,
+      `"${businessName}" yelp bbb tripadvisor nextdoor`,
+    ];
 
-  await Promise.allSettled(queries.map(async (query) => {
-    const html = await duckDuckGoSearch(query);
-    if (html) scanForPlatforms(html);
-  }));
+    // Run each query with a retry on failure
+    await Promise.allSettled(queries.map(async (query) => {
+      let html = await duckDuckGoSearch(query);
+      if (!html) {
+        // Retry once after a short delay
+        await new Promise(r => setTimeout(r, 1500));
+        html = await duckDuckGoSearch(query);
+      }
+      if (html) scanForPlatforms(html);
+    }));
+  }
 
   return [...results.values()];
 }
@@ -786,7 +808,8 @@ ${fbSection}`;
 
 export async function runBusinessIntel(
   businessName: string,
-  websiteUrl: string
+  websiteUrl: string,
+  websiteHtml?: string
 ): Promise<BusinessIntelResults> {
   let domain = "";
   try {
@@ -800,7 +823,7 @@ export async function runBusinessIntel(
       searchGooglePlaces(businessName, websiteUrl),
       probeYelp(businessName),
       probeBBB(businessName),
-      probePlatformPresence(businessName),
+      probePlatformPresence(businessName, websiteHtml),
       fetchDomainRegistry(domain),
       (async (): Promise<IpGeoInfo | null> => {
         try {

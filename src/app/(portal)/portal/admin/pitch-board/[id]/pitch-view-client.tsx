@@ -99,23 +99,32 @@ type SecurityReport = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+function isBulletLine(t: string): boolean {
+  // Standard bullets: - item, • item, 1. item
+  if (/^[-•]\s+/.test(t) || /^\d+\.\s+/.test(t)) return true;
+  // Single asterisk bullet: * item (but NOT **bold**)
+  if (/^\*\s+/.test(t) && !/^\*\*/.test(t)) return true;
+  // Bold-start items (AI service recommendations): **Name** — detail
+  if (/^\*\*[^*]+\*\*/.test(t)) return true;
+  // Status markers: [FOUND], [MISSING], [PRESENT] — AI uses these for platform/security checks
+  if (/^\[(?:FOUND|MISSING|PRESENT)\]/i.test(t)) return true;
+  // Bullet with status marker: - [FOUND], - **[MISSING]**, etc.
+  if (/^[-•*]\s+\[(?:FOUND|MISSING|PRESENT)\]/i.test(t)) return true;
+  // Bold status markers: **[FOUND]**, **[MISSING]**
+  if (/^\*\*\[(?:FOUND|MISSING|PRESENT)\]/i.test(t)) return true;
+  return false;
+}
+
 function extractBullets(content: string): string[] {
   return content.split("\n")
-    .filter((l) => {
-      const t = l.trim();
-      // Standard bullets: - item, * item, • item, 1. item
-      if (/^[-•]\s+/.test(t) || /^\d+\.\s+/.test(t)) return true;
-      // Single asterisk bullet: * item (but NOT **bold**)
-      if (/^\*\s+/.test(t) && !/^\*\*/.test(t)) return true;
-      // Bold-start items (AI service recommendations): **Name** — detail
-      if (/^\*\*[^*]+\*\*/.test(t)) return true;
-      return false;
-    })
+    .filter((l) => isBulletLine(l.trim()))
     .map((l) => {
       const t = l.trim();
-      // Strip leading bullet markers but keep **bold** intact
-      if (/^\*\*/.test(t)) return t; // bold-start lines keep their formatting
-      return t.replace(/^[-•*\d.]+\s+/, "").trim();
+      // Keep **bold** and [STATUS] marker lines intact
+      if (/^\*\*/.test(t) || /^\[(?:FOUND|MISSING|PRESENT)\]/i.test(t)) return t;
+      // Strip leading bullet marker, then check if the remainder starts with a status marker
+      const stripped = t.replace(/^[-•*\d.]+\s+/, "").trim();
+      return stripped;
     })
     .filter(Boolean);
 }
@@ -123,17 +132,20 @@ function extractBullets(content: string): string[] {
 function extractParagraphs(content: string): string[] {
   return content.split(/\n\n+/).map((p) => p.trim()).filter((p) => {
     if (!p) return false;
-    // Only filter out paragraphs that are ACTUAL bullet lists (marker + space),
-    // not bold-starting lines like **Service Name** — detail
+    // Filter out paragraphs that are ACTUAL bullet lists
     const lines = p.split("\n");
     const allBullets = lines.every((l) => {
       const t = l.trim();
       if (!t) return true; // blank lines are OK
-      // Actual bullet: starts with -, •, or digit. followed by space
-      return /^[-•]\s/.test(t) || /^\d+\.\s/.test(t) || (/^\*\s/.test(t) && !/^\*\*/.test(t));
+      return isBulletLine(t);
     });
     return !allBullets;
   });
+}
+
+/** Strip [FOUND]/[MISSING]/[PRESENT] markers from display text */
+function stripMarkers(t: string): string {
+  return t.replace(/\*?\*?\[(?:FOUND|MISSING|PRESENT)\]\*?\*?\s*/gi, "").replace(/^[-•*]\s+/, "").trim();
 }
 
 function b(t: string): string {
@@ -262,9 +274,9 @@ function FootprintSection({ content, presenceScore }: { content: string; presenc
   const presColor = presenceScore > 65 ? "#16a34a" : presenceScore > 40 ? "#d97706" : "#dc2626";
   const presLabel = presenceScore > 65 ? "Strong Presence" : presenceScore > 40 ? "Moderate Presence" : "Weak Presence";
 
-  // Split bullets into positive/negative by keywords
-  const positive = bullets.filter(b => /strong|good|well|active|modern|professional|https|fast|secure|seo/i.test(b));
-  const concern = bullets.filter(b => /missing|lack|no |poor|slow|outdated|basic|limited|weak|without/i.test(b));
+  // Split bullets into positive/negative using [FOUND]/[MISSING] markers first, then keywords
+  const positive = bullets.filter(b => /\[FOUND\]|\[PRESENT\]/i.test(b) || (!/\[MISSING\]/i.test(b) && /strong|good|well|active|modern|professional|https|fast|secure|seo|found|present|enabled|configured/i.test(b)));
+  const concern = bullets.filter(b => !positive.includes(b) && (/\[MISSING\]/i.test(b) || /missing|lack|no |poor|slow|outdated|basic|limited|weak|without|not found|absent/i.test(b)));
   const neutral = bullets.filter(b => !positive.includes(b) && !concern.includes(b));
 
   return (
@@ -294,13 +306,13 @@ function FootprintSection({ content, presenceScore }: { content: string; presenc
           {positive.length > 0 && (
             <div className="rounded-xl p-4 space-y-2" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
               <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1" style={{ color: "#16a34a" }}><CheckCircle2 className="h-3.5 w-3.5" /> Strengths</p>
-              {positive.map((p, i) => <p key={i} className="text-xs leading-relaxed" style={{ color: "#166534" }} dangerouslySetInnerHTML={{ __html: b(p) }} />)}
+              {positive.map((p, i) => <p key={i} className="text-xs leading-relaxed" style={{ color: "#166534" }} dangerouslySetInnerHTML={{ __html: b(stripMarkers(p)) }} />)}
             </div>
           )}
           {concern.length > 0 && (
             <div className="rounded-xl p-4 space-y-2" style={{ background: "#fef2f2", border: "1px solid #fecaca" }}>
               <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1" style={{ color: "#dc2626" }}><AlertTriangle className="h-3.5 w-3.5" /> Gaps Identified</p>
-              {concern.map((p, i) => <p key={i} className="text-xs leading-relaxed" style={{ color: "#991b1b" }} dangerouslySetInnerHTML={{ __html: b(p) }} />)}
+              {concern.map((p, i) => <p key={i} className="text-xs leading-relaxed" style={{ color: "#991b1b" }} dangerouslySetInnerHTML={{ __html: b(stripMarkers(p)) }} />)}
             </div>
           )}
         </div>
@@ -564,6 +576,8 @@ function ThePitchSection({ content, businessName }: { content: string; businessN
   if (paras.length === 0 && content.trim()) {
     paras = [content.trim()];
   }
+  // Filter out horizontal rules (---) and empty-looking paragraphs
+  paras = paras.filter(p => !/^[-_*]{3,}\s*$/.test(p.trim()) && p.trim().length > 5);
 
   return (
     <div className="space-y-5">
@@ -1434,8 +1448,10 @@ function BusinessIntelCard({ bi }: { bi: BusinessIntelData }) {
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [showAllHours, setShowAllHours] = useState(false);
   const gbp = bi.google;
-  const found = bi.otherMentions.filter((m) => m.found);
-  const missing = bi.otherMentions.filter((m) => !m.found);
+  // Filter out Yelp and BBB from pills since they have dedicated cards above
+  const platformMentions = bi.otherMentions.filter((m) => m.source !== "Yelp" && m.source !== "BBB");
+  const found = platformMentions.filter((m) => m.found);
+  const missing = platformMentions.filter((m) => !m.found);
   const reviews = gbp?.recentReviews ?? [];
   const displayedReviews = showAllReviews ? reviews : reviews.slice(0, 2);
 
