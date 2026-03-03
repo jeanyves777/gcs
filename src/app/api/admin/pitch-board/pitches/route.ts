@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
-    const { businessName, websiteUrl, pitchText, securityScore, presenceScore, dealScore, painCount } =
+    const { businessName, websiteUrl, pitchText, securityScore, presenceScore, dealScore, painCount, pentestData } =
       await req.json();
 
     if (!businessName || !websiteUrl || !pitchText) {
@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
         presenceScore: presenceScore ?? 0,
         dealScore: dealScore ?? 0,
         painCount: painCount ?? 0,
+        pentestData: pentestData ? JSON.stringify(pentestData) : null,
         createdById: session.user.id,
       },
     });

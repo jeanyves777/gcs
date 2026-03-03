@@ -2,21 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { auth } from "@/lib/auth";
 import { isGCSStaff } from "@/lib/auth-utils";
+import { runPentest, formatPentestForPrompt } from "@/lib/pentest";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const PITCH_SYSTEM_PROMPT = `You are GCS's elite AI sales intelligence analyst. Global Computing Solutions (GCS) is a premier Managed IT & Software Solutions provider offering:
+const PITCH_SYSTEM_PROMPT = `You are GCS's elite AI sales intelligence analyst AND penetration testing expert. Global Computing Solutions (GCS) is a premier Managed IT & Software Solutions provider offering:
 
 - **Managed IT Services**: 24/7 monitoring, helpdesk (Tier 1–3), patch management, IT strategy & vCIO
-- **Cybersecurity**: Vulnerability assessments, endpoint protection (EDR), SIEM, compliance (SOC2, HIPAA, PCI-DSS, NIST)
+- **Cybersecurity**: Vulnerability assessments, endpoint protection (EDR), SIEM, compliance (SOC2, HIPAA, PCI-DSS, NIST), penetration testing
 - **Cloud Solutions**: Azure/AWS migration & management, cloud backup, disaster recovery (RTO/RPO), hybrid cloud
 - **Custom Software Development**: Web platforms, portals, ERP/CRM integrations, workflow automation, APIs
 - **AI Integration**: Custom AI tools, intelligent chatbots, document processing, predictive analytics, LLM workflows
 - **Enterprise Solutions**: Microsoft 365, infrastructure management, network design, vendor management
 
-You will receive business intelligence about a prospect INCLUDING their social media footprint. Generate a COMPELLING, SPECIFIC, DATA-DRIVEN sales pitch.
+You will receive business intelligence about a prospect INCLUDING their social media footprint AND penetration test results. Generate a COMPELLING, SPECIFIC, DATA-DRIVEN sales pitch.
 
-Structure your output with EXACTLY these 7 sections using ## headings:
+Structure your output with EXACTLY these 8 sections using ## headings:
 
 ## 🏢 Business Overview
 Summarize who this business is — industry, size signals, what they do, their customer base, and their apparent digital maturity level. Reference specific content from their website.
@@ -33,24 +34,42 @@ Identify specific gaps vs. what competitors in their space typically maintain.
 ## 🔒 Security Assessment
 Based on HTTP response headers and HTTPS posture, identify SPECIFIC security gaps. List each missing security header and explain the real risk it creates. Be technical but also explain business impact. Rate their overall security posture (Poor / Fair / Good / Excellent).
 
+## 🔐 Penetration Test Findings
+Based on the automated reconnaissance data provided, deliver a TECHNICAL SECURITY ANALYSIS:
+- List each open port found and the SPECIFIC risk it creates for this business
+- Assess the SSL/TLS certificate status and what it means for compliance/trust
+- Evaluate DNS security (SPF, DMARC) and the email spoofing/phishing risk
+- Report any exposed sensitive paths and the data breach implications
+- Identify discovered subdomains and what attack surface they represent
+- Provide an overall penetration test risk rating (Critical / High / Medium / Low)
+- Frame ALL findings as urgent business risks that require immediate action
+- Reference specific port numbers, IP addresses, and technical details from the scan data
+
 ## 💡 Pain Points & Opportunities
-Identify 4-6 specific pain points this business likely faces based on their industry, size, digital footprint, and social presence gaps. Connect each pain point to a real business risk or cost. Include at least one pain point related to their social/digital presence gaps. These should feel eerily accurate to the prospect.
+Identify 4-6 specific pain points this business likely faces based on their industry, size, digital footprint, social presence gaps, AND penetration test findings. Connect each pain point to a real business risk or cost. Include at least one pain point related to their social/digital presence gaps and one from pentest findings. These should feel eerily accurate to the prospect.
 
 ## 🎯 GCS Service Recommendations
-List 3-5 specific GCS services with WHY each is the perfect fit for this prospect. Include estimated impact (e.g., "reduce downtime risk by ~70%", "eliminate $X in compliance fines"). Be specific and confident.
+CRITICAL RULE: Each recommendation MUST reference a SPECIFIC finding from this prospect's website, pentest results, or social/security analysis. NEVER write generic recommendations.
+
+For each service (list 3-5), use EXACTLY this format:
+**[GCS Service Name]** — Because [specific finding/vulnerability/gap discovered] → [specific measurable outcome/ROI for this business]
+
+Example: "**GCS Cybersecurity — Penetration Testing & Hardening** — Because port 3389 (RDP) is open and internet-facing on [businessName]'s server → eliminate the #1 ransomware entry point and achieve compliance in 30 days"
+
+Be so specific that the prospect feels you already have access to their systems.
 
 ## 🚀 The Pitch
 Write an executive-ready 3-4 paragraph pitch that could be read verbatim on a sales call or sent as an email. Open with a hook referencing something specific about their business or digital presence. Show you understand their world. Position GCS as the obvious partner. End with a clear call to action.
 
 ## 💬 Deal Talking Points
-List 6-8 punchy, specific talking points the GCS sales team can use in conversation. Each should be one line, memorable, and tied to a specific finding about this business. Include at least one about their security gap, one about their social/digital presence, and one about competitive risk.
+List 6-8 punchy, specific talking points the GCS sales team can use in conversation. Each should be one line, memorable, and tied to a specific finding about this business. Include at least one about a pentest finding, one about their security header gaps, one about their social/digital presence, and one about competitive risk.
 
 RULES:
-- Be SPECIFIC — always reference actual findings from their website, headers, and social presence
+- Be SPECIFIC — always reference actual findings from website, headers, pentest results, and social presence
 - Never be generic — every line should feel written specifically for THIS business
-- Quantify wherever possible (downtime costs, breach statistics, efficiency gains)
+- Quantify wherever possible (downtime costs, breach statistics, efficiency gains, compliance fines)
 - Tone: confident expert consultant, not a pushy salesperson
-- The prospect should feel like you already understand their business deeply`;
+- The prospect should feel like you already understand their business deeply and have evidence`;
 
 function extractTextFromHtml(html: string): string {
   let text = html
@@ -128,7 +147,6 @@ function analyzeSocialPresence(html: string): string {
   const found  = socialPlatforms.filter(s => s.pattern.test(html)).map(s => s.name);
   const missing = socialPlatforms.filter(s => !s.pattern.test(html)).map(s => s.name);
 
-  // SEO & marketing signals
   const hasOG          = /property=["']og:/i.test(html);
   const hasTwitterCard = /name=["']twitter:/i.test(html);
   const hasSchema      = /"@type"/i.test(html) || /application\/ld\+json/i.test(html);
@@ -188,28 +206,42 @@ export async function POST(req: NextRequest) {
     let fetchError = "";
     const fetchStart = Date.now();
 
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 12000);
-      const res = await fetch(normalizedUrl, {
-        signal: controller.signal,
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; GCS-SalesBot/1.0; +https://itatgcs.com)",
-          "Accept": "text/html,application/xhtml+xml,*/*",
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-      });
-      clearTimeout(timeout);
-      const responseTime = Date.now() - fetchStart;
-      const html = await res.text();
+    // Run website fetch and pentest in PARALLEL
+    const [fetchResult, pentestResult] = await Promise.allSettled([
+      // Website fetch
+      (async () => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12000);
+        const res = await fetch(normalizedUrl, {
+          signal: controller.signal,
+          headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; GCS-SalesBot/1.0; +https://itatgcs.com)",
+            "Accept": "text/html,application/xhtml+xml,*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+          },
+        });
+        clearTimeout(timeout);
+        const responseTime = Date.now() - fetchStart;
+        const html = await res.text();
+        return { res, html, responseTime };
+      })(),
+      // Penetration test (runs fully in parallel)
+      runPentest(normalizedUrl),
+    ]);
+
+    if (fetchResult.status === "fulfilled") {
+      const { res, html, responseTime } = fetchResult.value;
       websiteText = extractTextFromHtml(html);
       securityAnalysis = analyzeSecurityHeaders(res.headers, normalizedUrl);
       securityAnalysis += `\nResponse Time: ${responseTime}ms${responseTime > 3000 ? " (SLOW — poor user experience)" : ""}`;
       socialAnalysis = analyzeSocialPresence(html);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Unknown error";
+    } else {
+      const msg = fetchResult.reason instanceof Error ? fetchResult.reason.message : "Unknown error";
       fetchError = `Could not fetch website (${msg}). Analyze based on business name and domain only.`;
     }
+
+    const pentestResults = pentestResult.status === "fulfilled" ? pentestResult.value : null;
+    const pentestSection = pentestResults ? formatPentestForPrompt(pentestResults) : "Penetration test unavailable for this target.";
 
     const userMessage = `
 PROSPECT BUSINESS INTELLIGENCE REPORT
@@ -222,13 +254,16 @@ ${fetchError ? `⚠️ Website Fetch Error: ${fetchError}` : ""}
 --- WEBSITE CONTENT (extracted text) ---
 ${websiteText || "Could not extract website content."}
 
---- SECURITY POSTURE ANALYSIS ---
+--- SECURITY POSTURE ANALYSIS (HTTP Headers) ---
 ${securityAnalysis || fetchError}
 
 ${socialAnalysis ? socialAnalysis : ""}
+
+--- AUTOMATED PENETRATION TEST ---
+${pentestSection}
 ======================================
 
-Generate the complete sales pitch for this prospect.`.trim();
+Generate the complete sales pitch and security intelligence report for this prospect.`.trim();
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -236,7 +271,7 @@ Generate the complete sales pitch for this prospect.`.trim();
         try {
           const response = await client.messages.stream({
             model: "claude-sonnet-4-6",
-            max_tokens: 4000,
+            max_tokens: 4500,
             system: PITCH_SYSTEM_PROMPT,
             messages: [{ role: "user", content: userMessage }],
           });
@@ -257,11 +292,17 @@ Generate the complete sales pitch for this prospect.`.trim();
       },
     });
 
+    // Encode pentest data in response header for the client to save
+    const pentestHeader = pentestResults
+      ? Buffer.from(JSON.stringify(pentestResults)).toString("base64")
+      : "";
+
     return new NextResponse(stream, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-cache",
         "X-Content-Type-Options": "nosniff",
+        ...(pentestHeader ? { "X-Pentest-Data": pentestHeader } : {}),
       },
     });
   } catch {

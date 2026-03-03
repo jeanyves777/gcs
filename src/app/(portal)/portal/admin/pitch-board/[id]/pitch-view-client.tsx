@@ -8,16 +8,32 @@ import {
   ArrowLeft, Copy, Check, Mail, Trash2, Loader2, Globe, Calendar, User2,
   Building2, Shield, Lightbulb, Target, Rocket, MessageSquare,
   ChevronDown, ChevronUp, X, Send, Server, Cloud, Code2, Sparkles, AlertTriangle,
-  TrendingUp, CheckCircle2, Info, Quote, Share2,
+  TrendingUp, CheckCircle2, Info, Quote, Share2, Lock, Wifi, Database, Terminal,
+  Globe2, ShieldAlert, ShieldCheck, Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type PortResult = { port: number; service: string; open: boolean; risk: "critical" | "high" | "medium" | "info" };
+type SslInfo    = { valid: boolean; grade: "A" | "B" | "C" | "F"; expiryDate: string | null; daysUntilExpiry: number | null; issuer: string | null; selfSigned: boolean; tlsVersion: string | null; subjectCN: string | null; sans: string[] };
+type DnsInfo    = { ipAddress: string | null; hasSpf: boolean; spfRecord: string | null; hasDmarc: boolean; dmarcPolicy: string | null; mxRecords: string[]; nameservers: string[] };
+type PathProbe  = { path: string; statusCode: number | null; exposed: boolean };
+type SubResult  = { subdomain: string; fqdn: string; resolves: boolean; ip: string | null };
+type PentestResults = {
+  domain: string; scannedAt: string; riskScore: number;
+  ports: PortResult[]; ssl: SslInfo | null; dns: DnsInfo;
+  cookies: { name: string; hasHttpOnly: boolean; hasSecure: boolean; sameSite: string | null }[];
+  httpMethods: string[]; corsWildcard: boolean; hasSecurityTxt: boolean; httpToHttpsRedirect: boolean;
+  paths: PathProbe[]; subdomains: SubResult[];
+  criticalFindings: string[]; highFindings: string[];
+};
+
 type Pitch = {
   id: string; businessName: string; websiteUrl: string; pitchText: string;
   securityScore: number; presenceScore: number; dealScore: number; painCount: number;
+  pentestData?: string | null;
   createdAt: Date; createdBy: { name: string | null; email: string };
 };
 type Section = { heading: string; content: string };
@@ -353,39 +369,75 @@ function ServicesSection({ content }: { content: string }) {
         <p key={i} className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(p.replace(/\n/g, " ")) }} />
       ))}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3">
         {bullets.map((service, i) => {
-          // Extract service name (before colon or em dash or first comma)
-          const namePart = service.split(/[:—–,]/)[0].trim();
+          // Format: "**Service Name** — Because [finding] → [outcome]"
+          // Or: "Service Name — detail"
+          const cleanService = service.replace(/\*\*/g, "").trim();
+          // Extract service name (before em dash, colon, or " — ")
+          const dashIdx = cleanService.search(/\s[—–]\s|:\s/);
+          const namePart = dashIdx > 0 ? cleanService.slice(0, dashIdx).trim() : cleanService.split(/[,]/)[0].trim();
           const { icon: Icon, color, bg } = getServiceStyle(namePart);
-          const detail = service.slice(namePart.length).replace(/^[:—–,\s]+/, "").trim();
-          // Match % or number in text
+          const detail = dashIdx > 0 ? cleanService.slice(dashIdx).replace(/^[\s—–:\s]+/, "").trim() : "";
+
+          // Split on " → " to get "Because [finding]" and "[outcome]"
+          const [findingPart, outcomePart] = detail.split(/\s*→\s*/);
           const percentMatch = service.match(/(\d+)%/);
+          const dollarMatch = service.match(/\$[\d,]+/);
 
           return (
             <div key={i} className="rounded-xl p-4 space-y-3" style={{ background: bg, border: `1px solid ${color}30` }}>
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: color + "20" }}>
-                  <Icon className="h-4.5 w-4.5" style={{ color }} />
+              {/* Service name header */}
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: color + "20" }}>
+                  <Icon className="h-5 w-5" style={{ color }} />
                 </div>
-                <div>
-                  <p className="font-bold text-sm" style={{ color }}>{namePart}</p>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    <CheckCircle2 className="h-3 w-3" style={{ color }} />
-                    <p className="text-[10px] font-semibold" style={{ color }}>Recommended for {content.slice(0, 20).split(" ")[0]}</p>
+                <div className="flex-1">
+                  <p className="font-black text-sm" style={{ color }}>{namePart}</p>
+                  {/* Impact badges */}
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {percentMatch && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: color + "20", color }}>
+                        ~{percentMatch[1]}% impact
+                      </span>
+                    )}
+                    {dollarMatch && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: color + "20", color }}>
+                        {dollarMatch[0]}
+                      </span>
+                    )}
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: color + "20", color }}>
+                      #{i + 1} priority
+                    </span>
                   </div>
                 </div>
               </div>
-              {detail && <p className="text-xs leading-relaxed" style={{ color: "#374151" }} dangerouslySetInnerHTML={{ __html: b(detail) }} />}
+
+              {/* Finding trigger (why this service) */}
+              {findingPart && (
+                <div className="rounded-lg px-3 py-2" style={{ background: color + "10", borderLeft: `3px solid ${color}` }}>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: color + "cc" }}>Finding Trigger</p>
+                  <p className="text-xs leading-relaxed" style={{ color: "#374151" }} dangerouslySetInnerHTML={{ __html: b(findingPart.replace(/^because\s*/i, "")) }} />
+                </div>
+              )}
+
+              {/* Outcome */}
+              {outcomePart && (
+                <div className="flex items-start gap-2">
+                  <TrendingUp className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" style={{ color }} />
+                  <p className="text-xs leading-relaxed font-medium" style={{ color: "#166534" }} dangerouslySetInnerHTML={{ __html: b(outcomePart) }} />
+                </div>
+              )}
+
+              {/* Fallback detail (if no arrow format) */}
+              {!findingPart && detail && (
+                <p className="text-xs leading-relaxed" style={{ color: "#374151" }} dangerouslySetInnerHTML={{ __html: b(detail) }} />
+              )}
+
+              {/* Impact bar */}
               {percentMatch && (
-                <div>
-                  <div className="flex justify-between mb-1">
-                    <span className="text-[10px]" style={{ color }}>Potential Impact</span>
-                    <span className="text-[10px] font-bold" style={{ color }}>{percentMatch[1]}%</span>
-                  </div>
-                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: color + "20" }}>
-                    <div className="h-full rounded-full" style={{ width: `${Math.min(Number(percentMatch[1]), 100)}%`, background: color }} />
-                  </div>
+                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: color + "20" }}>
+                  <div className="h-full rounded-full" style={{ width: `${Math.min(Number(percentMatch[1]), 100)}%`, background: color }} />
                 </div>
               )}
             </div>
@@ -487,17 +539,18 @@ function TalkingPointsSection({ content }: { content: string }) {
 // ─── Smart Section Renderer ───────────────────────────────────────────────────
 
 function SmartSectionCard({
-  section, index, pitch,
+  section, index, pitch, pentestResults,
 }: {
-  section: Section; index: number; pitch: Pitch;
+  section: Section; index: number; pitch: Pitch; pentestResults: PentestResults | null;
 }) {
   const [expanded, setExpanded] = useState(true);
   const lower = section.heading.toLowerCase();
 
-  const accent = ["#1565C0","#7c3aed","#dc2626","#d97706","#059669","#0891b2","#db2777"][index % 7];
+  const accent = ["#1565C0","#7c3aed","#dc2626","#d97706","#059669","#0891b2","#db2777","#0f766e"][index % 8];
   const Icon = lower.includes("business") ? Building2
     : lower.includes("digital") ? Globe
-    : lower.includes("security") ? Shield
+    : lower.includes("security") && !lower.includes("penetration") ? Shield
+    : lower.includes("penetration") || lower.includes("pentest") ? ShieldAlert
     : lower.includes("pain") ? Lightbulb
     : lower.includes("gcs") || lower.includes("service") ? Target
     : lower.includes("pitch") ? Rocket
@@ -506,7 +559,12 @@ function SmartSectionCard({
   const renderBody = () => {
     if (lower.includes("business")) return <OverviewSection content={section.content} />;
     if (lower.includes("digital")) return <FootprintSection content={section.content} presenceScore={pitch.presenceScore} />;
-    if (lower.includes("security")) return <SecuritySection content={section.content} securityScore={pitch.securityScore} />;
+    if (lower.includes("security") && !lower.includes("penetration")) return <SecuritySection content={section.content} securityScore={pitch.securityScore} />;
+    if (lower.includes("penetration") || lower.includes("pentest")) {
+      return pentestResults
+        ? <PentestCard pentest={pentestResults} />
+        : <DefaultSection content={section.content} />;
+    }
     if (lower.includes("pain")) return <PainPointsSection content={section.content} />;
     if (lower.includes("gcs") || lower.includes("service") || lower.includes("recommend")) return <ServicesSection content={section.content} />;
     if (lower.includes("pitch")) return <ThePitchSection content={section.content} businessName={pitch.businessName} />;
@@ -528,9 +586,10 @@ function SmartSectionCard({
             <p className="text-[10px] mt-0.5" style={{ color: "var(--text-muted)" }}>
               {lower.includes("business") ? "Company profile & market position" :
                lower.includes("digital") ? "Web presence & technology assessment" :
+               lower.includes("penetration") || lower.includes("pentest") ? "Automated port scan, SSL, DNS & path reconnaissance" :
                lower.includes("security") ? "Vulnerability analysis & risk score" :
                lower.includes("pain") ? "Identified business challenges" :
-               lower.includes("gcs") || lower.includes("service") ? "Matched GCS solutions" :
+               lower.includes("gcs") || lower.includes("service") ? "AI-tailored GCS solutions based on findings" :
                lower.includes("pitch") ? "Executive-ready sales pitch" :
                "Conversation starters for your sales team"}
             </p>
@@ -565,6 +624,256 @@ function DefaultSection({ content }: { content: string }) {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// ─── Section: Pentest Findings ────────────────────────────────────────────────
+
+const PORT_RISK_COLORS: Record<string, string> = {
+  critical: "#dc2626",
+  high:     "#f97316",
+  medium:   "#d97706",
+  info:     "#0891b2",
+};
+
+const SSL_GRADE_COLORS: Record<string, string> = { A: "#16a34a", B: "#0891b2", C: "#d97706", F: "#dc2626" };
+
+function PentestCard({ pentest }: { pentest: PentestResults }) {
+  const riskColor   = pentest.riskScore > 60 ? "#dc2626" : pentest.riskScore > 30 ? "#f97316" : "#16a34a";
+  const riskLabel   = pentest.riskScore > 60 ? "Critical Risk" : pentest.riskScore > 30 ? "High Risk" : pentest.riskScore > 15 ? "Medium Risk" : "Low Risk";
+  const openPorts   = pentest.ports.filter((p) => p.open);
+  const closedPorts = pentest.ports.filter((p) => !p.open);
+  const exposedPaths = pentest.paths.filter((p) => p.exposed);
+  const blockedPaths = pentest.paths.filter((p) => p.statusCode === 403);
+  const activeSubdomains = pentest.subdomains.filter((s) => s.resolves);
+
+  const sslGrade = pentest.ssl?.grade ?? null;
+  const sslColor = sslGrade ? SSL_GRADE_COLORS[sslGrade] : "#9ca3af";
+
+  return (
+    <div className="space-y-5">
+      {/* Header row: risk score + critical count */}
+      <div className="rounded-xl p-4 flex items-center gap-4" style={{ background: riskColor + "10", border: `1px solid ${riskColor}30` }}>
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: riskColor + "20" }}>
+          <ShieldAlert className="h-8 w-8" style={{ color: riskColor }} />
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <p className="font-black text-lg" style={{ color: riskColor }}>{riskLabel}</p>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: riskColor + "20", color: riskColor }}>
+              {pentest.riskScore}/100
+            </span>
+          </div>
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {pentest.criticalFindings.length} critical · {pentest.highFindings.length} high · {openPorts.length} open ports · scanned {new Date(pentest.scannedAt).toLocaleDateString()}
+          </p>
+          <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background: "var(--bg-tertiary)" }}>
+            <div className="h-full rounded-full" style={{ width: `${pentest.riskScore}%`, background: `linear-gradient(90deg, ${riskColor}80, ${riskColor})` }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Critical findings */}
+      {pentest.criticalFindings.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#dc2626" }}>Critical Findings</p>
+          {pentest.criticalFindings.map((f, i) => (
+            <div key={i} className="flex items-start gap-3 rounded-xl p-3" style={{ background: "#fef2f2", border: "1px solid #fecaca" }}>
+              <div className="w-5 h-5 rounded-full bg-red-600 flex items-center justify-center flex-shrink-0 mt-0.5" style={{ minWidth: 20 }}>
+                <span className="text-white font-bold" style={{ fontSize: 9 }}>!</span>
+              </div>
+              <p className="text-xs leading-relaxed" style={{ color: "#991b1b" }}>{f}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* High findings */}
+      {pentest.highFindings.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#f97316" }}>High Severity Findings</p>
+          {pentest.highFindings.map((f, i) => (
+            <div key={i} className="flex items-start gap-3 rounded-xl p-3" style={{ background: "#fff7ed", border: "1px solid #fed7aa" }}>
+              <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" style={{ color: "#f97316" }} />
+              <p className="text-xs leading-relaxed" style={{ color: "#92400e" }}>{f}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Port scan results */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Port Scan</p>
+          <span className="text-[10px] font-semibold" style={{ color: "var(--text-muted)" }}>
+            {openPorts.length} open / {pentest.ports.length} scanned
+          </span>
+        </div>
+        {openPorts.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {openPorts.map((p) => (
+              <span key={p.port} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold"
+                style={{ background: PORT_RISK_COLORS[p.risk] + "15", color: PORT_RISK_COLORS[p.risk], border: `1px solid ${PORT_RISK_COLORS[p.risk]}40` }}>
+                <span className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: PORT_RISK_COLORS[p.risk] }} />
+                {p.port} {p.service}
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-1.5">
+          {closedPorts.slice(0, 12).map((p) => (
+            <span key={p.port} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium"
+              style={{ background: "var(--bg-secondary)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
+              ✅ {p.port}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* SSL + DNS in 2-col grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* SSL Card */}
+        <div className="rounded-xl p-4 space-y-2" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+          <div className="flex items-center gap-2">
+            <Lock className="h-4 w-4" style={{ color: sslColor }} />
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>SSL/TLS Certificate</p>
+          </div>
+          {pentest.ssl ? (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-black px-2 py-0.5 rounded" style={{ color: sslColor, background: sslColor + "15" }}>
+                  Grade {pentest.ssl.grade}
+                </span>
+                <span className="text-xs" style={{ color: pentest.ssl.valid ? "#16a34a" : "#dc2626" }}>
+                  {pentest.ssl.valid ? "✅ Valid" : "❌ Invalid"}
+                </span>
+              </div>
+              {pentest.ssl.daysUntilExpiry !== null && (
+                <p className="text-xs" style={{ color: pentest.ssl.daysUntilExpiry < 14 ? "#dc2626" : pentest.ssl.daysUntilExpiry < 30 ? "#f97316" : "var(--text-secondary)" }}>
+                  {pentest.ssl.daysUntilExpiry < 0 ? "⚠️ EXPIRED" : `Expires in ${pentest.ssl.daysUntilExpiry} days`}
+                </p>
+              )}
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>TLS: {pentest.ssl.tlsVersion ?? "Unknown"}</p>
+              {pentest.ssl.selfSigned && <p className="text-xs font-semibold" style={{ color: "#dc2626" }}>⚠️ Self-signed certificate</p>}
+              {pentest.ssl.issuer && <p className="text-xs" style={{ color: "var(--text-muted)" }}>Issuer: {pentest.ssl.issuer}</p>}
+            </div>
+          ) : (
+            <p className="text-xs" style={{ color: "var(--text-muted)" }}>SSL analysis unavailable</p>
+          )}
+        </div>
+
+        {/* DNS Security */}
+        <div className="rounded-xl p-4 space-y-2" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+          <div className="flex items-center gap-2">
+            <Database className="h-4 w-4" style={{ color: "var(--brand-primary)" }} />
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>DNS Security</p>
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              {pentest.dns.hasSpf
+                ? <ShieldCheck className="h-3.5 w-3.5 text-green-600" />
+                : <ShieldAlert className="h-3.5 w-3.5 text-red-600" />}
+              <span className="text-xs" style={{ color: pentest.dns.hasSpf ? "#16a34a" : "#dc2626" }}>
+                SPF: {pentest.dns.hasSpf ? "Configured" : "MISSING — spoofing risk"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {pentest.dns.hasDmarc
+                ? <ShieldCheck className="h-3.5 w-3.5 text-green-600" />
+                : <ShieldAlert className="h-3.5 w-3.5 text-red-600" />}
+              <span className="text-xs" style={{ color: pentest.dns.hasDmarc ? "#16a34a" : "#dc2626" }}>
+                DMARC: {pentest.dns.hasDmarc ? `policy=${pentest.dns.dmarcPolicy ?? "set"}` : "MISSING — phishing risk"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {pentest.httpToHttpsRedirect
+                ? <ShieldCheck className="h-3.5 w-3.5 text-green-600" />
+                : <ShieldAlert className="h-3.5 w-3.5 text-orange-500" />}
+              <span className="text-xs" style={{ color: pentest.httpToHttpsRedirect ? "#16a34a" : "#f97316" }}>
+                HTTP→HTTPS: {pentest.httpToHttpsRedirect ? "Redirected" : "No redirect"}
+              </span>
+            </div>
+            {pentest.dns.ipAddress && (
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>IP: {pentest.dns.ipAddress}</p>
+            )}
+            {pentest.dns.mxRecords.length > 0 && (
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>MX: {pentest.dns.mxRecords[0]}</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Sensitive paths */}
+      {(exposedPaths.length > 0 || blockedPaths.length > 0) && (
+        <div className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Sensitive Path Probe</p>
+          <div className="flex flex-wrap gap-1.5">
+            {exposedPaths.map((p) => (
+              <span key={p.path} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold"
+                style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca" }}>
+                🔴 {p.path} <span style={{ opacity: 0.7 }}>({p.statusCode})</span>
+              </span>
+            ))}
+            {blockedPaths.map((p) => (
+              <span key={p.path} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold"
+                style={{ background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a" }}>
+                🟡 {p.path} <span style={{ opacity: 0.7 }}>(403)</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Subdomains found */}
+      {activeSubdomains.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+            Active Subdomains ({activeSubdomains.length} discovered)
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {activeSubdomains.map((s) => (
+              <span key={s.fqdn} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium"
+                style={{ background: "#eff6ff", color: "#1565C0", border: "1px solid #bfdbfe" }}>
+                <Globe2 className="h-3 w-3" />
+                {s.fqdn}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Cookie security */}
+      {pentest.cookies.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Cookie Security</p>
+          <div className="space-y-1">
+            {pentest.cookies.slice(0, 5).map((c, i) => (
+              <div key={i} className="flex items-center gap-3 text-xs" style={{ color: "var(--text-secondary)" }}>
+                <span className="font-mono font-semibold" style={{ color: "var(--text-primary)", minWidth: 120 }}>{c.name}</span>
+                <span style={{ color: c.hasHttpOnly ? "#16a34a" : "#dc2626" }}>{c.hasHttpOnly ? "✅" : "❌"} HttpOnly</span>
+                <span style={{ color: c.hasSecure ? "#16a34a" : "#dc2626" }}>{c.hasSecure ? "✅" : "❌"} Secure</span>
+                <span style={{ color: "var(--text-muted)" }}>SameSite: {c.sameSite ?? "missing"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Scan metadata */}
+      <div className="flex flex-wrap gap-3 pt-2 border-t" style={{ borderColor: "var(--border)" }}>
+        {[
+          { icon: Wifi, label: `${openPorts.length} open ports`, color: openPorts.length > 0 ? "#dc2626" : "#16a34a" },
+          { icon: Lock, label: `SSL ${pentest.ssl?.grade ?? "N/A"}`, color: sslColor },
+          { icon: Search, label: `${activeSubdomains.length} subdomains`, color: "#0891b2" },
+          { icon: Terminal, label: pentest.corsWildcard ? "CORS *" : "CORS ok", color: pentest.corsWildcard ? "#f97316" : "#16a34a" },
+        ].map(({ icon: Icon, label, color }) => (
+          <div key={label} className="flex items-center gap-1.5">
+            <Icon className="h-3.5 w-3.5" style={{ color }} />
+            <span className="text-xs font-semibold" style={{ color }}>{label}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -664,6 +973,12 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
 
   const sections = parseSections(pitch.pitchText);
   const headers = parseSecurityHeaders(pitch.pitchText);
+
+  // Parse stored pentest JSON
+  const pentestResults: PentestResults | null = (() => {
+    if (!pitch.pentestData) return null;
+    try { return JSON.parse(pitch.pentestData) as PentestResults; } catch { return null; }
+  })();
   const secRisk = Math.max(0, 100 - pitch.securityScore);
   const riskColor = secRisk > 60 ? "#dc2626" : secRisk > 30 ? "#d97706" : "#16a34a";
   const dealColor = pitch.dealScore >= 80 ? "#16a34a" : pitch.dealScore >= 60 ? "#0891b2" : pitch.dealScore >= 40 ? "#d97706" : "#6b7280";
@@ -858,11 +1173,11 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
       {/* Pitch sections */}
       <div>
         <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "var(--text-muted)" }}>
-          Full Intelligence Report — {sections.length} sections
+          Full Intelligence Report — {sections.length} sections {pentestResults ? `· Pentest Risk: ${pentestResults.riskScore}/100` : ""}
         </p>
         <div className="space-y-3">
           {sections.map((section, i) => (
-            <SmartSectionCard key={i} section={section} index={i} pitch={pitch} />
+            <SmartSectionCard key={i} section={section} index={i} pitch={pitch} pentestResults={pentestResults} />
           ))}
         </div>
       </div>

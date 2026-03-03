@@ -13,6 +13,7 @@ const PHASES: Phase[] = [
   { label: "Connecting to business website...", icon: "🔍" },
   { label: "Analyzing digital footprint...", icon: "📊" },
   { label: "Running security assessment...", icon: "🔒" },
+  { label: "Running penetration scan...", icon: "🛡️" },
   { label: "Identifying opportunities...", icon: "💡" },
   { label: "Crafting your pitch...", icon: "🎯" },
 ];
@@ -115,6 +116,13 @@ export function NewPitchClient() {
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
       if (!res.body) throw new Error("No stream");
 
+      // Extract pentest data from response header before reading body
+      const pentestHeader = res.headers.get("X-Pentest-Data");
+      let pentestData: unknown = undefined;
+      if (pentestHeader) {
+        try { pentestData = JSON.parse(atob(pentestHeader)); } catch { /* ignore */ }
+      }
+
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let accumulated = "";
@@ -142,6 +150,7 @@ export function NewPitchClient() {
           websiteUrl: websiteUrl.trim(),
           pitchText: accumulated,
           ...scores,
+          pentestData,
         }),
       });
       if (!saveRes.ok) throw new Error("Failed to save pitch");
@@ -278,7 +287,7 @@ export function NewPitchClient() {
           {sections.length > 0 && (
             <div className="pt-2 border-t" style={{ borderColor: "var(--border)" }}>
               <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-                ✨ {sections.length} of 7 sections ready — redirecting when complete...
+                ✨ {sections.length} of 8 sections ready — redirecting when complete...
               </p>
             </div>
           )}
