@@ -8,17 +8,21 @@ import { generatePitchPDF } from "@/lib/pitch-pdf";
 // ─── Parsers ──────────────────────────────────────────────────────────────────
 
 function countSecurityFailures(pitchText: string): number {
-  const match = pitchText.match(/## 🔒 Security Assessment([\s\S]*?)(?=\n##|$)/);
-  return match ? (match[1].match(/❌/g) ?? []).length : 0;
+  const match = pitchText.match(/##\s*(?:🔒\s*)?Security Assessment([\s\S]*?)(?=\n##|$)/);
+  if (!match) return 0;
+  const xCount = (match[1].match(/❌/g) ?? []).length;
+  const missingCount = (match[1].match(/\[MISSING\]/gi) ?? []).length;
+  return xCount + missingCount;
 }
 
 function countPainPoints(pitchText: string): number {
-  const match = pitchText.match(/## 💡 Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
-  return match ? (match[1].match(/^[-•*]\s+|^\d+\.\s+/gm) ?? []).length : 0;
+  const match = pitchText.match(/##\s*(?:💡\s*)?Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
+  if (!match) return 0;
+  return (match[1].match(/^[-•*]\s+|^\d+\.\s+|^\*\*[^*]+\*\*/gm) ?? []).length;
 }
 
 function extractIndustry(pitchText: string): string {
-  const match = pitchText.match(/## 🏢 Business Overview([\s\S]*?)(?=\n##|$)/);
+  const match = pitchText.match(/##\s*(?:🏢\s*)?Business Overview([\s\S]*?)(?=\n##|$)/);
   if (!match) return "your sector";
   const t = match[1].toLowerCase();
   const industries: [string, string][] = [
@@ -35,7 +39,7 @@ function extractIndustry(pitchText: string): string {
 }
 
 function securityCategories(pitchText: string): string[] {
-  const match = pitchText.match(/## 🔒 Security Assessment([\s\S]*?)(?=\n##|$)/);
+  const match = pitchText.match(/##\s*(?:🔒\s*)?Security Assessment([\s\S]*?)(?=\n##|$)/);
   if (!match) return [];
   const t = match[1].toLowerCase();
   const cats: string[] = [];
@@ -49,7 +53,7 @@ function securityCategories(pitchText: string): string[] {
 }
 
 function gapCategories(pitchText: string): string[] {
-  const match = pitchText.match(/## 💡 Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
+  const match = pitchText.match(/##\s*(?:💡\s*)?Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
   if (!match) return [];
   const t = match[1].toLowerCase();
   const cats: string[] = [];
@@ -81,8 +85,8 @@ function halfGaugeSvg(score: number, color: string): string {
   return `<svg width="110" height="75" viewBox="0 0 120 75" xmlns="http://www.w3.org/2000/svg">
   <path d="M 15,60 A 45,45 0 0,0 105,60" fill="none" stroke="#e5e7eb" stroke-width="9" stroke-linecap="round"/>
   ${fillPath}
-  <text x="60" y="56" text-anchor="middle" font-size="22" font-weight="800" fill="${color}" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">${score}</text>
-  <text x="60" y="70" text-anchor="middle" font-size="10" fill="#9ca3af" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">/100</text>
+  <text x="60" y="56" text-anchor="middle" font-size="26" font-weight="900" fill="${color}" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">${score}</text>
+  <text x="60" y="72" text-anchor="middle" font-size="11" fill="#d1d5db" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">/100</text>
 </svg>`;
 }
 
@@ -321,11 +325,11 @@ function buildEmail(
 
   <!-- ── HEADER ──────────────────────────────────────────────────── -->
   <tr>
-    <td bgcolor="#1565C0" style="background:linear-gradient(135deg,#1565C0 0%,#5e35b1 100%);padding:30px 40px 26px;">
-      <img src="https://www.itatgcs.com/logo.png" alt="GCS" height="30" style="filter:brightness(0) invert(1);display:block;margin-bottom:16px;" border="0"/>
-      <p style="margin:0 0 4px;color:rgba(255,255,255,0.6);font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;font-family:inherit;">GCS Technology Consulting</p>
-      <h1 style="margin:0 0 6px;color:#ffffff;font-size:21px;font-weight:800;line-height:1.3;font-family:inherit;">We reviewed ${businessName}&rsquo;s technology.</h1>
-      <p style="margin:0;color:rgba(255,255,255,0.7);font-size:14px;line-height:1.55;font-family:inherit;">Here&rsquo;s a snapshot of what our team found.</p>
+    <td style="background:#ffffff;padding:32px 40px 24px;text-align:center;border-bottom:1px solid #E5E7EB;">
+      <img src="https://www.itatgcs.com/logo.png" alt="GCS" height="36" style="display:inline-block;margin-bottom:12px;" border="0"/>
+      <p style="margin:0 0 6px;color:#9CA3AF;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;font-family:inherit;">GCS Technology Consulting</p>
+      <h1 style="margin:0 0 6px;color:#111827;font-size:21px;font-weight:800;line-height:1.3;font-family:inherit;">We reviewed ${businessName}&rsquo;s technology.</h1>
+      <p style="margin:0;color:#6B7280;font-size:14px;line-height:1.55;font-family:inherit;">Here&rsquo;s a snapshot of what our team found.</p>
       ${infraChips ? `<p style="margin:12px 0 0;font-family:inherit;">${infraChips}</p>` : ""}
     </td>
   </tr>
@@ -340,8 +344,8 @@ function buildEmail(
             <table cellpadding="0" cellspacing="0" border="0" style="background:rgba(255,255,255,0.06);border-radius:12px;overflow:hidden;" width="100%">
               <tr><td align="center" style="padding:16px 8px 8px;">
                 ${halfGaugeSvg(secRisk, riskColor)}
-                <p style="margin:4px 0 2px;font-size:12px;font-weight:800;color:#ffffff;font-family:inherit;">Security Risk</p>
-                <p style="margin:0 0 12px;font-size:10px;font-weight:700;color:${riskColor};text-transform:uppercase;letter-spacing:0.08em;font-family:inherit;">${riskLabel}</p>
+                <p style="margin:6px 0 2px;font-size:13px;font-weight:800;color:#ffffff;font-family:inherit;">Security Risk</p>
+                <p style="margin:0 0 12px;font-size:11px;font-weight:800;color:${riskColor};text-transform:uppercase;letter-spacing:0.08em;font-family:inherit;">${riskLabel}</p>
               </td></tr>
             </table>
           </td>
@@ -349,8 +353,8 @@ function buildEmail(
             <table cellpadding="0" cellspacing="0" border="0" style="background:rgba(255,255,255,0.06);border-radius:12px;overflow:hidden;" width="100%">
               <tr><td align="center" style="padding:16px 8px 8px;">
                 ${halfGaugeSvg(presenceScore, "#38bdf8")}
-                <p style="margin:4px 0 2px;font-size:12px;font-weight:800;color:#ffffff;font-family:inherit;">Online Presence</p>
-                <p style="margin:0 0 12px;font-size:10px;font-weight:700;color:#38bdf8;text-transform:uppercase;letter-spacing:0.08em;font-family:inherit;">${presenceScore > 65 ? "Strong" : presenceScore > 40 ? "Growing" : "Weak"}</p>
+                <p style="margin:6px 0 2px;font-size:13px;font-weight:800;color:#ffffff;font-family:inherit;">Online Presence</p>
+                <p style="margin:0 0 12px;font-size:11px;font-weight:800;color:#38bdf8;text-transform:uppercase;letter-spacing:0.08em;font-family:inherit;">${presenceScore > 65 ? "Strong" : presenceScore > 40 ? "Growing" : "Weak"}</p>
               </td></tr>
             </table>
           </td>
@@ -358,8 +362,8 @@ function buildEmail(
             <table cellpadding="0" cellspacing="0" border="0" style="background:rgba(255,255,255,0.06);border-radius:12px;overflow:hidden;" width="100%">
               <tr><td align="center" style="padding:16px 8px 8px;">
                 ${halfGaugeSvg(dealScore, "#a78bfa")}
-                <p style="margin:4px 0 2px;font-size:12px;font-weight:800;color:#ffffff;font-family:inherit;">Opportunity Score</p>
-                <p style="margin:0 0 12px;font-size:10px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:0.08em;font-family:inherit;">${dealLabel.replace(" Opportunity", "").replace(" Potential", "")}</p>
+                <p style="margin:6px 0 2px;font-size:13px;font-weight:800;color:#ffffff;font-family:inherit;">Opportunity Score</p>
+                <p style="margin:0 0 12px;font-size:11px;font-weight:800;color:#a78bfa;text-transform:uppercase;letter-spacing:0.08em;font-family:inherit;">${dealLabel.replace(" Opportunity", "").replace(" Potential", "")}</p>
               </td></tr>
             </table>
           </td>
@@ -658,6 +662,7 @@ export async function POST(req: NextRequest) {
           businessIntelData: businessIntelData ?? null,
           reportData: pitch?.reportData ?? null,
           brandColor: pitch?.brandColor ?? null,
+          brandLogoUrl: pitch?.brandLogoUrl ?? null,
           createdAt: pitch?.createdAt ?? new Date(),
         },
         logoBuffer

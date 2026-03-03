@@ -29,17 +29,21 @@ const gradeColor = (g: string) =>
 // ─── Pitch text parsers (mirrors send-email route) ──────────────────────────
 
 function countSecurityFailures(pitchText: string): number {
-  const match = pitchText.match(/## 🔒 Security Assessment([\s\S]*?)(?=\n##|$)/);
-  return match ? (match[1].match(/❌/g) ?? []).length : 0;
+  const match = pitchText.match(/##\s*(?:🔒\s*)?Security Assessment([\s\S]*?)(?=\n##|$)/);
+  if (!match) return 0;
+  const xCount = (match[1].match(/❌/g) ?? []).length;
+  const missingCount = (match[1].match(/\[MISSING\]/gi) ?? []).length;
+  return xCount + missingCount;
 }
 
 function countPainPoints(pitchText: string): number {
-  const match = pitchText.match(/## 💡 Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
-  return match ? (match[1].match(/^[-•*]\s+|^\d+\.\s+/gm) ?? []).length : 0;
+  const match = pitchText.match(/##\s*(?:💡\s*)?Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
+  if (!match) return 0;
+  return (match[1].match(/^[-•*]\s+|^\d+\.\s+|^\*\*[^*]+\*\*/gm) ?? []).length;
 }
 
 function extractIndustry(pitchText: string): string {
-  const match = pitchText.match(/## 🏢 Business Overview([\s\S]*?)(?=\n##|$)/);
+  const match = pitchText.match(/##\s*(?:🏢\s*)?Business Overview([\s\S]*?)(?=\n##|$)/);
   if (!match) return "your sector";
   const t = match[1].toLowerCase();
   const industries: [string, string][] = [
@@ -56,7 +60,7 @@ function extractIndustry(pitchText: string): string {
 }
 
 function securityCategories(pitchText: string): string[] {
-  const match = pitchText.match(/## 🔒 Security Assessment([\s\S]*?)(?=\n##|$)/);
+  const match = pitchText.match(/##\s*(?:🔒\s*)?Security Assessment([\s\S]*?)(?=\n##|$)/);
   if (!match) return [];
   const t = match[1].toLowerCase();
   const cats: string[] = [];
@@ -70,7 +74,7 @@ function securityCategories(pitchText: string): string[] {
 }
 
 function gapCategories(pitchText: string): string[] {
-  const match = pitchText.match(/## 💡 Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
+  const match = pitchText.match(/##\s*(?:💡\s*)?Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
   if (!match) return [];
   const t = match[1].toLowerCase();
   const cats: string[] = [];
@@ -280,6 +284,7 @@ export interface PitchPDFData {
   businessIntelData: string | null;
   reportData: string | null;
   brandColor: string | null;
+  brandLogoUrl: string | null;
   createdAt: Date;
 }
 

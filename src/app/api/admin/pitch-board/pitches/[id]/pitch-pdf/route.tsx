@@ -48,6 +48,7 @@ export async function GET(
         businessIntelData: pitch.businessIntelData,
         reportData: pitch.reportData,
         brandColor: pitch.brandColor,
+        brandLogoUrl: pitch.brandLogoUrl,
         createdAt: pitch.createdAt,
       },
       logoBuffer
