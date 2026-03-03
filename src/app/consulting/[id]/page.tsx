@@ -38,6 +38,7 @@ export default async function ConsultingLandingPage({
       presenceScore: true,
       dealScore: true,
       painCount: true,
+      brandLogoUrl: true,
       createdAt: true,
     },
   });

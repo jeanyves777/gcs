@@ -269,69 +269,71 @@ function extractCityState(address: string | null): string {
   return "";
 }
 
-// ─── Yelp probe ───────────────────────────────────────────────────────────────
+// ─── Helper: extract core business name for partial matching ─────────────────
+// "Integrity Tax & Accounting Services" → "Integrity Tax"
+// "Joe's Pizza & Wings LLC" → "Joe's Pizza"
+// Catches name discrepancies across Yelp, BBB, Google, etc.
+
+function extractCoreName(businessName: string): string {
+  let core = businessName
+    .replace(/\b(LLC|Inc\.?|Corp\.?|Corporation|Company|Co\.?|Services|Solutions|Group|Associates|Enterprises|International|Ltd\.?)\b/gi, "")
+    .replace(/\s*[&,]\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  const words = core.split(/\s+/).filter(w => w.length > 1);
+  if (words.length > 3) core = words.slice(0, 3).join(" ");
+  return core || businessName;
+}
+
+// ─── Yelp probe (DuckDuckGo primary — Yelp blocks server-side fetches) ───────
 
 async function probeYelp(businessName: string, location?: string, phone?: string): Promise<WebMention> {
   const base: WebMention = { source: "Yelp", url: null, rating: null, reviewCount: null, found: false, snippet: null };
-  const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+
+  // Helper to extract a yelp.com/biz/ URL from DuckDuckGo HTML
+  function extractYelpUrl(html: string): string | null {
+    // Look for yelp.com/biz/ URLs in result links and text
+    const patterns = [
+      /https?:\/\/(?:www\.)?yelp\.com\/biz\/[a-z0-9_-]+/gi,
+      /yelp\.com\/biz\/[a-z0-9_-]+/gi,
+    ];
+    for (const pattern of patterns) {
+      const matches = [...html.matchAll(pattern)];
+      for (const m of matches) {
+        const url = m[0].startsWith("http") ? m[0] : `https://www.${m[0]}`;
+        // Skip search/writeareview/generic pages
+        if (/\/(search|writeareview|signup|login)/.test(url)) continue;
+        if (!url.includes("duckduckgo")) return url.split(/[?#&;]/)[0];
+      }
+    }
+    return null;
+  }
 
   try {
-    // 1. Try slug-based direct access (fastest)
-    const slug = businessName.toLowerCase()
-      .replace(/[^a-z0-9\s]+/g, "").replace(/\s+/g, "-").replace(/^-|-$/g, "");
+    const coreName = extractCoreName(businessName);
+    const loc = location || "";
 
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), 10000);
+    // Run multiple DuckDuckGo searches in parallel — different name variants
+    const queries = [
+      `site:yelp.com "${businessName}" ${loc}`.trim(),
+      coreName !== businessName ? `site:yelp.com "${coreName}" ${loc}`.trim() : null,
+      phone ? `site:yelp.com "${phone}"` : null,
+    ].filter((q): q is string => !!q);
 
-    const res = await fetch(`https://www.yelp.com/biz/${slug}`, {
-      method: "HEAD",
-      signal: controller.signal,
-      headers: { "User-Agent": UA },
-      redirect: "follow",
-    });
-
-    if (res.status === 200 && res.url.includes("yelp.com/biz/")) {
-      return { ...base, found: true, url: res.url };
-    }
-
-    // 2. Search with location for better accuracy
-    const searchParams = new URLSearchParams({ find_desc: businessName });
-    if (location) searchParams.set("find_loc", location);
-
-    const searchController = new AbortController();
-    setTimeout(() => searchController.abort(), 10000);
-    const searchRes = await fetch(
-      `https://www.yelp.com/search?${searchParams}`,
-      { signal: searchController.signal, headers: { "User-Agent": UA } }
-    );
-    const html = await searchRes.text();
-    const bizMatch = html.match(/href="(\/biz\/[^"?]+)"/);
-    if (bizMatch) {
-      const ratingMatch = html.match(/"ratingValue":\s*"?([\d.]+)"?/);
-      const countMatch  = html.match(/"reviewCount":\s*"?(\d+)"?/);
-      return {
-        ...base, found: true,
-        url: `https://www.yelp.com${bizMatch[1]}`,
-        rating: ratingMatch ? parseFloat(ratingMatch[1]) : null,
-        reviewCount: countMatch ? parseInt(countMatch[1]) : null,
-      };
-    }
-
-    // 3. Try phone number search as last resort (catches name discrepancies)
-    if (phone) {
-      const phoneDigits = phone.replace(/\D/g, "");
-      if (phoneDigits.length >= 10) {
-        const phoneController = new AbortController();
-        setTimeout(() => phoneController.abort(), 10000);
-        const phoneRes = await fetch(
-          `https://www.yelp.com/search?find_desc=${encodeURIComponent(phoneDigits)}${location ? `&find_loc=${encodeURIComponent(location)}` : ""}`,
-          { signal: phoneController.signal, headers: { "User-Agent": UA } }
-        );
-        const phoneHtml = await phoneRes.text();
-        const phoneBizMatch = phoneHtml.match(/href="(\/biz\/[^"?]+)"/);
-        if (phoneBizMatch) {
-          return { ...base, found: true, url: `https://www.yelp.com${phoneBizMatch[1]}` };
+    const results = await Promise.allSettled(
+      queries.map(async (q) => {
+        let html = await duckDuckGoSearch(q);
+        if (!html) {
+          await new Promise(r => setTimeout(r, 1000));
+          html = await duckDuckGoSearch(q);
         }
+        return html ? extractYelpUrl(html) : null;
+      })
+    );
+
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) {
+        return { ...base, found: true, url: r.value };
       }
     }
   } catch { /* ignore */ }
@@ -339,51 +341,53 @@ async function probeYelp(businessName: string, location?: string, phone?: string
   return base;
 }
 
-// ─── BBB probe ────────────────────────────────────────────────────────────────
+// ─── BBB probe (DuckDuckGo primary — BBB renders with JavaScript) ────────────
 
 async function probeBBB(businessName: string, location?: string): Promise<WebMention> {
   const base: WebMention = { source: "BBB", url: null, rating: null, reviewCount: null, found: false, snippet: null };
 
-  try {
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), 10000);
-
-    // Include location for more targeted search results
-    const searchText = location ? `${businessName} ${location}` : businessName;
-    const searchUrl = `https://www.bbb.org/search?find_text=${encodeURIComponent(searchText)}`;
-    const res = await fetch(searchUrl, {
-      signal: controller.signal,
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-    });
-    const html = await res.text();
-
-    const bbbMatch = html.match(/href="(https:\/\/www\.bbb\.org\/us\/[^"]+)"/);
-    const ratingMatch = html.match(/class="[^"]*rating[^"]*"[^>]*>\s*(A\+?|B\+?|C\+?|D\+?|F)/i);
-
-    if (bbbMatch) {
-      return {
-        ...base, found: true, url: bbbMatch[1],
-        snippet: ratingMatch ? `BBB Rating: ${ratingMatch[1]}` : null,
-      };
+  // Helper to extract a bbb.org business profile URL from DuckDuckGo HTML
+  function extractBbbUrl(html: string): string | null {
+    const patterns = [
+      /https?:\/\/(?:www\.)?bbb\.org\/us\/[a-z]{2}\/[^"'\s<>]+/gi,
+      /bbb\.org\/us\/[a-z]{2}\/[^"'\s<>]+/gi,
+    ];
+    for (const pattern of patterns) {
+      const matches = [...html.matchAll(pattern)];
+      for (const m of matches) {
+        const url = m[0].startsWith("http") ? m[0] : `https://www.${m[0]}`;
+        // Skip search pages, only accept business profiles
+        if (/\/search\b/.test(url)) continue;
+        if (!url.includes("duckduckgo")) return url.split(/[?#&;]/)[0];
+      }
     }
+    return null;
+  }
 
-    // Retry without location if nothing found (name might be different on BBB)
-    if (location) {
-      const retryController = new AbortController();
-      setTimeout(() => retryController.abort(), 10000);
-      const retryUrl = `https://www.bbb.org/search?find_text=${encodeURIComponent(businessName)}`;
-      const retryRes = await fetch(retryUrl, {
-        signal: retryController.signal,
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-      });
-      const retryHtml = await retryRes.text();
-      const retryMatch = retryHtml.match(/href="(https:\/\/www\.bbb\.org\/us\/[^"]+)"/);
-      const retryRating = retryHtml.match(/class="[^"]*rating[^"]*"[^>]*>\s*(A\+?|B\+?|C\+?|D\+?|F)/i);
-      if (retryMatch) {
-        return {
-          ...base, found: true, url: retryMatch[1],
-          snippet: retryRating ? `BBB Rating: ${retryRating[1]}` : null,
-        };
+  try {
+    const coreName = extractCoreName(businessName);
+    const loc = location || "";
+
+    // Run multiple searches — full name and core name variants
+    const queries = [
+      `site:bbb.org "${businessName}" ${loc}`.trim(),
+      coreName !== businessName ? `site:bbb.org "${coreName}" ${loc}`.trim() : null,
+    ].filter((q): q is string => !!q);
+
+    const results = await Promise.allSettled(
+      queries.map(async (q) => {
+        let html = await duckDuckGoSearch(q);
+        if (!html) {
+          await new Promise(r => setTimeout(r, 1000));
+          html = await duckDuckGoSearch(q);
+        }
+        return html ? extractBbbUrl(html) : null;
+      })
+    );
+
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) {
+        return { ...base, found: true, url: r.value };
       }
     }
   } catch { /* ignore */ }

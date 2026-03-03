@@ -21,6 +21,7 @@ type Pitch = {
   presenceScore: number;
   dealScore: number;
   painCount: number;
+  brandLogoUrl?: string | null;
   createdAt: string;
 };
 
@@ -58,19 +59,26 @@ function CategoryIcon({ iconKey, style }: { iconKey: string; style?: React.CSSPr
 // ─── Content extractors ──────────────────────────────────────────────────────
 
 function countSecurityFailures(text: string): number {
-  const match = text.match(/## 🔒 Security Assessment([\s\S]*?)(?=\n##|$)/);
+  // Match heading with or without emoji prefix
+  const match = text.match(/##\s*(?:🔒\s*)?Security Assessment([\s\S]*?)(?=\n##|$)/);
   if (!match) return 0;
-  return (match[1].match(/❌/g) ?? []).length;
+  // Count ❌ markers AND [MISSING] markers (both indicate security failures)
+  const xCount = (match[1].match(/❌/g) ?? []).length;
+  const missingCount = (match[1].match(/\[MISSING\]/gi) ?? []).length;
+  return xCount + missingCount;
 }
 
 function countPainPoints(text: string): number {
-  const match = text.match(/## 💡 Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
+  // Match heading with or without emoji prefix
+  const match = text.match(/##\s*(?:💡\s*)?Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
   if (!match) return 0;
-  return (match[1].match(/^[-•*]\s+|^\d+\.\s+/gm) ?? []).length;
+  // Count bullet points, numbered items, and bold-prefixed lines
+  const bullets = (match[1].match(/^[-•*]\s+|^\d+\.\s+|^\*\*[^*]+\*\*/gm) ?? []).length;
+  return bullets;
 }
 
 function securityCategories(text: string): { label: string; iconKey: string }[] {
-  const match = text.match(/## 🔒 Security Assessment([\s\S]*?)(?=\n##|$)/);
+  const match = text.match(/##\s*(?:🔒\s*)?Security Assessment([\s\S]*?)(?=\n##|$)/);
   if (!match) return [];
   const t = match[1].toLowerCase();
   const cats: { label: string; iconKey: string }[] = [];
@@ -84,7 +92,7 @@ function securityCategories(text: string): { label: string; iconKey: string }[] 
 }
 
 function gapCategories(text: string): { label: string; iconKey: string }[] {
-  const match = text.match(/## 💡 Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
+  const match = text.match(/##\s*(?:💡\s*)?Pain Points[^#]*([\s\S]*?)(?=\n##|$)/);
   if (!match) return [];
   const t = match[1].toLowerCase();
   const cats: { label: string; iconKey: string }[] = [];
@@ -464,7 +472,9 @@ export function ConsultingLandingClient({ pitch }: { pitch: Pitch }) {
   }, [pitch.createdAt]);
 
   const domain = cleanDomain(pitch.websiteUrl);
-  const logoUrl = `https://logo.clearbit.com/${domain}`;
+  // Use the brand logo extracted from the actual website (most reliable for small businesses),
+  // fall back to Clearbit (good for large companies), then Google favicon
+  const logoUrl = pitch.brandLogoUrl || `https://logo.clearbit.com/${domain}`;
   const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
   const securityRisk = Math.max(0, 100 - pitch.securityScore);
   const securityLabel = securityRisk > 70 ? "Critical" : securityRisk > 40 ? "At Risk" : "Moderate";
