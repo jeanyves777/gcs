@@ -17,6 +17,12 @@ const wordmarkSizes = {
   lg: { width: 140, height: 47 },
 };
 
+const taglineSize = {
+  sm: "text-[8px]",
+  md: "text-[9px]",
+  lg: "text-[10px]",
+};
+
 const iconMarkSizes = {
   sm: { width: 28, height: 28 },
   md: { width: 34, height: 34 },
@@ -33,7 +39,7 @@ export function Logo({ className, size = "md", iconOnly = false }: LogoProps) {
           alt="GCS"
           width={s.width}
           height={s.height}
-          className="object-contain dark:[filter:brightness(0)_invert(1)]"
+          className="object-contain"
           priority
         />
       </Link>
@@ -42,15 +48,21 @@ export function Logo({ className, size = "md", iconOnly = false }: LogoProps) {
 
   const s = wordmarkSizes[size];
   return (
-    <Link href="/" className={cn("inline-flex items-center shrink-0", className)}>
+    <Link href="/" className={cn("inline-flex flex-col shrink-0", className)}>
       <Image
         src="/logo.png"
         alt="GCS — General Computing Solutions"
         width={s.width}
         height={s.height}
-        className="object-contain dark:[filter:brightness(0)_invert(1)]"
+        className="object-contain"
         priority
       />
+      <span
+        className={cn("font-semibold tracking-wide leading-none mt-0.5", taglineSize[size])}
+        style={{ color: "#1565C0" }}
+      >
+        General Computing Solutions
+      </span>
     </Link>
   );
 }

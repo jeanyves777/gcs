@@ -65,7 +65,7 @@
   --transition-slow: 300ms ease;
 
   /* Layout */
-  --max-width: 1440px;
+  --max-width: 1920px;
   --section-padding-y: 80px;
   --header-height: 72px;
   --sidebar-width: 256px;
@@ -293,6 +293,20 @@
   .container-gcs {
     padding-left: 2rem;
     padding-right: 2rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .container-gcs {
+    padding-left: 3rem;
+    padding-right: 3rem;
+  }
+}
+
+@media (min-width: 1536px) {
+  .container-gcs {
+    padding-left: 4rem;
+    padding-right: 4rem;
   }
 }
 

@@ -84,8 +84,8 @@ export function Header() {
         <Logo showTagline size="lg" />
 
         {/* Desktop Navigation */}
-        <NavigationMenu className="hidden md:flex">
-          <NavigationMenuList className="gap-1">
+        <NavigationMenu className="hidden md:flex justify-start">
+          <NavigationMenuList className="gap-1 justify-start">
             <NavigationMenuItem>
               <NavigationMenuLink asChild>
                 <Link
