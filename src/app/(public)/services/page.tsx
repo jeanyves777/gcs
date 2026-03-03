@@ -123,7 +123,7 @@ export default function ServicesPage() {
       </section>
 
       <section className="section-padding text-white" style={{ background: "var(--brand-primary)" }}>
-        <div className="container-gcs text-center max-w-2xl mx-auto">
+        <div className="container-gcs text-center">
           <FadeUp>
             <h2 className="font-bold text-white mb-4" style={{ fontFamily: "var(--font-display)" }}>Not sure where to start?</h2>
             <p className="mb-8" style={{ color: "rgba(255,255,255,0.85)" }}>Let us understand your needs and recommend the right combination of services for your business.</p>

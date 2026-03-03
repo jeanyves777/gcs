@@ -130,7 +130,7 @@ export function PaymentPageClient({ invoice }: { invoice: InvoiceSummary }) {
   };
 
   return (
-    <div className="max-w-4xl">
+    <div>
       {/* Back nav */}
       <Link href={`/portal/invoices/${invoice.id}`}>
         <Button variant="ghost" size="sm" className="gap-1.5 mb-4" style={{ color: "var(--text-muted)" }}>

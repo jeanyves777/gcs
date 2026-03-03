@@ -292,7 +292,7 @@ export function EditProjectClient({ project, orgs, users }: Props) {
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="space-y-8 max-w-3xl">
+    <div className="space-y-8">
       {/* Back + heading */}
       <div>
         <Link

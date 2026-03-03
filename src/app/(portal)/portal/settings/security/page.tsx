@@ -132,7 +132,7 @@ export default function SecuritySettingsPage() {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
 
   return (
-    <div className="max-w-xl space-y-6">
+    <div className="space-y-6">
       <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>Security</h1>
       <div className="space-y-4">
         <Card className="card-base">

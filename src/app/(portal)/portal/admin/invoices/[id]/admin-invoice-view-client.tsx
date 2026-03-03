@@ -79,7 +79,7 @@ export function AdminInvoiceViewClient({ invoice }: Props) {
   };
 
   return (
-    <div className="max-w-4xl space-y-4">
+    <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <Link href="/portal/admin/invoices">

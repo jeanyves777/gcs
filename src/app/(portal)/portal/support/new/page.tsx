@@ -81,7 +81,7 @@ export default function NewTicketPage() {
   };
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="space-y-6">
       <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>Open a Support Ticket</h1>
 
       {/* AI Helper Panel */}

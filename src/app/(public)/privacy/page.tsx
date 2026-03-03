@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 export default function PrivacyPage() {
   return (
     <section className="section-padding" style={{ background: "var(--bg-primary)" }}>
-      <div className="container-gcs max-w-3xl mx-auto">
+      <div className="container-gcs">
         <FadeUp>
           <h1 className="font-black mb-2" style={{ fontFamily: "var(--font-display)" }}>Privacy Policy</h1>
           <p className="text-sm mb-10" style={{ color: "var(--text-muted)" }}>Last updated: March 2025 &nbsp;·&nbsp; Effective date: March 1, 2025</p>

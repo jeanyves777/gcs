@@ -16,7 +16,7 @@ export default async function NewInvoicePage() {
   });
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6">
       <div>
         <Link
           href="/portal/admin/invoices"

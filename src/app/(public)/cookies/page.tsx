@@ -4,7 +4,7 @@ import { FadeUp } from "@/components/shared/motion";
 export default function CookiesPage() {
   return (
     <section className="section-padding" style={{ background: "var(--bg-primary)" }}>
-      <div className="container-gcs max-w-3xl mx-auto">
+      <div className="container-gcs">
         <FadeUp>
           <h1 className="font-black mb-4" style={{ fontFamily: "var(--font-display)" }}>Cookie Policy</h1>
           <p className="text-sm mb-8" style={{ color: "var(--text-muted)" }}>Last updated: March 2024</p>

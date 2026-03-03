@@ -70,7 +70,7 @@ export function TicketClient({ ticket, initialMessages, currentUserId }: Props) 
   const sc = statusColor[ticket.status] ?? statusColor.OPEN;
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6">
       <div>
         <div className="flex items-center gap-2 mb-1">
           <span className="text-sm font-mono" style={{ color: "var(--text-muted)" }}>{ticket.ticketNumber}</span>

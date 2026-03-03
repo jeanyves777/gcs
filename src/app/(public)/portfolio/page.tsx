@@ -69,7 +69,7 @@ export default function PortfolioPage() {
       </section>
 
       <section className="section-padding" style={{ background: "var(--brand-primary)" }}>
-        <div className="container-gcs text-center max-w-2xl mx-auto">
+        <div className="container-gcs text-center">
           <FadeUp>
             <h2 className="font-bold text-white mb-4" style={{ fontFamily: "var(--font-display)" }}>Ready to be our next success story?</h2>
             <Link href="/get-quote" className="inline-flex items-center gap-2 px-8 py-3 rounded-lg font-semibold transition-colors hover:opacity-90" style={{ background: "white", color: "var(--brand-primary)" }}>

@@ -32,7 +32,7 @@ export default function GetQuotePage() {
           </div>
         </div>
 
-        <div className="max-w-3xl mx-auto">
+        <div>
           <FadeUp delay={0.1}>
             <Card className="card-base">
               <CardContent className="p-6 md:p-8">

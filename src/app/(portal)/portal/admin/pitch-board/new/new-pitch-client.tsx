@@ -180,7 +180,7 @@ export function NewPitchClient() {
   const isLoading = state === "loading" || state === "saving";
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6">
       {/* Toolbar */}
       <div className="flex items-center gap-3">
         <Link href="/portal/admin/pitch-board">

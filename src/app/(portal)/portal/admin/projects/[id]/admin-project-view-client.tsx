@@ -54,7 +54,7 @@ export function AdminProjectViewClient({ project }: Props) {
   const doneTasks = project.tasks.filter((t) => t.status === "DONE").length;
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className="space-y-6">
       {/* Toolbar */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <Link href="/portal/admin/projects">

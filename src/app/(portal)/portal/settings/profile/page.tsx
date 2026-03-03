@@ -59,7 +59,7 @@ export default function ProfileSettingsPage() {
 
   if (loading) {
     return (
-      <div className="max-w-xl space-y-6">
+      <div className="space-y-6">
         <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>Profile</h1>
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--text-muted)" }} />
@@ -69,7 +69,7 @@ export default function ProfileSettingsPage() {
   }
 
   return (
-    <div className="max-w-xl space-y-6">
+    <div className="space-y-6">
       <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>Profile</h1>
       <Card className="card-base">
         <CardContent className="p-6 space-y-5">
