@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { FadeIn } from "@/components/shared/motion";
 import { HeroIllustration } from "@/components/shared/illustrations";
 import { VulnerabilityScanner } from "@/components/home/vulnerability-scanner";
+import { ScamChecker } from "@/components/home/scam-checker";
 
 export const metadata: Metadata = {
   title: "GCS — Managed IT Services & Custom Software",
@@ -89,6 +90,9 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Scam Checker — floating CTA between Hero and Scanner */}
+      <ScamChecker />
 
       {/* Free Vulnerability Scanner */}
       <VulnerabilityScanner />

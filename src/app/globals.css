@@ -488,3 +488,21 @@
 .radar-ring-2 { animation: radar-ping  2.4s ease-out infinite 0.6s; }
 .radar-ring-3 { animation: radar-ping  2.4s ease-out infinite 1.2s; }
 .scanner-result { animation: result-slide-up 0.5s ease-out both; }
+
+/* ── Scam Checker animations ──────────────────────────────────── */
+@keyframes scam-checker-pulse {
+  0%, 100% { box-shadow: 0 8px 32px rgba(211,47,47,0.35), 0 2px 8px rgba(0,0,0,0.1); }
+  50%      { box-shadow: 0 8px 48px rgba(211,47,47,0.5), 0 2px 12px rgba(0,0,0,0.15); transform: scale(1.02); }
+}
+@keyframes scam-panel-appear {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes scam-shield-pulse {
+  0%   { transform: scale(1); opacity: 0.5; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+@keyframes scam-shield-glow {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(211,47,47,0.2)); }
+  50%      { filter: drop-shadow(0 0 16px rgba(211,47,47,0.5)); }
+}
