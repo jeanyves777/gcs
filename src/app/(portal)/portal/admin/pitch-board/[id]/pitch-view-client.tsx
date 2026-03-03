@@ -268,16 +268,80 @@ function OverviewSection({ content }: { content: string }) {
 
 // ─── Section: Digital Footprint ───────────────────────────────────────────────
 
+type FootprintEntry = { title: string; body: string; status: "found" | "missing" | "neutral" };
+
+function parseFootprintEntries(content: string): FootprintEntry[] {
+  const entries: FootprintEntry[] = [];
+  // Split content into lines and group by bold headings or [FOUND]/[MISSING] markers
+  const lines = content.split("\n");
+  let current: FootprintEntry | null = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Check for bold heading: **Title** — detail  OR  **[FOUND] Title** — detail
+    const boldMatch = trimmed.match(/^\*\*\[?(FOUND|MISSING|PRESENT)?\]?\s*([^*]+)\*\*\s*[—–:-]?\s*(.*)/i);
+    // Check for [STATUS] marker: [FOUND] Title — detail
+    const markerMatch = !boldMatch ? trimmed.match(/^\[?(FOUND|MISSING|PRESENT)\]?\s*(.+)/i) : null;
+    // Check for bullet with bold: - **Title** — detail
+    const bulletBoldMatch = !boldMatch && !markerMatch ? trimmed.match(/^[-•*]\s+\*\*\[?(FOUND|MISSING|PRESENT)?\]?\s*([^*]+)\*\*\s*[—–:-]?\s*(.*)/i) : null;
+
+    if (boldMatch || markerMatch || bulletBoldMatch) {
+      // Save previous entry
+      if (current) entries.push(current);
+
+      let statusStr: string | undefined;
+      let title: string;
+      let detail: string;
+
+      if (boldMatch) {
+        statusStr = boldMatch[1];
+        title = boldMatch[2].trim();
+        detail = boldMatch[3]?.trim() || "";
+      } else if (bulletBoldMatch) {
+        statusStr = bulletBoldMatch[1];
+        title = bulletBoldMatch[2].trim();
+        detail = bulletBoldMatch[3]?.trim() || "";
+      } else {
+        statusStr = markerMatch![1];
+        // Split remaining text at em dash or colon
+        const rest = markerMatch![2].trim();
+        const dashIdx = rest.search(/\s[—–]\s|:\s/);
+        title = dashIdx > 0 ? rest.slice(0, dashIdx).trim() : rest;
+        detail = dashIdx > 0 ? rest.slice(dashIdx).replace(/^[\s—–:]+/, "").trim() : "";
+      }
+
+      const status: "found" | "missing" | "neutral" = statusStr
+        ? (/FOUND|PRESENT/i.test(statusStr) ? "found" : "missing")
+        : (/missing|no |lack|absent|not found|poor|weak|without/i.test(title + " " + detail) ? "missing"
+          : /found|present|listed|active|strong|good|verified/i.test(title + " " + detail) ? "found" : "neutral");
+
+      current = { title: title.replace(/\*\*/g, ""), body: detail, status };
+    } else if (current) {
+      // Continuation line — append to current entry's body
+      current.body += (current.body ? "\n" : "") + trimmed;
+    } else {
+      // Standalone line before any heading — treat as neutral
+      entries.push({ title: "", body: trimmed, status: "neutral" });
+    }
+  }
+  if (current) entries.push(current);
+
+  return entries;
+}
+
 function FootprintSection({ content, presenceScore }: { content: string; presenceScore: number }) {
-  const bullets = extractBullets(content);
-  const paras = extractParagraphs(content);
   const presColor = presenceScore > 65 ? "#16a34a" : presenceScore > 40 ? "#d97706" : "#dc2626";
   const presLabel = presenceScore > 65 ? "Strong Presence" : presenceScore > 40 ? "Moderate Presence" : "Weak Presence";
 
-  // Split bullets into positive/negative using [FOUND]/[MISSING] markers first, then keywords
-  const positive = bullets.filter(b => /\[FOUND\]|\[PRESENT\]/i.test(b) || (!/\[MISSING\]/i.test(b) && /strong|good|well|active|modern|professional|https|fast|secure|seo|found|present|enabled|configured/i.test(b)));
-  const concern = bullets.filter(b => !positive.includes(b) && (/\[MISSING\]/i.test(b) || /missing|lack|no |poor|slow|outdated|basic|limited|weak|without|not found|absent/i.test(b)));
-  const neutral = bullets.filter(b => !positive.includes(b) && !concern.includes(b));
+  const entries = parseFootprintEntries(content);
+  const foundEntries = entries.filter(e => e.status === "found");
+  const missingEntries = entries.filter(e => e.status === "missing");
+  const neutralEntries = entries.filter(e => e.status === "neutral");
+
+  // Fallback: if parser found nothing, use raw paragraphs
+  const fallbackParas = entries.length === 0 ? extractParagraphs(content) : [];
 
   return (
     <div className="space-y-4">
@@ -295,33 +359,49 @@ function FootprintSection({ content, presenceScore }: { content: string; presenc
         </div>
       </div>
 
-      {/* Summary paragraph */}
-      {paras.slice(0, 1).map((p, i) => (
-        <p key={i} className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(p.replace(/\n/g, " ")) }} />
-      ))}
-
-      {/* Positive / Concern split */}
-      {(positive.length > 0 || concern.length > 0) && (
+      {/* Found / Missing split */}
+      {(foundEntries.length > 0 || missingEntries.length > 0) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {positive.length > 0 && (
-            <div className="rounded-xl p-4 space-y-2" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
-              <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1" style={{ color: "#16a34a" }}><CheckCircle2 className="h-3.5 w-3.5" /> Strengths</p>
-              {positive.map((p, i) => <p key={i} className="text-xs leading-relaxed" style={{ color: "#166534" }} dangerouslySetInnerHTML={{ __html: b(stripMarkers(p)) }} />)}
+          {foundEntries.length > 0 && (
+            <div className="rounded-xl p-4 space-y-3" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+              <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1" style={{ color: "#16a34a" }}><CheckCircle2 className="h-3.5 w-3.5" /> Strengths ({foundEntries.length})</p>
+              {foundEntries.map((e, i) => (
+                <div key={i} className="space-y-0.5">
+                  {e.title && <p className="text-xs font-bold" style={{ color: "#16a34a" }}>{e.title}</p>}
+                  {e.body && <p className="text-xs leading-relaxed" style={{ color: "#166534" }} dangerouslySetInnerHTML={{ __html: b(e.body.replace(/\n/g, " ")) }} />}
+                </div>
+              ))}
             </div>
           )}
-          {concern.length > 0 && (
-            <div className="rounded-xl p-4 space-y-2" style={{ background: "#fef2f2", border: "1px solid #fecaca" }}>
-              <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1" style={{ color: "#dc2626" }}><AlertTriangle className="h-3.5 w-3.5" /> Gaps Identified</p>
-              {concern.map((p, i) => <p key={i} className="text-xs leading-relaxed" style={{ color: "#991b1b" }} dangerouslySetInnerHTML={{ __html: b(stripMarkers(p)) }} />)}
+          {missingEntries.length > 0 && (
+            <div className="rounded-xl p-4 space-y-3" style={{ background: "#fef2f2", border: "1px solid #fecaca" }}>
+              <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1" style={{ color: "#dc2626" }}><AlertTriangle className="h-3.5 w-3.5" /> Gaps Identified ({missingEntries.length})</p>
+              {missingEntries.map((e, i) => (
+                <div key={i} className="space-y-0.5">
+                  {e.title && <p className="text-xs font-bold" style={{ color: "#dc2626" }}>{e.title}</p>}
+                  {e.body && <p className="text-xs leading-relaxed" style={{ color: "#991b1b" }} dangerouslySetInnerHTML={{ __html: b(e.body.replace(/\n/g, " ")) }} />}
+                </div>
+              ))}
             </div>
           )}
         </div>
       )}
-      {neutral.map((n, i) => (
-        <div key={i} className="flex items-start gap-2 text-xs" style={{ color: "var(--text-secondary)" }}>
-          <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" style={{ color: "var(--text-muted)" }} />
-          <span dangerouslySetInnerHTML={{ __html: b(n) }} />
+
+      {/* Neutral entries — general analysis topics */}
+      {neutralEntries.length > 0 && (
+        <div className="space-y-2">
+          {neutralEntries.map((e, i) => (
+            <div key={i} className="rounded-lg p-3" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+              {e.title && <p className="text-xs font-bold mb-1" style={{ color: "var(--text-primary)" }}>{e.title}</p>}
+              {e.body && <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(e.body.replace(/\n/g, " ")) }} />}
+            </div>
+          ))}
         </div>
+      )}
+
+      {/* Fallback for unparseable content */}
+      {fallbackParas.map((p, i) => (
+        <p key={i} className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(p.replace(/\n/g, " ")) }} />
       ))}
     </div>
   );

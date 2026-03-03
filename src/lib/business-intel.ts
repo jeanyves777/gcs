@@ -254,12 +254,29 @@ async function searchGooglePlaces(
   }
 }
 
+// ─── Helper: extract city/state from Google address ──────────────────────────
+
+function extractCityState(address: string | null): string {
+  if (!address) return "";
+  // "123 Main St, Springfield, OH 45501, USA" → "Springfield, OH"
+  const parts = address.split(",").map(s => s.trim());
+  if (parts.length >= 3) {
+    const city = parts[parts.length - 3];
+    const stateZip = parts[parts.length - 2];
+    const state = stateZip.replace(/\s*\d{5}(-\d{4})?$/, "").trim();
+    if (city && state) return `${city}, ${state}`;
+  }
+  return "";
+}
+
 // ─── Yelp probe ───────────────────────────────────────────────────────────────
 
-async function probeYelp(businessName: string): Promise<WebMention> {
+async function probeYelp(businessName: string, location?: string, phone?: string): Promise<WebMention> {
   const base: WebMention = { source: "Yelp", url: null, rating: null, reviewCount: null, found: false, snippet: null };
+  const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
   try {
+    // 1. Try slug-based direct access (fastest)
     const slug = businessName.toLowerCase()
       .replace(/[^a-z0-9\s]+/g, "").replace(/\s+/g, "-").replace(/^-|-$/g, "");
 
@@ -269,7 +286,7 @@ async function probeYelp(businessName: string): Promise<WebMention> {
     const res = await fetch(`https://www.yelp.com/biz/${slug}`, {
       method: "HEAD",
       signal: controller.signal,
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      headers: { "User-Agent": UA },
       redirect: "follow",
     });
 
@@ -277,11 +294,15 @@ async function probeYelp(businessName: string): Promise<WebMention> {
       return { ...base, found: true, url: res.url };
     }
 
+    // 2. Search with location for better accuracy
+    const searchParams = new URLSearchParams({ find_desc: businessName });
+    if (location) searchParams.set("find_loc", location);
+
     const searchController = new AbortController();
     setTimeout(() => searchController.abort(), 10000);
     const searchRes = await fetch(
-      `https://www.yelp.com/search?find_desc=${encodeURIComponent(businessName)}`,
-      { signal: searchController.signal, headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" } }
+      `https://www.yelp.com/search?${searchParams}`,
+      { signal: searchController.signal, headers: { "User-Agent": UA } }
     );
     const html = await searchRes.text();
     const bizMatch = html.match(/href="(\/biz\/[^"?]+)"/);
@@ -295,6 +316,24 @@ async function probeYelp(businessName: string): Promise<WebMention> {
         reviewCount: countMatch ? parseInt(countMatch[1]) : null,
       };
     }
+
+    // 3. Try phone number search as last resort (catches name discrepancies)
+    if (phone) {
+      const phoneDigits = phone.replace(/\D/g, "");
+      if (phoneDigits.length >= 10) {
+        const phoneController = new AbortController();
+        setTimeout(() => phoneController.abort(), 10000);
+        const phoneRes = await fetch(
+          `https://www.yelp.com/search?find_desc=${encodeURIComponent(phoneDigits)}${location ? `&find_loc=${encodeURIComponent(location)}` : ""}`,
+          { signal: phoneController.signal, headers: { "User-Agent": UA } }
+        );
+        const phoneHtml = await phoneRes.text();
+        const phoneBizMatch = phoneHtml.match(/href="(\/biz\/[^"?]+)"/);
+        if (phoneBizMatch) {
+          return { ...base, found: true, url: `https://www.yelp.com${phoneBizMatch[1]}` };
+        }
+      }
+    }
   } catch { /* ignore */ }
 
   return base;
@@ -302,14 +341,16 @@ async function probeYelp(businessName: string): Promise<WebMention> {
 
 // ─── BBB probe ────────────────────────────────────────────────────────────────
 
-async function probeBBB(businessName: string): Promise<WebMention> {
+async function probeBBB(businessName: string, location?: string): Promise<WebMention> {
   const base: WebMention = { source: "BBB", url: null, rating: null, reviewCount: null, found: false, snippet: null };
 
   try {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 10000);
 
-    const searchUrl = `https://www.bbb.org/search?find_text=${encodeURIComponent(businessName)}`;
+    // Include location for more targeted search results
+    const searchText = location ? `${businessName} ${location}` : businessName;
+    const searchUrl = `https://www.bbb.org/search?find_text=${encodeURIComponent(searchText)}`;
     const res = await fetch(searchUrl, {
       signal: controller.signal,
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
@@ -324,6 +365,26 @@ async function probeBBB(businessName: string): Promise<WebMention> {
         ...base, found: true, url: bbbMatch[1],
         snippet: ratingMatch ? `BBB Rating: ${ratingMatch[1]}` : null,
       };
+    }
+
+    // Retry without location if nothing found (name might be different on BBB)
+    if (location) {
+      const retryController = new AbortController();
+      setTimeout(() => retryController.abort(), 10000);
+      const retryUrl = `https://www.bbb.org/search?find_text=${encodeURIComponent(businessName)}`;
+      const retryRes = await fetch(retryUrl, {
+        signal: retryController.signal,
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      });
+      const retryHtml = await retryRes.text();
+      const retryMatch = retryHtml.match(/href="(https:\/\/www\.bbb\.org\/us\/[^"]+)"/);
+      const retryRating = retryHtml.match(/class="[^"]*rating[^"]*"[^>]*>\s*(A\+?|B\+?|C\+?|D\+?|F)/i);
+      if (retryMatch) {
+        return {
+          ...base, found: true, url: retryMatch[1],
+          snippet: retryRating ? `BBB Rating: ${retryRating[1]}` : null,
+        };
+      }
     }
   } catch { /* ignore */ }
 
@@ -354,7 +415,7 @@ async function duckDuckGoSearch(query: string, timeoutMs = 15000): Promise<strin
   }
 }
 
-async function probePlatformPresence(businessName: string, websiteHtml?: string): Promise<WebMention[]> {
+async function probePlatformPresence(businessName: string, websiteHtml?: string, location?: string): Promise<WebMention[]> {
   const platforms = [
     { source: "Facebook",     domains: ["facebook.com"],     exclude: ["sharer", "login", "help", "groups", "watch", "events"], hrefPattern: /href=["'][^"']*facebook\.com\/(?!sharer|login|help|groups|watch|events)[^"']{3,}/i },
     { source: "Instagram",    domains: ["instagram.com"],    exclude: ["accounts/login"], hrefPattern: /href=["'][^"']*instagram\.com\/(?!accounts\/login)[^"']{3,}/i },
@@ -427,12 +488,14 @@ async function probePlatformPresence(businessName: string, websiteHtml?: string)
 
   // ── SECONDARY SOURCE: DuckDuckGo keyword searches ──
   // Only search for platforms NOT already found via website HTML.
+  // Include location for much better accuracy (avoids false negatives from name-only search).
   const stillMissing = platforms.filter(p => !results.get(p.source)?.found).map(p => p.source);
   if (stillMissing.length > 0) {
+    const locationSuffix = location ? ` "${location}"` : "";
     // Run targeted searches with retries for reliability
     const queries = [
-      `"${businessName}" site:facebook.com OR site:instagram.com OR site:linkedin.com`,
-      `"${businessName}" yelp bbb tripadvisor nextdoor`,
+      `"${businessName}"${locationSuffix} site:facebook.com OR site:instagram.com OR site:linkedin.com`,
+      `"${businessName}"${locationSuffix} yelp bbb tripadvisor nextdoor`,
     ];
 
     // Run each query with a retry on failure
@@ -818,12 +881,11 @@ export async function runBusinessIntel(
     domain = websiteUrl.replace(/^https?:\/\//, "").split("/")[0];
   }
 
-  const [googleResult, yelpResult, bbbResult, mentionResults, rdapResult, ipResult, webSearchResult] =
+  // ── PHASE 1: Google Places + independent tasks (parallel) ──
+  // Google Places runs first so we can extract location & phone for Phase 2 probes.
+  const [googleResult, rdapResult, ipResult, webSearchResult] =
     await Promise.allSettled([
       searchGooglePlaces(businessName, websiteUrl),
-      probeYelp(businessName),
-      probeBBB(businessName),
-      probePlatformPresence(businessName, websiteHtml),
       fetchDomainRegistry(domain),
       (async (): Promise<IpGeoInfo | null> => {
         try {
@@ -835,8 +897,23 @@ export async function runBusinessIntel(
       fetchWebSearchMentions(businessName, domain),
     ]);
 
-  // Merge all results: dedicated probes override platform presence detection
   const google = googleResult.status === "fulfilled" ? googleResult.value : null;
+
+  // Extract location & phone from Google Places for Phase 2 probes.
+  // This dramatically improves Yelp/BBB/platform detection — searching by
+  // name + location + phone catches businesses even with name discrepancies.
+  const cityState = extractCityState(google?.address ?? null);
+  const phone = google?.phone ?? "";
+
+  // ── PHASE 2: Platform probes WITH location context (parallel) ──
+  const [yelpResult, bbbResult, mentionResults] =
+    await Promise.allSettled([
+      probeYelp(businessName, cityState, phone),
+      probeBBB(businessName, cityState),
+      probePlatformPresence(businessName, websiteHtml, cityState),
+    ]);
+
+  // Merge all results: dedicated probes override platform presence detection
   const yelp = yelpResult.status === "fulfilled" ? yelpResult.value : null;
   const bbb = bbbResult.status === "fulfilled" ? bbbResult.value : null;
   const mentions = mentionResults.status === "fulfilled" ? [...mentionResults.value] : [];
