@@ -111,11 +111,18 @@ function getBenchmark(categories: string[]): number {
 
 async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response> {
   const controller = new AbortController();
-  setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(url, {
-    signal: controller.signal,
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; GCS-SalesBot/1.0)" },
-  });
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; GCS-SalesBot/1.0)" },
+    });
+    clearTimeout(timer);
+    return res;
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
 }
 
 // ─── Google Places API ────────────────────────────────────────────────────────

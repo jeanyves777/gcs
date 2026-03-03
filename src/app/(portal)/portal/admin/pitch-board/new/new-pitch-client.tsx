@@ -113,7 +113,13 @@ export function NewPitchClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ businessName: businessName.trim(), websiteUrl: websiteUrl.trim() }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
+      if (!res.ok) {
+        const ct = res.headers.get("content-type") ?? "";
+        const msg = ct.includes("json")
+          ? ((await res.json() as { error?: string }).error ?? `Server error ${res.status}`)
+          : `Server error ${res.status}`;
+        throw new Error(msg);
+      }
       if (!res.body) throw new Error("No stream");
 
       // Extract pentest + business intel data from response headers before reading body
