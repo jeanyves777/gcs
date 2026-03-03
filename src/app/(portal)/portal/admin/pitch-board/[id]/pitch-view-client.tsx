@@ -9,7 +9,8 @@ import {
   Building2, Shield, Lightbulb, Target, Rocket, MessageSquare,
   ChevronDown, ChevronUp, X, Send, Server, Cloud, Code2, Sparkles, AlertTriangle,
   TrendingUp, CheckCircle2, Info, Quote, Share2, Lock, Wifi, Database, Terminal,
-  Globe2, ShieldAlert, ShieldCheck, Search,
+  Globe2, ShieldAlert, ShieldCheck, Search, MapPin, Phone, Clock, ExternalLink,
+  Star, Building, Network,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
@@ -30,10 +31,32 @@ type PentestResults = {
   criticalFindings: string[]; highFindings: string[];
 };
 
+// Business Intel types
+type GoogleReviewBI = { rating: number; text: string; relativeTime: string; authorName: string };
+type GoogleBPInfo = {
+  found: boolean; name: string | null; rating: number | null; reviewCount: number | null;
+  ratingBenchmark: number; address: string | null; phone: string | null; website: string | null;
+  googleMapsUrl: string | null; isOpenNow: boolean | null; weekdayHours: string[] | null;
+  categories: string[]; recentReviews: GoogleReviewBI[];
+};
+type WebMentionBI = { source: string; url: string | null; rating: number | null; reviewCount: number | null; found: boolean; snippet: string | null };
+type DomainRegistryBI = { domain: string; registrar: string | null; registeredDate: string | null; expiryDate: string | null; domainAgeYears: number | null; nameservers: string[]; isPrivacyProtected: boolean };
+type IpGeoBI = { ip: string; city: string | null; region: string | null; country: string | null; org: string | null; hosting: string | null };
+type WebSearchMentionBI = { title: string; snippet: string; url: string };
+type BusinessIntelData = {
+  businessName: string; domain: string; searchedAt: string;
+  google: GoogleBPInfo | null; yelp: WebMentionBI | null; bbb: WebMentionBI | null;
+  otherMentions: WebMentionBI[];
+  domainRegistry: DomainRegistryBI | null; ipGeo: IpGeoBI | null;
+  webSearchMentions: WebSearchMentionBI[];
+};
+
 type Pitch = {
   id: string; businessName: string; websiteUrl: string; pitchText: string;
   securityScore: number; presenceScore: number; dealScore: number; painCount: number;
   pentestData?: string | null;
+  businessIntelData?: string | null;
+  emailsSent?: string | null;
   createdAt: Date; createdBy: { name: string | null; email: string };
 };
 type Section = { heading: string; content: string };
@@ -878,6 +901,291 @@ function PentestCard({ pentest }: { pentest: PentestResults }) {
   );
 }
 
+// ─── Business Intel Card ──────────────────────────────────────────────────────
+
+function StarRow({ rating, size = 16 }: { rating: number; size?: number }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <Star key={i} size={size}
+          fill={i <= Math.round(rating) ? "#f59e0b" : "none"}
+          style={{ color: i <= Math.round(rating) ? "#f59e0b" : "#d1d5db" }} />
+      ))}
+    </div>
+  );
+}
+
+function ReviewCard({ review }: { review: GoogleReviewBI }) {
+  const [expanded, setExpanded] = useState(false);
+  const short = review.text.length > 160;
+  const text = short && !expanded ? review.text.slice(0, 160) + "…" : review.text;
+  return (
+    <div className="rounded-xl p-3 space-y-1.5" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between">
+        <StarRow rating={review.rating} size={13} />
+        <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{review.relativeTime}</span>
+      </div>
+      <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{review.authorName}</p>
+      <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>{text}</p>
+      {short && (
+        <button className="text-[10px] font-semibold" style={{ color: "var(--brand-primary)" }}
+          onClick={() => setExpanded(!expanded)}>
+          {expanded ? "Show less" : "Read more"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function BusinessIntelCard({ bi }: { bi: BusinessIntelData }) {
+  const [showAllReviews, setShowAllReviews] = useState(false);
+  const [showAllHours, setShowAllHours] = useState(false);
+  const gbp = bi.google;
+  const found = bi.otherMentions.filter((m) => m.found);
+  const missing = bi.otherMentions.filter((m) => !m.found);
+  const reviews = gbp?.recentReviews ?? [];
+  const displayedReviews = showAllReviews ? reviews : reviews.slice(0, 2);
+
+  const ratingPct = gbp?.rating ? (gbp.rating / 5) * 100 : 0;
+  const benchmarkPct = gbp ? (gbp.ratingBenchmark / 5) * 100 : 0;
+  const aboveBenchmark = gbp?.rating != null && gbp.rating >= gbp.ratingBenchmark;
+
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+      <div className="px-5 py-3 flex items-center gap-2" style={{ borderBottom: "1px solid var(--border)", background: "var(--bg-secondary)" }}>
+        <Building className="h-4 w-4" style={{ color: "#1565C0" }} />
+        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#1565C0" }}>
+          Business Intelligence & Online Registry
+        </p>
+      </div>
+
+      <div className="p-5 space-y-5">
+        {/* Google Business Profile */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Google Business Profile</p>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+              style={{ background: gbp?.found ? "#f0fdf4" : "#fef2f2", color: gbp?.found ? "#16a34a" : "#dc2626", border: `1px solid ${gbp?.found ? "#bbf7d0" : "#fecaca"}` }}>
+              {gbp?.found ? "✅ Listed" : "❌ Not Found"}
+            </span>
+          </div>
+
+          {gbp?.found && (
+            <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+              {/* Rating row */}
+              <div className="flex items-start justify-between flex-wrap gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <StarRow rating={gbp.rating ?? 0} size={18} />
+                    <span className="text-xl font-black" style={{ color: "#f59e0b" }}>{gbp.rating?.toFixed(1)}</span>
+                    <span className="text-sm" style={{ color: "var(--text-muted)" }}>/ 5.0</span>
+                  </div>
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    {gbp.reviewCount?.toLocaleString()} reviews · Benchmark: {gbp.ratingBenchmark}/5
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full"
+                    style={{ background: aboveBenchmark ? "#f0fdf4" : "#fef2f2", color: aboveBenchmark ? "#16a34a" : "#dc2626", border: `1px solid ${aboveBenchmark ? "#bbf7d0" : "#fecaca"}` }}>
+                    {aboveBenchmark ? "✅ Above benchmark" : `❌ ${(gbp.ratingBenchmark - (gbp.rating ?? 0)).toFixed(1)} below benchmark`}
+                  </span>
+                  {gbp.isOpenNow !== null && (
+                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full text-center"
+                      style={{ background: gbp.isOpenNow ? "#f0fdf4" : "#fef2f2", color: gbp.isOpenNow ? "#16a34a" : "#dc2626", border: `1px solid ${gbp.isOpenNow ? "#bbf7d0" : "#fecaca"}` }}>
+                      {gbp.isOpenNow ? "🟢 Open Now" : "🔴 Closed Now"}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Rating vs benchmark bar */}
+              <div className="space-y-1">
+                <div className="h-2 rounded-full overflow-hidden relative" style={{ background: "var(--bg-tertiary)" }}>
+                  <div className="h-full rounded-full transition-all" style={{ width: `${ratingPct}%`, background: aboveBenchmark ? "#16a34a" : "#f59e0b" }} />
+                  {/* Benchmark marker */}
+                  <div className="absolute top-0 bottom-0 w-0.5" style={{ left: `${benchmarkPct}%`, background: "#1565C0" }} />
+                </div>
+                <div className="flex justify-between text-[10px]" style={{ color: "var(--text-muted)" }}>
+                  <span>0</span>
+                  <span style={{ color: "#1565C0" }}>▲ Industry avg {gbp.ratingBenchmark}</span>
+                  <span>5.0</span>
+                </div>
+              </div>
+
+              {/* Details grid */}
+              <div className="grid grid-cols-1 gap-2">
+                {gbp.address && (
+                  <div className="flex items-start gap-2">
+                    <MapPin className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" style={{ color: "var(--text-muted)" }} />
+                    <span className="text-xs" style={{ color: "var(--text-secondary)" }}>{gbp.address}</span>
+                  </div>
+                )}
+                {gbp.phone && (
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
+                    <span className="text-xs" style={{ color: "var(--text-secondary)" }}>{gbp.phone}</span>
+                  </div>
+                )}
+                {gbp.googleMapsUrl && (
+                  <a href={gbp.googleMapsUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-xs font-semibold"
+                    style={{ color: "#1565C0" }}>
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    View on Google Maps
+                  </a>
+                )}
+              </div>
+
+              {/* Hours */}
+              {gbp.weekdayHours && gbp.weekdayHours.length > 0 && (
+                <div className="space-y-1">
+                  <button className="flex items-center gap-1.5 text-xs font-semibold"
+                    style={{ color: "var(--text-muted)" }} onClick={() => setShowAllHours(!showAllHours)}>
+                    <Clock className="h-3.5 w-3.5" />
+                    Business Hours
+                    {showAllHours ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                  </button>
+                  {showAllHours && (
+                    <div className="rounded-lg p-2.5 space-y-0.5" style={{ background: "var(--bg-tertiary)" }}>
+                      {gbp.weekdayHours.map((h, i) => (
+                        <p key={i} className="text-xs" style={{ color: "var(--text-secondary)" }}>{h}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Reviews */}
+        {reviews.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+              Recent Google Reviews ({reviews.length})
+            </p>
+            <div className="space-y-2">
+              {displayedReviews.map((r, i) => <ReviewCard key={i} review={r} />)}
+            </div>
+            {reviews.length > 2 && (
+              <button className="text-xs font-semibold" style={{ color: "var(--brand-primary)" }}
+                onClick={() => setShowAllReviews(!showAllReviews)}>
+                {showAllReviews ? "Show fewer reviews" : `Show all ${reviews.length} reviews`}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Directory presence */}
+        <div className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Directory & Platform Presence</p>
+          <div className="grid grid-cols-2 gap-2">
+            {bi.yelp && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                style={{ background: bi.yelp.found ? "#f0fdf4" : "#fef2f2", border: `1px solid ${bi.yelp.found ? "#bbf7d0" : "#fecaca"}` }}>
+                <span className="text-xs font-semibold" style={{ color: bi.yelp.found ? "#16a34a" : "#dc2626" }}>
+                  {bi.yelp.found ? "✅" : "❌"} Yelp
+                </span>
+                {bi.yelp.rating && <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{bi.yelp.rating}/5</span>}
+              </div>
+            )}
+            {bi.bbb && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                style={{ background: bi.bbb.found ? "#f0fdf4" : "#fef2f2", border: `1px solid ${bi.bbb.found ? "#bbf7d0" : "#fecaca"}` }}>
+                <span className="text-xs font-semibold" style={{ color: bi.bbb.found ? "#16a34a" : "#dc2626" }}>
+                  {bi.bbb.found ? "✅" : "❌"} BBB
+                </span>
+                {bi.bbb.snippet && <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{bi.bbb.snippet}</span>}
+              </div>
+            )}
+          </div>
+          {bi.otherMentions.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {found.map((m) => (
+                <a key={m.source} href={m.url ?? "#"} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
+                  style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" }}>
+                  ✅ {m.source}
+                </a>
+              ))}
+              {missing.slice(0, 6).map((m) => (
+                <span key={m.source}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
+                  style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
+                  ❌ {m.source}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Domain & Infrastructure */}
+        {(bi.domainRegistry || bi.ipGeo) && (
+          <div className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Domain & Infrastructure</p>
+            <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+              {bi.domainRegistry && (
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                  {[
+                    { label: "Domain Age", value: bi.domainRegistry.domainAgeYears != null ? `${bi.domainRegistry.domainAgeYears} years` : "Unknown" },
+                    { label: "Registered", value: bi.domainRegistry.registeredDate ?? "Unknown" },
+                    { label: "Expires", value: bi.domainRegistry.expiryDate ?? "Unknown" },
+                    { label: "Registrar", value: bi.domainRegistry.registrar ?? "Unknown" },
+                    { label: "Privacy Shield", value: bi.domainRegistry.isPrivacyProtected ? "Yes" : "No (exposed)" },
+                    { label: "Nameservers", value: bi.domainRegistry.nameservers.slice(0, 2).join(", ") || "Unknown" },
+                  ].map(({ label, value }) => (
+                    <div key={label}>
+                      <p className="text-[10px] font-semibold uppercase" style={{ color: "var(--text-muted)" }}>{label}</p>
+                      <p className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {bi.ipGeo && (
+                <div className="pt-2 border-t flex flex-wrap gap-3" style={{ borderColor: "var(--border)" }}>
+                  <div className="flex items-center gap-1.5">
+                    <Network className="h-3.5 w-3.5" style={{ color: "var(--text-muted)" }} />
+                    <span className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
+                      {bi.ipGeo.hosting ?? bi.ipGeo.org ?? "Unknown hosting"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5" style={{ color: "var(--text-muted)" }} />
+                    <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                      {[bi.ipGeo.city, bi.ipGeo.region, bi.ipGeo.country].filter(Boolean).join(", ") || "Unknown location"}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Web search mentions */}
+        {bi.webSearchMentions.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Web Search Mentions</p>
+            <div className="space-y-2">
+              {bi.webSearchMentions.map((m, i) => (
+                <div key={i} className="rounded-xl p-3" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+                  <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>{m.snippet}</p>
+                  {m.url && (
+                    <a href={m.url} target="_blank" rel="noopener noreferrer"
+                      className="text-[10px] font-semibold mt-1 inline-block"
+                      style={{ color: "var(--brand-primary)" }}>
+                      {m.url.slice(0, 60)}{m.url.length > 60 ? "…" : ""}
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Parse security headers ────────────────────────────────────────────────────
 
 function parseSecurityHeaders(pitchText: string): Array<{ name: string; present: boolean }> {
@@ -917,6 +1225,7 @@ function EmailModal({ pitch, onClose }: { pitch: Pitch; onClose: () => void }) {
           securityScore: pitch.securityScore,
           presenceScore: pitch.presenceScore,
           dealScore: pitch.dealScore,
+          businessIntelData: pitch.businessIntelData,
         }),
       });
       const json = await res.json();
@@ -978,6 +1287,18 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
   const pentestResults: PentestResults | null = (() => {
     if (!pitch.pentestData) return null;
     try { return JSON.parse(pitch.pentestData) as PentestResults; } catch { return null; }
+  })();
+
+  // Parse stored business intel JSON
+  const businessIntel: BusinessIntelData | null = (() => {
+    if (!pitch.businessIntelData) return null;
+    try { return JSON.parse(pitch.businessIntelData) as BusinessIntelData; } catch { return null; }
+  })();
+
+  // Parse email send history
+  const emailsSentLog: Array<{ email: string; sentAt: string }> = (() => {
+    if (!pitch.emailsSent) return [];
+    try { return JSON.parse(pitch.emailsSent); } catch { return []; }
   })();
   const secRisk = Math.max(0, 100 - pitch.securityScore);
   const riskColor = secRisk > 60 ? "#dc2626" : secRisk > 30 ? "#d97706" : "#16a34a";
@@ -1169,6 +1490,33 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
           </div>
         )}
       </div>
+
+      {/* Email send log */}
+      {emailsSentLog.length > 0 && (
+        <div className="rounded-2xl px-5 py-4" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+          <div className="flex items-center gap-2 mb-3">
+            <Mail className="h-4 w-4" style={{ color: "#0891b2" }} />
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#0891b2" }}>
+              Pitch Sent To ({emailsSentLog.length})
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {emailsSentLog.map((log, i) => (
+              <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-full"
+                style={{ background: "#ecfeff", border: "1px solid #a5f3fc" }}>
+                <CheckCircle2 className="h-3.5 w-3.5" style={{ color: "#0891b2" }} />
+                <span className="text-xs font-semibold" style={{ color: "#164e63" }}>{log.email}</span>
+                <span className="text-[10px]" style={{ color: "#0891b2" }}>
+                  {new Date(log.sentAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Business Intel Card */}
+      {businessIntel && <BusinessIntelCard bi={businessIntel} />}
 
       {/* Pitch sections */}
       <div>

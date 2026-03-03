@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { auth } from "@/lib/auth";
 import { isGCSStaff } from "@/lib/auth-utils";
 import { runPentest, formatPentestForPrompt } from "@/lib/pentest";
+import { runBusinessIntel, formatBusinessIntelForPrompt } from "@/lib/business-intel";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -15,7 +16,7 @@ const PITCH_SYSTEM_PROMPT = `You are GCS's elite AI sales intelligence analyst A
 - **AI Integration**: Custom AI tools, intelligent chatbots, document processing, predictive analytics, LLM workflows
 - **Enterprise Solutions**: Microsoft 365, infrastructure management, network design, vendor management
 
-You will receive business intelligence about a prospect INCLUDING their social media footprint AND penetration test results. Generate a COMPELLING, SPECIFIC, DATA-DRIVEN sales pitch.
+You will receive business intelligence about a prospect INCLUDING their Google Business Profile data, domain/hosting intel, web mentions, social media footprint, AND penetration test results. Generate a COMPELLING, SPECIFIC, DATA-DRIVEN sales pitch.
 
 Structure your output with EXACTLY these 8 sections using ## headings:
 
@@ -25,6 +26,9 @@ Summarize who this business is — industry, size signals, what they do, their c
 ## 🌐 Digital Footprint Analysis
 Analyze their FULL digital presence:
 - Website quality, technology stack hints, performance indicators, content freshness
+- **Google Business Profile**: Rating vs industry benchmark, review count and sentiment, business hours accuracy, listing completeness, missing categories or photos
+- **Online Reputation**: Yelp listing status, BBB presence, other directory coverage — gaps here represent lost leads
+- **Domain & Hosting Intel**: Domain age and expiry, hosting provider quality, registrar, infrastructure signals
 - **Social Media**: Which platforms they have active, which key ones are missing, consistency of their social presence, whether their profiles appear active or stale
 - **SEO & Marketing Signals**: Open Graph tags, schema markup, meta descriptions, analytics tracking, content strategy
 - **Social Proof**: Reviews, testimonials, trust signals visible on site
@@ -46,7 +50,7 @@ Based on the automated reconnaissance data provided, deliver a TECHNICAL SECURIT
 - Reference specific port numbers, IP addresses, and technical details from the scan data
 
 ## 💡 Pain Points & Opportunities
-Identify 4-6 specific pain points this business likely faces based on their industry, size, digital footprint, social presence gaps, AND penetration test findings. Connect each pain point to a real business risk or cost. Include at least one pain point related to their social/digital presence gaps and one from pentest findings. These should feel eerily accurate to the prospect.
+Identify 4-6 specific pain points this business likely faces based on their industry, size, digital footprint, Google Business Profile data, social presence gaps, domain/hosting intel, AND penetration test findings. Connect each pain point to a real business risk or cost. Include at least one pain point from GBP data (rating vs benchmark, specific review complaints, missing listings or hours discrepancies), at least one from social/digital presence gaps, and one from pentest findings. Reference actual review text, actual ratings, and actual technical findings to make these feel eerily accurate to the prospect.
 
 ## 🎯 GCS Service Recommendations
 CRITICAL RULE: Each recommendation MUST reference a SPECIFIC finding from this prospect's website, pentest results, or social/security analysis. NEVER write generic recommendations.
@@ -62,7 +66,7 @@ Be so specific that the prospect feels you already have access to their systems.
 Write an executive-ready 3-4 paragraph pitch that could be read verbatim on a sales call or sent as an email. Open with a hook referencing something specific about their business or digital presence. Show you understand their world. Position GCS as the obvious partner. End with a clear call to action.
 
 ## 💬 Deal Talking Points
-List 6-8 punchy, specific talking points the GCS sales team can use in conversation. Each should be one line, memorable, and tied to a specific finding about this business. Include at least one about a pentest finding, one about their security header gaps, one about their social/digital presence, and one about competitive risk.
+List 6-8 punchy, specific talking points the GCS sales team can use in conversation. Each should be one line, memorable, and tied to a specific finding about this business. Include at least one about a pentest finding, one about their security header gaps, one about their Google Business Profile / review rating, one about their social/digital presence, and one about competitive risk.
 
 RULES:
 - Be SPECIFIC — always reference actual findings from website, headers, pentest results, and social presence
@@ -206,8 +210,8 @@ export async function POST(req: NextRequest) {
     let fetchError = "";
     const fetchStart = Date.now();
 
-    // Run website fetch and pentest in PARALLEL
-    const [fetchResult, pentestResult] = await Promise.allSettled([
+    // Run website fetch, pentest, and business intel in PARALLEL
+    const [fetchResult, pentestResult, biResult] = await Promise.allSettled([
       // Website fetch
       (async () => {
         const controller = new AbortController();
@@ -227,6 +231,8 @@ export async function POST(req: NextRequest) {
       })(),
       // Penetration test (runs fully in parallel)
       runPentest(normalizedUrl),
+      // Business intelligence (Google, Yelp, BBB, RDAP, IP geo, web search)
+      runBusinessIntel(businessName, normalizedUrl),
     ]);
 
     if (fetchResult.status === "fulfilled") {
@@ -242,6 +248,8 @@ export async function POST(req: NextRequest) {
 
     const pentestResults = pentestResult.status === "fulfilled" ? pentestResult.value : null;
     const pentestSection = pentestResults ? formatPentestForPrompt(pentestResults) : "Penetration test unavailable for this target.";
+    const businessIntelResults = biResult.status === "fulfilled" ? biResult.value : null;
+    const biSection = businessIntelResults ? formatBusinessIntelForPrompt(businessIntelResults) : "";
 
     const userMessage = `
 PROSPECT BUSINESS INTELLIGENCE REPORT
@@ -259,6 +267,7 @@ ${securityAnalysis || fetchError}
 
 ${socialAnalysis ? socialAnalysis : ""}
 
+${biSection ? `--- GOOGLE BUSINESS PROFILE & ONLINE REPUTATION ---\n${biSection}\n` : ""}
 --- AUTOMATED PENETRATION TEST ---
 ${pentestSection}
 ======================================
@@ -292,9 +301,12 @@ Generate the complete sales pitch and security intelligence report for this pros
       },
     });
 
-    // Encode pentest data in response header for the client to save
+    // Encode pentest + business intel data in response headers for the client to save
     const pentestHeader = pentestResults
       ? Buffer.from(JSON.stringify(pentestResults)).toString("base64")
+      : "";
+    const biHeader = businessIntelResults
+      ? Buffer.from(JSON.stringify(businessIntelResults)).toString("base64")
       : "";
 
     return new NextResponse(stream, {
@@ -303,6 +315,7 @@ Generate the complete sales pitch and security intelligence report for this pros
         "Cache-Control": "no-cache",
         "X-Content-Type-Options": "nosniff",
         ...(pentestHeader ? { "X-Pentest-Data": pentestHeader } : {}),
+        ...(biHeader ? { "X-Business-Intel-Data": biHeader } : {}),
       },
     });
   } catch {

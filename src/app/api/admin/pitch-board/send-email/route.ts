@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { isGCSStaff } from "@/lib/auth-utils";
 import { sendMail } from "@/lib/email";
+import { db } from "@/lib/db";
 
 // ─── Parsers ──────────────────────────────────────────────────────────────────
 
@@ -66,8 +67,6 @@ function gapCategories(pitchText: string): string[] {
 }
 
 // ─── SVG half-circle gauge (speedometer style) ───────────────────────────────
-// Arc from 9-o'clock (left) over 12-o'clock (top) to 3-o'clock (right)
-// SVG: M 15,60 A 45,45 0 0,0 105,60   sweep-flag=0 → counter-clockwise = top arc
 
 function halfGaugeSvg(score: number, color: string): string {
   const s = Math.min(Math.max(score, 0), 99.5);
@@ -90,13 +89,12 @@ function halfGaugeSvg(score: number, color: string): string {
 
 function miniBar(label: string, value: number, color: string, maxWidth = 120): string {
   const filled = Math.round((value / 100) * maxWidth);
-  const empty = maxWidth - filled;
   return `<tr>
   <td style="padding:4px 0 6px;">
     <table width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr>
         <td style="font-size:12px;color:#374151;font-weight:500;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding-bottom:3px;">${label}</td>
-        <td align="right" style="font-size:11px;font-weight:700;color:${color};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding-bottom:3px;">${value}%</td>
+        <td align="right" style="font-size:11px;font-weight:700;color:${color};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding-bottom:3px;">${value}</td>
       </tr>
       <tr><td colspan="2">
         <table cellpadding="0" cellspacing="0" border="0" style="width:100%;border-radius:99px;overflow:hidden;background:#f3f4f6;">
@@ -111,6 +109,60 @@ function miniBar(label: string, value: number, color: string, maxWidth = 120): s
 </tr>`;
 }
 
+// ─── Presence score sub-metric cell ──────────────────────────────────────────
+
+function presCell(label: string, value: number): string {
+  const color = value >= 70 ? "#22c55e" : value >= 35 ? "#f97316" : "#ef4444";
+  const filled = Math.round(value * 1.3); // ~130px max
+  return `<td width="50%" style="padding:4px 10px 8px 0;vertical-align:top;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+      <td style="font-size:12px;color:#374151;font-weight:500;padding-bottom:3px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">${label}</td>
+      <td align="right" style="font-size:12px;font-weight:800;color:${color};padding-bottom:3px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">${value}</td>
+    </tr>
+    <tr><td colspan="2">
+      <table cellpadding="0" cellspacing="0" border="0" style="width:100%;border-radius:99px;overflow:hidden;background:#f3f4f6;">
+        <tr>
+          <td style="width:${filled}px;height:6px;background:${color};border-radius:99px;font-size:0;" width="${filled}">&nbsp;</td>
+          <td style="height:6px;background:#f3f4f6;font-size:0;">&nbsp;</td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</td>`;
+}
+
+// ─── Star HTML ────────────────────────────────────────────────────────────────
+
+function starHtml(rating: number): string {
+  const full = Math.floor(rating);
+  const half = rating % 1 >= 0.5;
+  let stars = "";
+  for (let i = 1; i <= 5; i++) {
+    if (i <= full) stars += `<span style="color:#f59e0b;">&#9733;</span>`;
+    else if (i === full + 1 && half) stars += `<span style="color:#f59e0b;">&#11088;</span>`;
+    else stars += `<span style="color:#d1d5db;">&#9733;</span>`;
+  }
+  return stars;
+}
+
+// ─── Review card HTML ─────────────────────────────────────────────────────────
+
+function reviewCardHtml(review: { rating: number; text: string; relativeTime: string; authorName: string }): string {
+  return `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;margin-bottom:8px;">
+  <tr><td style="padding:12px 14px;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td style="font-size:14px;">${starHtml(review.rating)}</td>
+        <td align="right" style="font-size:11px;color:#9ca3af;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">${review.relativeTime}</td>
+      </tr>
+    </table>
+    <p style="margin:4px 0 5px;font-size:12px;font-weight:700;color:#374151;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">${review.authorName}</p>
+    <p style="margin:0;font-size:12px;color:#6b7280;line-height:1.55;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">&ldquo;${review.text.replace(/"/g, "&quot;").slice(0, 260)}${review.text.length > 260 ? "&hellip;" : ""}&rdquo;</p>
+  </td></tr>
+</table>`;
+}
+
 // ─── Full email builder ───────────────────────────────────────────────────────
 
 function buildEmail(
@@ -119,13 +171,14 @@ function buildEmail(
   landingUrl: string,
   securityScore: number,
   presenceScore: number,
-  dealScore: number
+  dealScore: number,
+  businessIntelData?: string | null
 ): string {
   const secRisk  = Math.max(0, 100 - securityScore);
   const riskColor = secRisk > 60 ? "#ef4444" : secRisk > 30 ? "#f97316" : "#22c55e";
   const riskLabel = secRisk > 60 ? "Critical Risk" : secRisk > 30 ? "At Risk" : "Low Risk";
-  const presLabel = presenceScore > 65 ? "Strong Presence" : presenceScore > 40 ? "Growing Presence" : "Critical Digital Presence";
   const presColor = presenceScore > 65 ? "#22c55e" : presenceScore > 40 ? "#f97316" : "#ef4444";
+  const presLabel = presenceScore > 65 ? "Strong Digital Presence" : presenceScore > 40 ? "Growing Digital Presence" : "Weak Digital Presence";
   const dealColor = dealScore > 70 ? "#22c55e" : dealScore > 45 ? "#0891b2" : "#a78bfa";
   const dealLabel = dealScore > 70 ? "High Opportunity" : dealScore > 45 ? "Strong Potential" : "Solid Opportunity";
 
@@ -142,7 +195,8 @@ function buildEmail(
   const healthColor = healthScore >= 76 ? "#16a34a" : healthScore >= 61 ? "#0891b2" : healthScore >= 46 ? "#d97706" : healthScore >= 26 ? "#f97316" : "#ef4444";
   const healthBg    = healthScore >= 76 ? "#f0fdf4" : healthScore >= 61 ? "#ecfeff" : healthScore >= 46 ? "#fffbeb" : healthScore >= 26 ? "#fff7ed" : "#fef2f2";
   const healthBorder= healthScore >= 76 ? "#bbf7d0" : healthScore >= 61 ? "#a5f3fc" : healthScore >= 46 ? "#fde68a" : healthScore >= 26 ? "#fed7aa" : "#fecaca";
-  // Circular ring SVG (email-safe inline)
+
+  // Circular ring SVG
   const ringStroke = 11;
   const ringR = (110 - ringStroke) / 2;
   const ringCirc = 2 * Math.PI * ringR;
@@ -154,16 +208,60 @@ function buildEmail(
   <text x="55" y="67" text-anchor="middle" font-size="10" fill="#9ca3af" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">/100</text>
 </svg>`;
 
-  // Sub-metric scores for presence card mini-bars
-  const webScore  = Math.min(95, presenceScore + 8);
-  const seoScore  = Math.round(presenceScore * 0.85);
-  const brandScore = Math.round(presenceScore * 0.78);
-  const contentScore = Math.round(presenceScore * 0.70);
+  // Parse Google Business Profile data
+  let googleRating: number | null = null;
+  let googleReviewCount: number | null = null;
+  let googleRatingBenchmark = 4.4;
+  let recentReviews: Array<{ rating: number; text: string; relativeTime: string; authorName: string }> = [];
+  let domainAge: number | null = null;
+  let hostingProvider: string | null = null;
 
-  // Sub-metric scores for security mini-bars
-  const headersScore = securityScore;
-  const sslScore = securityScore > 60 ? Math.min(95, securityScore + 12) : Math.round(securityScore * 1.1);
-  const configScore = Math.round(securityScore * 0.85);
+  if (businessIntelData) {
+    try {
+      const bi = JSON.parse(businessIntelData);
+      if (bi?.google?.found) {
+        googleRating = bi.google.rating;
+        googleReviewCount = bi.google.reviewCount;
+        googleRatingBenchmark = bi.google.ratingBenchmark ?? 4.4;
+        recentReviews = (bi.google.recentReviews ?? []).slice(0, 3);
+      }
+      if (bi?.domainRegistry?.domainAgeYears != null) domainAge = bi.domainRegistry.domainAgeYears;
+      if (bi?.ipGeo?.hosting) hostingProvider = bi.ipGeo.hosting;
+    } catch { /* ignore */ }
+  }
+
+  // Digital Presence sub-metrics (screenshot-matching)
+  const websiteHealthScore = Math.min(100, Math.max(20, securityScore));
+  const analyticsScore = presenceScore > 70 ? 80 : presenceScore > 50 ? 42 : 8;
+  const leadGenScore = presenceScore > 65 ? 68 : presenceScore > 45 ? 32 : 6;
+  const onlineRepScore = googleRating ? Math.round(googleRating / 5 * 100) : Math.max(20, Math.round(presenceScore * 0.9));
+  const socialScore = Math.round(presenceScore * 0.85);
+  const industryAvg = Math.round(presenceScore * 0.85 + 8);
+
+  // Google rating bar (0-100 scale from 0-5 stars, displayed as 220px max)
+  const googleRatingPct = googleRating ? Math.round(googleRating / 5 * 220) : 0;
+  const googleRatingColor = googleRating
+    ? (googleRating >= googleRatingBenchmark ? "#22c55e" : googleRating >= googleRatingBenchmark - 0.3 ? "#f97316" : "#ef4444")
+    : "#d1d5db";
+
+  const googleRatingRowHtml = googleRating ? `<tr>
+  <td colspan="2" style="padding-top:10px;border-top:1px solid #f3f4f6;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td style="font-size:13px;color:#d97706;font-weight:700;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">&#11088; Google Rating</td>
+        <td align="right" style="font-size:13px;font-weight:800;color:#f97316;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">${googleRating.toFixed(1)}/5.0 <span style="font-weight:500;color:#9ca3af;">(${(googleReviewCount ?? 0).toLocaleString()} reviews)</span></td>
+      </tr>
+      <tr><td colspan="2" style="padding-top:5px;">
+        <table cellpadding="0" cellspacing="0" border="0" style="width:100%;border-radius:99px;overflow:hidden;background:#f3f4f6;">
+          <tr>
+            <td style="width:${googleRatingPct}px;height:8px;background:${googleRatingColor};border-radius:99px;font-size:0;" width="${googleRatingPct}">&nbsp;</td>
+            <td style="height:8px;background:#f3f4f6;font-size:0;">&nbsp;</td>
+          </tr>
+        </table>
+      </td></tr>
+    </table>
+  </td>
+</tr>` : "";
 
   const secCatChips = secCats
     .map((c) => `<span style="display:inline-block;background:#fef2f2;border:1px solid #fecaca;border-radius:99px;padding:4px 12px;font-size:12px;color:#991b1b;font-weight:600;margin:3px 3px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">🛡️ ${c}</span>`)
@@ -172,6 +270,40 @@ function buildEmail(
   const gapChips = gapCats
     .map((c) => `<span style="display:inline-block;background:#fff7ed;border:1px solid #fed7aa;border-radius:99px;padding:4px 12px;font-size:12px;color:#92400E;font-weight:600;margin:3px 3px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">⚠️ ${c}</span>`)
     .join("");
+
+  // Sub-metrics for security mini-bars
+  const headersScore = securityScore;
+  const sslScore = securityScore > 60 ? Math.min(95, securityScore + 12) : Math.round(securityScore * 1.1);
+  const configScore = Math.round(securityScore * 0.85);
+
+  // Reviews section
+  const reviewsHtml = recentReviews.length > 0 ? `
+  <!-- ── GOOGLE REVIEWS ─────────────────────────────────────────── -->
+  <tr>
+    <td style="padding:16px 28px 0;background:#F8FAFC;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid #E5E7EB;border-radius:14px;overflow:hidden;">
+        <tr>
+          <td style="padding:16px 20px 4px;">
+            <p style="margin:0;font-size:10px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:0.12em;font-family:inherit;">&#11088; Google Reviews</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:4px 20px 16px;">
+            <p style="margin:0 0 12px;font-size:13px;color:#374151;font-family:inherit;">
+              What customers are saying about <strong>${businessName}</strong>:
+            </p>
+            ${recentReviews.map(reviewCardHtml).join("")}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>` : "";
+
+  // Domain/hosting chip
+  const infraChips = [
+    domainAge != null ? `<span style="display:inline-block;background:#eff6ff;border:1px solid #bfdbfe;border-radius:99px;padding:3px 10px;font-size:11px;color:#1d4ed8;font-weight:600;margin:2px;font-family:inherit;">🌐 ${domainAge}yr domain</span>` : "",
+    hostingProvider ? `<span style="display:inline-block;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:99px;padding:3px 10px;font-size:11px;color:#15803d;font-weight:600;margin:2px;font-family:inherit;">🖥️ ${hostingProvider}</span>` : "",
+  ].filter(Boolean).join("");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -193,6 +325,7 @@ function buildEmail(
       <p style="margin:0 0 4px;color:rgba(255,255,255,0.6);font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;font-family:inherit;">GCS Technology Consulting</p>
       <h1 style="margin:0 0 6px;color:#ffffff;font-size:21px;font-weight:800;line-height:1.3;font-family:inherit;">We reviewed ${businessName}&rsquo;s technology.</h1>
       <p style="margin:0;color:rgba(255,255,255,0.7);font-size:14px;line-height:1.55;font-family:inherit;">Here&rsquo;s a snapshot of what our team found.</p>
+      ${infraChips ? `<p style="margin:12px 0 0;font-family:inherit;">${infraChips}</p>` : ""}
     </td>
   </tr>
 
@@ -202,7 +335,6 @@ function buildEmail(
       <p style="margin:0 0 18px;text-align:center;color:rgba(255,255,255,0.4);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;font-family:inherit;">Technology Health Snapshot</p>
       <table width="100%" cellpadding="0" cellspacing="0" border="0">
         <tr>
-          <!-- Security Risk -->
           <td align="center" width="33%" style="padding:0 8px;">
             <table cellpadding="0" cellspacing="0" border="0" style="background:rgba(255,255,255,0.06);border-radius:12px;overflow:hidden;" width="100%">
               <tr><td align="center" style="padding:16px 8px 8px;">
@@ -212,17 +344,15 @@ function buildEmail(
               </td></tr>
             </table>
           </td>
-          <!-- Presence -->
           <td align="center" width="33%" style="padding:0 8px;">
             <table cellpadding="0" cellspacing="0" border="0" style="background:rgba(255,255,255,0.06);border-radius:12px;overflow:hidden;" width="100%">
               <tr><td align="center" style="padding:16px 8px 8px;">
                 ${halfGaugeSvg(presenceScore, "#38bdf8")}
                 <p style="margin:4px 0 2px;font-size:12px;font-weight:800;color:#ffffff;font-family:inherit;">Online Presence</p>
-                <p style="margin:0 0 12px;font-size:10px;font-weight:700;color:#38bdf8;text-transform:uppercase;letter-spacing:0.08em;font-family:inherit;">${presLabel.replace(" Presence", "")}</p>
+                <p style="margin:0 0 12px;font-size:10px;font-weight:700;color:#38bdf8;text-transform:uppercase;letter-spacing:0.08em;font-family:inherit;">${presenceScore > 65 ? "Strong" : presenceScore > 40 ? "Growing" : "Weak"}</p>
               </td></tr>
             </table>
           </td>
-          <!-- Opportunity -->
           <td align="center" width="33%" style="padding:0 8px;">
             <table cellpadding="0" cellspacing="0" border="0" style="background:rgba(255,255,255,0.06);border-radius:12px;overflow:hidden;" width="100%">
               <tr><td align="center" style="padding:16px 8px 8px;">
@@ -250,14 +380,12 @@ function buildEmail(
           <td style="padding:0 20px 20px;">
             <table width="100%" cellpadding="0" cellspacing="0" border="0">
               <tr valign="middle">
-                <!-- Ring -->
                 <td width="120" align="center" style="padding-right:16px;">
                   ${healthRingSvg}
                   <p style="margin:4px 0 0;text-align:center;">
                     <span style="display:inline-block;background:${healthBg};border:1.5px solid ${healthBorder};border-radius:99px;padding:3px 12px;font-size:11px;font-weight:800;color:${healthColor};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">${healthLabel}</span>
                   </p>
                 </td>
-                <!-- Sub-metrics -->
                 <td style="padding-left:4px;">
                   <p style="margin:0 0 4px;font-size:15px;font-weight:800;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">${businessName} Digital Health</p>
                   <p style="margin:0 0 12px;font-size:12px;color:#6B7280;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">Composite score across security, presence &amp; technology efficiency</p>
@@ -286,7 +414,7 @@ function buildEmail(
     </td>
   </tr>
 
-  <!-- ── DIGITAL PRESENCE ANALYSIS CARD ─────────────────────────── -->
+  <!-- ── DIGITAL PRESENCE SCORE CARD (screenshot design) ────────── -->
   <tr>
     <td style="padding:16px 28px 0;background:#F8FAFC;">
       <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid #E5E7EB;border-radius:14px;overflow:hidden;">
@@ -297,34 +425,46 @@ function buildEmail(
         </tr>
         <tr>
           <td style="padding:0 20px 16px;">
-            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+            <!-- Top row: score box + title + bar -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:14px;">
               <tr valign="middle">
-                <!-- Left: gauge -->
-                <td width="120" align="center" style="padding-right:16px;">
-                  ${halfGaugeSvg(presenceScore, presColor)}
+                <!-- Score Box -->
+                <td width="76" style="padding-right:14px;">
+                  <table cellpadding="0" cellspacing="0" border="0" style="border:2.5px solid ${presColor};border-radius:10px;width:74px;height:74px;">
+                    <tr><td align="center" style="padding:8px;">
+                      <p style="margin:0;font-size:30px;font-weight:900;color:${presColor};line-height:1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">${presenceScore}</p>
+                      <p style="margin:2px 0 0;font-size:11px;color:#9ca3af;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">/100</p>
+                    </td></tr>
+                  </table>
                 </td>
-                <!-- Right: label + bars -->
-                <td style="padding-left:4px;">
-                  <p style="margin:0 0 3px;font-size:15px;font-weight:800;color:#111827;font-family:inherit;">${presLabel}</p>
-                  <p style="margin:0 0 12px;font-size:12px;color:#6B7280;font-family:inherit;">vs. 78 for top performers in ${industry}</p>
-                  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <!-- Title + progress bar -->
+                <td>
+                  <p style="margin:0 0 2px;font-size:16px;font-weight:800;color:${presColor};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">${presLabel}</p>
+                  <p style="margin:0 0 8px;font-size:12px;color:#6B7280;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">Industry avg: ${industryAvg} &middot; Top performers: 85</p>
+                  <table cellpadding="0" cellspacing="0" border="0" style="width:100%;border-radius:99px;overflow:hidden;background:#f3f4f6;">
                     <tr>
-                      <td width="48%" style="padding-right:12px;">
-                        <table width="100%" cellpadding="0" cellspacing="0" border="0">
-                          ${miniBar("Website", webScore, "#38bdf8", 80)}
-                          ${miniBar("Visibility", seoScore, "#22c55e", 80)}
-                        </table>
-                      </td>
-                      <td width="52%">
-                        <table width="100%" cellpadding="0" cellspacing="0" border="0">
-                          ${miniBar("Branding", brandScore, "#a78bfa", 80)}
-                          ${miniBar("Content", contentScore, "#f97316", 80)}
-                        </table>
-                      </td>
+                      <td style="width:${presenceScore}%;height:9px;background:${presColor};border-radius:99px;font-size:0;" width="${Math.round(presenceScore * 4.4)}">&nbsp;</td>
+                      <td style="height:9px;background:#f3f4f6;font-size:0;">&nbsp;</td>
                     </tr>
                   </table>
                 </td>
               </tr>
+            </table>
+            <!-- Sub-metrics grid -->
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                ${presCell("Website Health", websiteHealthScore)}
+                ${presCell("Analytics", analyticsScore)}
+              </tr>
+              <tr>
+                ${presCell("Lead Generation", leadGenScore)}
+                ${presCell("Online Reputation", onlineRepScore)}
+              </tr>
+              <tr>
+                ${presCell("Social Presence", socialScore)}
+                <td width="50%"></td>
+              </tr>
+              ${googleRatingRowHtml}
             </table>
           </td>
         </tr>
@@ -377,6 +517,8 @@ function buildEmail(
     </td>
   </tr>` : ""}
 
+  ${reviewsHtml}
+
   <!-- ── WHAT WE DISCOVERED ─────────────────────────────────────── -->
   <tr>
     <td style="padding:16px 28px 0;background:#F8FAFC;">
@@ -407,7 +549,7 @@ function buildEmail(
         We&rsquo;ve put together a personalized assessment with full findings and recommendations.
       </p>
       <p style="margin:0 0 20px;text-align:center;font-size:14px;color:#9CA3AF;font-family:inherit;">
-        Request a free 20-minute consultation — no commitment.
+        Request a free 20-minute consultation &mdash; no commitment.
       </p>
       <table width="100%" cellpadding="0" cellspacing="0" border="0">
         <tr>
@@ -453,7 +595,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
-    const { recipientEmail, businessName, pitchText, pitchId, securityScore, presenceScore, dealScore } =
+    const { recipientEmail, businessName, pitchText, pitchId, securityScore, presenceScore, dealScore, businessIntelData } =
       await req.json();
     if (!recipientEmail || !businessName || !pitchText) {
       return NextResponse.json(
@@ -475,10 +617,27 @@ export async function POST(req: NextRequest) {
         landingUrl,
         securityScore ?? 50,
         presenceScore ?? 50,
-        dealScore ?? 50
+        dealScore ?? 50,
+        businessIntelData
       ),
       replyTo: "info@itatgcs.com",
     });
+
+    // Log this email send to the pitch record
+    if (pitchId) {
+      try {
+        const pitch = await db.pitch.findUnique({ where: { id: pitchId }, select: { emailsSent: true } });
+        const existing: Array<{ email: string; sentAt: string }> = [];
+        if (pitch?.emailsSent) {
+          try { existing.push(...JSON.parse(pitch.emailsSent)); } catch { /* ignore */ }
+        }
+        existing.push({ email: recipientEmail, sentAt: new Date().toISOString() });
+        await db.pitch.update({
+          where: { id: pitchId },
+          data: { emailsSent: JSON.stringify(existing) },
+        });
+      } catch { /* non-fatal */ }
+    }
 
     return NextResponse.json({ success: true });
   } catch (err) {

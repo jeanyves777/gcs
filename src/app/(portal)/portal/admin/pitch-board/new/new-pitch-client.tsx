@@ -116,11 +116,16 @@ export function NewPitchClient() {
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
       if (!res.body) throw new Error("No stream");
 
-      // Extract pentest data from response header before reading body
+      // Extract pentest + business intel data from response headers before reading body
       const pentestHeader = res.headers.get("X-Pentest-Data");
       let pentestData: unknown = undefined;
       if (pentestHeader) {
         try { pentestData = JSON.parse(atob(pentestHeader)); } catch { /* ignore */ }
+      }
+      const biHeader = res.headers.get("X-Business-Intel-Data");
+      let businessIntelData: unknown = undefined;
+      if (biHeader) {
+        try { businessIntelData = JSON.parse(atob(biHeader)); } catch { /* ignore */ }
       }
 
       const reader = res.body.getReader();
@@ -151,6 +156,7 @@ export function NewPitchClient() {
           pitchText: accumulated,
           ...scores,
           pentestData,
+          businessIntelData,
         }),
       });
       if (!saveRes.ok) throw new Error("Failed to save pitch");
