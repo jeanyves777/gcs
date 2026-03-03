@@ -6,45 +6,59 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, Copy, Check, Mail, Trash2, Loader2, Globe, Calendar, User2,
-  Building2, Shield, Lightbulb, Target, Rocket, MessageSquare, ChevronDown, ChevronUp, X, Send,
+  Building2, Shield, Lightbulb, Target, Rocket, MessageSquare,
+  ChevronDown, ChevronUp, X, Send, Server, Cloud, Code2, Sparkles, AlertTriangle,
+  TrendingUp, CheckCircle2, Info, Quote,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type Pitch = {
-  id: string;
-  businessName: string;
-  websiteUrl: string;
-  pitchText: string;
-  securityScore: number;
-  presenceScore: number;
-  dealScore: number;
-  painCount: number;
-  createdAt: Date;
-  createdBy: { name: string | null; email: string };
+  id: string; businessName: string; websiteUrl: string; pitchText: string;
+  securityScore: number; presenceScore: number; dealScore: number; painCount: number;
+  createdAt: Date; createdBy: { name: string | null; email: string };
 };
+type Section = { heading: string; content: string };
 
-// ─── Score ring (SVG) ────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function ScoreRing({
-  score, size = 100, color, label, sublabel,
-}: {
-  score: number; size?: number; color: string; label: string; sublabel?: string;
-}) {
-  const r = 36;
-  const circ = 2 * Math.PI * r;
+function extractBullets(content: string): string[] {
+  return content.split("\n")
+    .filter((l) => /^[-•*]\s+/.test(l.trim()) || /^\d+\.\s+/.test(l.trim()))
+    .map((l) => l.replace(/^[-•*\d.]+\s+/, "").trim())
+    .filter(Boolean);
+}
+
+function extractParagraphs(content: string): string[] {
+  return content.split(/\n\n+/).map((p) => p.trim()).filter((p) => p && !p.split("\n").every((l) => /^[-•*\d]/.test(l.trim())));
+}
+
+function b(t: string): string {
+  return t
+    .replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text-primary)">$1</strong>')
+    .replace(/`(.+?)`/g, '<code style="background:var(--bg-tertiary);padding:1px 5px;border-radius:4px;font-size:12px;font-family:monospace">$1</code>');
+}
+
+function parseSections(text: string): Section[] {
+  return text.split(/\n##\s+/).filter(Boolean).map((part) => {
+    const nl = part.indexOf("\n");
+    return nl === -1 ? { heading: part.trim(), content: "" } : { heading: part.slice(0, nl).trim(), content: part.slice(nl + 1).trim() };
+  });
+}
+
+// ─── SVG Score Ring ───────────────────────────────────────────────────────────
+
+function ScoreRing({ score, color, label, sublabel, size = 100 }: { score: number; color: string; label: string; sublabel?: string; size?: number }) {
+  const r = 36; const circ = 2 * Math.PI * r;
   const offset = circ * (1 - Math.max(0, Math.min(100, score)) / 100);
   return (
     <div className="flex flex-col items-center gap-2">
       <svg width={size} height={size} viewBox="0 0 100 100">
         <circle cx="50" cy="50" r={r} fill="none" stroke="var(--bg-tertiary)" strokeWidth="7" />
-        <circle
-          cx="50" cy="50" r={r} fill="none" stroke={color} strokeWidth="7"
-          strokeDasharray={circ} strokeDashoffset={offset}
-          transform="rotate(-90 50 50)" strokeLinecap="round"
-        />
+        <circle cx="50" cy="50" r={r} fill="none" stroke={color} strokeWidth="7"
+          strokeDasharray={circ} strokeDashoffset={offset} transform="rotate(-90 50 50)" strokeLinecap="round" />
         <text x="50" y="46" textAnchor="middle" fontSize="18" fontWeight="800" fill={color}>{score}</text>
         <text x="50" y="60" textAnchor="middle" fontSize="10" fill="var(--text-muted)">/100</text>
       </svg>
@@ -54,7 +68,7 @@ function ScoreRing({
   );
 }
 
-// ─── Metric bar ──────────────────────────────────────────────────────────────
+// ─── Metric Bar ───────────────────────────────────────────────────────────────
 
 function MetricBar({ label, value, color, note }: { label: string; value: number; color: string; note?: string }) {
   return (
@@ -62,46 +76,472 @@ function MetricBar({ label, value, color, note }: { label: string; value: number
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>{label}</span>
         <div className="flex items-center gap-2">
-          {note && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: color + "20", color }}>{note}</span>}
+          {note && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold" style={{ background: color + "20", color }}>{note}</span>}
           <span className="text-xs font-mono font-bold" style={{ color }}>{value}%</span>
         </div>
       </div>
       <div className="h-2.5 rounded-full overflow-hidden" style={{ background: "var(--bg-tertiary)" }}>
-        <div
-          className="h-full rounded-full transition-all duration-700"
-          style={{ width: `${value}%`, background: `linear-gradient(90deg, ${color}cc, ${color})` }}
-        />
+        <div className="h-full rounded-full transition-all duration-700"
+          style={{ width: `${value}%`, background: `linear-gradient(90deg, ${color}aa, ${color})` }} />
       </div>
     </div>
   );
 }
 
-// ─── Parse pitch sections ─────────────────────────────────────────────────────
+// ─── Section: Business Overview ───────────────────────────────────────────────
 
-type Section = { heading: string; content: string };
-
-function parseSections(text: string): Section[] {
-  return text
-    .split(/\n##\s+/)
-    .filter(Boolean)
-    .map((part) => {
-      const nl = part.indexOf("\n");
-      return nl === -1
-        ? { heading: part.trim(), content: "" }
-        : { heading: part.slice(0, nl).trim(), content: part.slice(nl + 1).trim() };
-    });
+function OverviewSection({ content }: { content: string }) {
+  const paras = extractParagraphs(content);
+  const bullets = extractBullets(content);
+  const icons = ["🏢", "📍", "👥", "💼", "🌐", "📊", "🔑", "📈"];
+  return (
+    <div className="space-y-4">
+      {paras.slice(0, 1).map((p, i) => (
+        <div key={i} className="rounded-xl p-4" style={{ background: "var(--brand-primary)08", borderLeft: "4px solid var(--brand-primary)" }}>
+          <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(p.replace(/\n/g, " ")) }} />
+        </div>
+      ))}
+      {bullets.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {bullets.map((bullet, i) => (
+            <div key={i} className="flex items-start gap-3 p-3 rounded-xl" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+              <span className="text-lg flex-shrink-0 mt-0.5">{icons[i % icons.length]}</span>
+              <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(bullet) }} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
-// ─── Parse security headers from pitch text ───────────────────────────────────
+// ─── Section: Digital Footprint ───────────────────────────────────────────────
 
-type Header = { name: string; present: boolean };
+function FootprintSection({ content, presenceScore }: { content: string; presenceScore: number }) {
+  const bullets = extractBullets(content);
+  const paras = extractParagraphs(content);
+  const presColor = presenceScore > 65 ? "#16a34a" : presenceScore > 40 ? "#d97706" : "#dc2626";
+  const presLabel = presenceScore > 65 ? "Strong Presence" : presenceScore > 40 ? "Moderate Presence" : "Weak Presence";
 
-function parseSecurityHeaders(pitchText: string): Header[] {
+  // Split bullets into positive/negative by keywords
+  const positive = bullets.filter(b => /strong|good|well|active|modern|professional|https|fast|secure|seo/i.test(b));
+  const concern = bullets.filter(b => /missing|lack|no |poor|slow|outdated|basic|limited|weak|without/i.test(b));
+  const neutral = bullets.filter(b => !positive.includes(b) && !concern.includes(b));
+
+  return (
+    <div className="space-y-4">
+      {/* Presence score bar */}
+      <div className="rounded-xl p-4 flex items-center gap-4" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+        <div className="flex-1">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Digital Presence Strength</span>
+            <span className="text-sm font-bold px-2 py-0.5 rounded-full" style={{ background: presColor + "20", color: presColor }}>{presLabel}</span>
+          </div>
+          <div className="h-3 rounded-full overflow-hidden" style={{ background: "var(--bg-tertiary)" }}>
+            <div className="h-full rounded-full" style={{ width: `${presenceScore}%`, background: `linear-gradient(90deg, ${presColor}80, ${presColor})` }} />
+          </div>
+          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{presenceScore}/100 — {presLabel}</p>
+        </div>
+      </div>
+
+      {/* Summary paragraph */}
+      {paras.slice(0, 1).map((p, i) => (
+        <p key={i} className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(p.replace(/\n/g, " ")) }} />
+      ))}
+
+      {/* Positive / Concern split */}
+      {(positive.length > 0 || concern.length > 0) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {positive.length > 0 && (
+            <div className="rounded-xl p-4 space-y-2" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+              <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#16a34a" }}>✅ Strengths</p>
+              {positive.map((p, i) => <p key={i} className="text-xs leading-relaxed" style={{ color: "#166534" }} dangerouslySetInnerHTML={{ __html: b(p) }} />)}
+            </div>
+          )}
+          {concern.length > 0 && (
+            <div className="rounded-xl p-4 space-y-2" style={{ background: "#fef2f2", border: "1px solid #fecaca" }}>
+              <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#dc2626" }}>⚠️ Gaps Identified</p>
+              {concern.map((p, i) => <p key={i} className="text-xs leading-relaxed" style={{ color: "#991b1b" }} dangerouslySetInnerHTML={{ __html: b(p) }} />)}
+            </div>
+          )}
+        </div>
+      )}
+      {neutral.map((n, i) => (
+        <div key={i} className="flex items-start gap-2 text-xs" style={{ color: "var(--text-secondary)" }}>
+          <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" style={{ color: "var(--text-muted)" }} />
+          <span dangerouslySetInnerHTML={{ __html: b(n) }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Section: Security Assessment ─────────────────────────────────────────────
+
+function SecuritySection({ content, securityScore }: { content: string; securityScore: number }) {
+  const secRisk = 100 - securityScore;
+  const riskColor = secRisk > 60 ? "#dc2626" : secRisk > 30 ? "#d97706" : "#16a34a";
+  const riskLabel = secRisk > 60 ? "Critical Risk" : secRisk > 30 ? "High Risk" : "Low Risk";
+  const paras = extractParagraphs(content);
+  const bullets = extractBullets(content);
+  const missing = bullets.filter(b => /❌|missing|no |without|lack/.test(b));
+  const passing = bullets.filter(b => /✅|present|enabled|configured/.test(b));
+
+  return (
+    <div className="space-y-4">
+      {/* Risk level callout */}
+      <div className="rounded-xl p-4 flex items-center gap-4" style={{ background: riskColor + "10", border: `1px solid ${riskColor}40` }}>
+        <div className="w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: riskColor + "20" }}>
+          <AlertTriangle className="h-7 w-7" style={{ color: riskColor }} />
+        </div>
+        <div className="flex-1">
+          <p className="font-bold" style={{ color: riskColor }}>{riskLabel} — {secRisk}% Exposed</p>
+          <div className="mt-2 h-2.5 rounded-full overflow-hidden" style={{ background: "var(--bg-tertiary)" }}>
+            <div className="h-full rounded-full" style={{ width: `${secRisk}%`, background: `linear-gradient(90deg, ${riskColor}80, ${riskColor})` }} />
+          </div>
+          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{securityScore}/100 security headers passing</p>
+        </div>
+      </div>
+
+      {/* Summary */}
+      {paras.slice(0, 1).map((p, i) => (
+        <p key={i} className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(p.replace(/\n/g, " ")) }} />
+      ))}
+
+      {/* Issues grid */}
+      {missing.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Vulnerabilities Identified</p>
+          <div className="grid grid-cols-1 gap-2">
+            {missing.map((issue, i) => (
+              <div key={i} className="flex items-start gap-3 p-3 rounded-lg" style={{ background: "#fef2f2", border: "1px solid #fecaca" }}>
+                <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: "#dc2626", minWidth: 20 }}>
+                  <span className="text-white font-bold" style={{ fontSize: 10 }}>{i + 1}</span>
+                </div>
+                <p className="text-xs leading-relaxed" style={{ color: "#991b1b" }} dangerouslySetInnerHTML={{ __html: b(issue.replace(/❌\s*/g, "")) }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* What's OK */}
+      {passing.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {passing.map((p, i) => (
+            <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
+              style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" }}>
+              ✅ {p.replace(/✅\s*/g, "").split("—")[0].trim()}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Remaining bullets */}
+      {bullets.filter(b => !missing.includes(b) && !passing.includes(b)).map((b2, i) => (
+        <p key={i} className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(b2) }} />
+      ))}
+    </div>
+  );
+}
+
+// ─── Section: Pain Points ─────────────────────────────────────────────────────
+
+const PAIN_COLORS = ["#dc2626", "#ea580c", "#d97706", "#ca8a04", "#16a34a", "#0891b2"];
+const PAIN_SEVERITY = ["Critical", "High", "Medium-High", "Medium", "Moderate", "Low"];
+
+function PainPointsSection({ content }: { content: string }) {
+  const bullets = extractBullets(content);
+  const paras = extractParagraphs(content);
+
+  return (
+    <div className="space-y-4">
+      {paras.slice(0, 1).map((p, i) => (
+        <p key={i} className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(p.replace(/\n/g, " ")) }} />
+      ))}
+
+      <div className="space-y-2.5">
+        {bullets.map((pain, i) => {
+          const color = PAIN_COLORS[Math.min(i, PAIN_COLORS.length - 1)];
+          const severity = PAIN_SEVERITY[Math.min(i, PAIN_SEVERITY.length - 1)];
+          return (
+            <div key={i} className="rounded-xl p-4 flex items-start gap-3"
+              style={{ background: `${color}08`, border: `1px solid ${color}25` }}>
+              <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center font-black text-sm text-white"
+                  style={{ background: color, minWidth: 32 }}>
+                  {i + 1}
+                </div>
+                <span className="text-[9px] font-bold uppercase" style={{ color, letterSpacing: "0.05em" }}>{severity}</span>
+              </div>
+              <div className="flex-1">
+                <p className="text-sm leading-relaxed" style={{ color: "var(--text-primary)" }} dangerouslySetInnerHTML={{ __html: b(pain) }} />
+                {/* Subtle impact bar */}
+                <div className="mt-2 h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-tertiary)" }}>
+                  <div className="h-full rounded-full" style={{ width: `${Math.max(30, 100 - i * 14)}%`, background: color }} />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Section: GCS Service Recommendations ─────────────────────────────────────
+
+const SERVICE_MAP: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
+  "managed it":  { icon: Server,    color: "#1565C0", bg: "#eff6ff" },
+  "cybersecuri": { icon: Shield,    color: "#dc2626", bg: "#fef2f2" },
+  "cloud":       { icon: Cloud,     color: "#0891b2", bg: "#ecfeff" },
+  "software dev":{ icon: Code2,     color: "#7c3aed", bg: "#f5f3ff" },
+  "ai integrat": { icon: Sparkles,  color: "#c026d3", bg: "#fdf4ff" },
+  "enterprise":  { icon: Building2, color: "#d97706", bg: "#fffbeb" },
+  "default":     { icon: Target,    color: "#16a34a", bg: "#f0fdf4" },
+};
+
+function getServiceStyle(name: string) {
+  const lower = name.toLowerCase();
+  for (const [key, val] of Object.entries(SERVICE_MAP)) {
+    if (lower.includes(key)) return val;
+  }
+  return SERVICE_MAP.default;
+}
+
+function ServicesSection({ content }: { content: string }) {
+  const bullets = extractBullets(content);
+  const paras = extractParagraphs(content);
+
+  return (
+    <div className="space-y-4">
+      {paras.slice(0, 1).map((p, i) => (
+        <p key={i} className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(p.replace(/\n/g, " ")) }} />
+      ))}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {bullets.map((service, i) => {
+          // Extract service name (before colon or em dash or first comma)
+          const namePart = service.split(/[:—–,]/)[0].trim();
+          const { icon: Icon, color, bg } = getServiceStyle(namePart);
+          const detail = service.slice(namePart.length).replace(/^[:—–,\s]+/, "").trim();
+          // Match % or number in text
+          const percentMatch = service.match(/(\d+)%/);
+
+          return (
+            <div key={i} className="rounded-xl p-4 space-y-3" style={{ background: bg, border: `1px solid ${color}30` }}>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: color + "20" }}>
+                  <Icon className="h-4.5 w-4.5" style={{ color }} />
+                </div>
+                <div>
+                  <p className="font-bold text-sm" style={{ color }}>{namePart}</p>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <CheckCircle2 className="h-3 w-3" style={{ color }} />
+                    <p className="text-[10px] font-semibold" style={{ color }}>Recommended for {content.slice(0, 20).split(" ")[0]}</p>
+                  </div>
+                </div>
+              </div>
+              {detail && <p className="text-xs leading-relaxed" style={{ color: "#374151" }} dangerouslySetInnerHTML={{ __html: b(detail) }} />}
+              {percentMatch && (
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-[10px]" style={{ color }}>Potential Impact</span>
+                    <span className="text-[10px] font-bold" style={{ color }}>{percentMatch[1]}%</span>
+                  </div>
+                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: color + "20" }}>
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(Number(percentMatch[1]), 100)}%`, background: color }} />
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Section: The Pitch ───────────────────────────────────────────────────────
+
+function ThePitchSection({ content, businessName }: { content: string; businessName: string }) {
+  const paras = extractParagraphs(content);
+
+  return (
+    <div className="space-y-5">
+      {/* Executive header */}
+      <div className="rounded-xl px-5 py-4 flex items-center gap-3"
+        style={{ background: "linear-gradient(135deg, var(--brand-primary)12 0%, #7c3aed12 100%)", border: "1px solid var(--brand-primary)25" }}>
+        <Rocket className="h-6 w-6 flex-shrink-0" style={{ color: "var(--brand-primary)" }} />
+        <div>
+          <p className="font-bold text-sm" style={{ color: "var(--text-primary)" }}>Executive Pitch — {businessName}</p>
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>Ready to deliver on a sales call or send via email</p>
+        </div>
+      </div>
+
+      {/* First paragraph — the hook */}
+      {paras.length > 0 && (
+        <div className="rounded-xl p-5 relative" style={{ background: "var(--brand-primary)08", border: "1px solid var(--brand-primary)20" }}>
+          <Quote className="h-8 w-8 absolute -top-3 -left-2 opacity-20" style={{ color: "var(--brand-primary)" }} />
+          <p className="text-base leading-relaxed font-medium italic" style={{ color: "var(--text-primary)" }}
+            dangerouslySetInnerHTML={{ __html: b(paras[0].replace(/\n/g, " ")) }} />
+        </div>
+      )}
+
+      {/* Remaining paragraphs */}
+      {paras.slice(1).map((para, i) => {
+        const isLast = i === paras.length - 2;
+        return (
+          <div key={i} className={`rounded-xl p-4 ${isLast ? "border-l-4" : ""}`}
+            style={{
+              background: isLast ? "#f0fdf4" : "var(--bg-secondary)",
+              border: isLast ? "1px solid #bbf7d0" : "1px solid var(--border)",
+              borderLeftColor: isLast ? "#16a34a" : undefined,
+              borderLeftWidth: isLast ? 4 : undefined,
+            }}>
+            {isLast && (
+              <div className="flex items-center gap-2 mb-2">
+                <TrendingUp className="h-4 w-4" style={{ color: "#16a34a" }} />
+                <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#16a34a" }}>Call to Action</p>
+              </div>
+            )}
+            <p className="text-sm leading-relaxed" style={{ color: isLast ? "#166534" : "var(--text-secondary)" }}
+              dangerouslySetInnerHTML={{ __html: b(para.replace(/\n/g, " ")) }} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Section: Deal Talking Points ─────────────────────────────────────────────
+
+function TalkingPointsSection({ content }: { content: string }) {
+  const bullets = extractBullets(content);
+  const colors = ["#1565C0", "#7c3aed", "#dc2626", "#d97706", "#16a34a", "#0891b2", "#db2777"];
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl p-3" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+          💡 Use these one-liners in your next sales call, email, or meeting with this prospect.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2.5">
+        {bullets.map((point, i) => {
+          const color = colors[i % colors.length];
+          return (
+            <div key={i} className="rounded-xl p-4 flex items-start gap-3"
+              style={{ background: `${color}06`, border: `1px solid ${color}25` }}>
+              <div className="flex-shrink-0 mt-0.5">
+                <Quote className="h-5 w-5" style={{ color: color + "80" }} />
+              </div>
+              <p className="text-sm leading-relaxed font-medium" style={{ color: "var(--text-primary)" }}
+                dangerouslySetInnerHTML={{ __html: b(point) }} />
+              <div className="flex-shrink-0 ml-auto">
+                <span className="text-[10px] font-black px-2 py-1 rounded-full" style={{ background: color + "20", color }}>#{i + 1}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Smart Section Renderer ───────────────────────────────────────────────────
+
+function SmartSectionCard({
+  section, index, pitch,
+}: {
+  section: Section; index: number; pitch: Pitch;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const lower = section.heading.toLowerCase();
+
+  const accent = ["#1565C0","#7c3aed","#dc2626","#d97706","#059669","#0891b2","#db2777"][index % 7];
+  const Icon = lower.includes("business") ? Building2
+    : lower.includes("digital") ? Globe
+    : lower.includes("security") ? Shield
+    : lower.includes("pain") ? Lightbulb
+    : lower.includes("gcs") || lower.includes("service") ? Target
+    : lower.includes("pitch") ? Rocket
+    : MessageSquare;
+
+  const renderBody = () => {
+    if (lower.includes("business")) return <OverviewSection content={section.content} />;
+    if (lower.includes("digital")) return <FootprintSection content={section.content} presenceScore={pitch.presenceScore} />;
+    if (lower.includes("security")) return <SecuritySection content={section.content} securityScore={pitch.securityScore} />;
+    if (lower.includes("pain")) return <PainPointsSection content={section.content} />;
+    if (lower.includes("gcs") || lower.includes("service") || lower.includes("recommend")) return <ServicesSection content={section.content} />;
+    if (lower.includes("pitch")) return <ThePitchSection content={section.content} businessName={pitch.businessName} />;
+    if (lower.includes("talking") || lower.includes("deal")) return <TalkingPointsSection content={section.content} />;
+    return <DefaultSection content={section.content} />;
+  };
+
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid var(--border)", background: "var(--bg-primary)" }}>
+      <button onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-5 py-4 text-left"
+        style={{ background: `${accent}10`, borderBottom: expanded ? `1px solid ${accent}20` : "none" }}>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: `${accent}20` }}>
+            <Icon className="h-4.5 w-4.5" style={{ color: accent }} />
+          </div>
+          <div>
+            <span className="font-bold text-sm" style={{ color: "var(--text-primary)" }}>{section.heading}</span>
+            <p className="text-[10px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+              {lower.includes("business") ? "Company profile & market position" :
+               lower.includes("digital") ? "Web presence & technology assessment" :
+               lower.includes("security") ? "Vulnerability analysis & risk score" :
+               lower.includes("pain") ? "Identified business challenges" :
+               lower.includes("gcs") || lower.includes("service") ? "Matched GCS solutions" :
+               lower.includes("pitch") ? "Executive-ready sales pitch" :
+               "Conversation starters for your sales team"}
+            </p>
+          </div>
+        </div>
+        {expanded
+          ? <ChevronUp className="h-4 w-4 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
+          : <ChevronDown className="h-4 w-4 flex-shrink-0" style={{ color: "var(--text-muted)" }} />}
+      </button>
+      {expanded && <div className="p-5">{renderBody()}</div>}
+    </div>
+  );
+}
+
+// ─── Default Section (fallback) ────────────────────────────────────────────────
+
+function DefaultSection({ content }: { content: string }) {
+  const bullets = extractBullets(content);
+  const paras = extractParagraphs(content);
+  return (
+    <div className="space-y-3">
+      {paras.map((p, i) => (
+        <p key={i} className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(p.replace(/\n/g, " ")) }} />
+      ))}
+      {bullets.length > 0 && (
+        <ul className="space-y-2">
+          {bullets.map((bullet, i) => (
+            <li key={i} className="flex items-start gap-2.5">
+              <span className="mt-1.5 h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ background: "var(--brand-primary)", minWidth: 6 }} />
+              <span className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(bullet) }} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ─── Parse security headers ────────────────────────────────────────────────────
+
+function parseSecurityHeaders(pitchText: string): Array<{ name: string; present: boolean }> {
   const secMatch = pitchText.match(/## 🔒 Security Assessment([\s\S]*?)(?=\n##|$)/);
   if (!secMatch) return [];
-  const lines = secMatch[1].split("\n");
-  const headers: Header[] = [];
-  for (const line of lines) {
+  const headers: Array<{ name: string; present: boolean }> = [];
+  for (const line of secMatch[1].split("\n")) {
     if (line.includes("✅")) {
       const raw = line.replace(/✅/g, "").replace(/^[-*•\s]+/, "").split(/—|–/)[0].trim();
       if (raw.length > 2 && raw.length < 60) headers.push({ name: raw, present: true });
@@ -113,108 +553,7 @@ function parseSecurityHeaders(pitchText: string): Header[] {
   return headers;
 }
 
-// ─── Section icons ────────────────────────────────────────────────────────────
-
-const SECTION_ICONS: Record<string, React.ElementType> = {
-  "business overview": Building2,
-  "digital footprint": Globe,
-  "security assessment": Shield,
-  "pain points": Lightbulb,
-  "opportunities": Lightbulb,
-  "gcs service": Target,
-  "the pitch": Rocket,
-  "deal talking": MessageSquare,
-};
-
-function getSectionIcon(heading: string): React.ElementType {
-  const lower = heading.toLowerCase();
-  for (const [key, Icon] of Object.entries(SECTION_ICONS)) {
-    if (lower.includes(key)) return Icon;
-  }
-  return Target;
-}
-
-const SECTION_COLORS = [
-  "#1565C0", "#7c3aed", "#dc2626", "#d97706", "#059669", "#0891b2", "#db2777",
-];
-
-// ─── Render pitch content ─────────────────────────────────────────────────────
-
-function renderContent(content: string) {
-  if (!content) return null;
-  const lines = content.split("\n");
-  const elements: React.ReactNode[] = [];
-  let listItems: React.ReactNode[] = [];
-  let key = 0;
-
-  const flushList = () => {
-    if (listItems.length > 0) {
-      elements.push(<ul key={key++} className="my-2 space-y-1.5">{listItems}</ul>);
-      listItems = [];
-    }
-  };
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) { flushList(); continue; }
-    const isBullet = /^[-•*]\s+/.test(line);
-    const isNumbered = /^\d+\.\s+/.test(line);
-    if (isBullet || isNumbered) {
-      const text = line.replace(/^[-•*\d.]+\s+/, "");
-      listItems.push(
-        <li key={key++} className="flex items-start gap-2.5 text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-          <span className="mt-2 h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ background: "var(--brand-primary)" }} />
-          <span dangerouslySetInnerHTML={{ __html: bold(text) }} />
-        </li>
-      );
-    } else {
-      flushList();
-      elements.push(
-        <p key={key++} className="text-sm leading-relaxed mb-2" style={{ color: "var(--text-secondary)" }}
-          dangerouslySetInnerHTML={{ __html: bold(line) }} />
-      );
-    }
-  }
-  flushList();
-  return elements;
-}
-
-function bold(t: string) {
-  return t
-    .replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text-primary)">$1</strong>')
-    .replace(/`(.+?)`/g, '<code style="background:var(--bg-tertiary);padding:1px 5px;border-radius:4px;font-size:12px;font-family:monospace">$1</code>');
-}
-
-// ─── Section card ─────────────────────────────────────────────────────────────
-
-function SectionCard({ section, index }: { section: Section; index: number }) {
-  const [expanded, setExpanded] = useState(true);
-  const Icon = getSectionIcon(section.heading);
-  const accent = SECTION_COLORS[index % SECTION_COLORS.length];
-
-  return (
-    <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)", background: "var(--bg-primary)" }}>
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-5 py-3.5 text-left transition-colors"
-        style={{ background: accent + "10", borderBottom: expanded ? `1px solid ${accent}25` : "none" }}
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: accent + "20" }}>
-            <Icon className="h-4 w-4" style={{ color: accent }} />
-          </div>
-          <span className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>{section.heading}</span>
-        </div>
-        {expanded
-          ? <ChevronUp className="h-4 w-4 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
-          : <ChevronDown className="h-4 w-4 flex-shrink-0" style={{ color: "var(--text-muted)" }} />}
-      </button>
-      {expanded && <div className="px-5 py-4">{renderContent(section.content)}</div>}
-    </div>
-  );
-}
-
-// ─── Email modal ──────────────────────────────────────────────────────────────
+// ─── Email modal ───────────────────────────────────────────────────────────────
 
 function EmailModal({ pitch, onClose }: { pitch: Pitch; onClose: () => void }) {
   const [email, setEmail] = useState("");
@@ -231,13 +570,9 @@ function EmailModal({ pitch, onClose }: { pitch: Pitch; onClose: () => void }) {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed");
-      toast.success(`Pitch sent to ${email}`);
+      toast.success(`Pitch email sent to ${email}`);
       onClose();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed");
-    } finally {
-      setSending(false);
-    }
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); setSending(false); }
   };
 
   return (
@@ -246,28 +581,29 @@ function EmailModal({ pitch, onClose }: { pitch: Pitch; onClose: () => void }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Mail className="h-5 w-5" style={{ color: "var(--brand-primary)" }} />
-            <h3 className="font-semibold" style={{ color: "var(--text-primary)" }}>Email This Pitch</h3>
+            <h3 className="font-semibold" style={{ color: "var(--text-primary)" }}>Send Pitch to Prospect</h3>
           </div>
           <button onClick={onClose}><X className="h-4 w-4" style={{ color: "var(--text-muted)" }} /></button>
         </div>
-        <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-          Send the AI pitch for <strong style={{ color: "var(--text-primary)" }}>{pitch.businessName}</strong> as a branded HTML email.
-        </p>
+        <div className="rounded-xl p-3" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+          <p className="text-xs font-semibold mb-1" style={{ color: "var(--text-primary)" }}>What will be sent:</p>
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+            A professional consulting email from <strong>GCS Technology Consulting</strong> with our tailored pitch for <strong>{pitch.businessName}</strong>, including a "Book a Consultation" call-to-action. No mention of AI analysis.
+          </p>
+        </div>
         <div className="space-y-1">
-          <label className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Recipient Email</label>
-          <input
-            type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+          <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Prospect&apos;s Email Address</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            placeholder="prospect@company.com"
+            placeholder="decision-maker@company.com"
             className="w-full rounded-lg px-3 py-2.5 text-sm outline-none border"
-            style={{ background: "var(--bg-secondary)", borderColor: "var(--border)", color: "var(--text-primary)" }}
-          />
+            style={{ background: "var(--bg-secondary)", borderColor: "var(--border)", color: "var(--text-primary)" }} />
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={onClose} className="flex-1">Cancel</Button>
           <Button size="sm" className="flex-1 gap-1.5 text-white" style={{ background: "var(--brand-primary)" }} onClick={handleSend} disabled={sending}>
             {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-            {sending ? "Sending..." : "Send Pitch"}
+            {sending ? "Sending..." : "Send Pitch Email"}
           </Button>
         </div>
       </div>
@@ -275,7 +611,7 @@ function EmailModal({ pitch, onClose }: { pitch: Pitch; onClose: () => void }) {
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Main component ────────────────────────────────────────────────────────────
 
 export function PitchViewClient({ pitch }: { pitch: Pitch }) {
   const router = useRouter();
@@ -286,38 +622,29 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
   const sections = parseSections(pitch.pitchText);
   const headers = parseSecurityHeaders(pitch.pitchText);
   const secRisk = Math.max(0, 100 - pitch.securityScore);
-
-  const dealLabel = pitch.dealScore >= 80 ? "Very High"
-    : pitch.dealScore >= 60 ? "High"
-    : pitch.dealScore >= 40 ? "Medium" : "Low";
-  const dealColor = pitch.dealScore >= 80 ? "#16a34a"
-    : pitch.dealScore >= 60 ? "#0891b2"
-    : pitch.dealScore >= 40 ? "#d97706" : "#6b7280";
   const riskColor = secRisk > 60 ? "#dc2626" : secRisk > 30 ? "#d97706" : "#16a34a";
-  const riskLabel = secRisk > 60 ? "Critical" : secRisk > 30 ? "High" : "Low";
+  const dealColor = pitch.dealScore >= 80 ? "#16a34a" : pitch.dealScore >= 60 ? "#0891b2" : pitch.dealScore >= 40 ? "#d97706" : "#6b7280";
+  const dealLabel = pitch.dealScore >= 80 ? "Very High" : pitch.dealScore >= 60 ? "High" : pitch.dealScore >= 40 ? "Medium" : "Low";
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(pitch.pitchText);
-    setCopied(true);
-    toast.success("Pitch copied");
+    setCopied(true); toast.success("Pitch copied");
     setTimeout(() => setCopied(false), 2500);
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Delete pitch for "${pitch.businessName}"? This cannot be undone.`)) return;
+    if (!confirm(`Delete pitch for "${pitch.businessName}"?`)) return;
     setDeleting(true);
     try {
       await fetch(`/api/admin/pitch-board/pitches/${pitch.id}`, { method: "DELETE" });
       toast.success("Pitch deleted");
       router.push("/portal/admin/pitch-board");
-    } catch {
-      toast.error("Failed to delete");
-      setDeleting(false);
-    }
+    } catch { toast.error("Failed"); setDeleting(false); }
   };
 
   return (
     <div className="max-w-5xl space-y-6">
+
       {/* Toolbar */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <Link href="/portal/admin/pitch-board">
@@ -327,151 +654,107 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
         </Link>
         <div className="flex items-center gap-2 flex-wrap">
           <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setShowEmail(true)}>
-            <Mail className="h-3.5 w-3.5" /> Email Pitch
+            <Mail className="h-3.5 w-3.5" /> Email Prospect
           </Button>
           <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={handleCopy}>
             {copied ? <><Check className="h-3.5 w-3.5" /> Copied!</> : <><Copy className="h-3.5 w-3.5" /> Copy Pitch</>}
           </Button>
-          <Button
-            variant="outline" size="sm" className="gap-1.5 text-xs"
+          <Button variant="outline" size="sm" className="gap-1.5 text-xs"
             style={{ color: "var(--error)", borderColor: "var(--error)" }}
-            onClick={handleDelete} disabled={deleting}
-          >
+            onClick={handleDelete} disabled={deleting}>
             {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
             Delete
           </Button>
         </div>
       </div>
 
-      {/* Hero card */}
-      <div
-        className="rounded-2xl overflow-hidden"
-        style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}
-      >
-        {/* Banner */}
-        <div className="px-8 py-6 flex items-start justify-between flex-wrap gap-4"
+      {/* Hero banner */}
+      <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+        <div className="px-8 py-7 flex items-start justify-between flex-wrap gap-4"
           style={{ background: "linear-gradient(135deg, var(--brand-primary) 0%, #7c3aed 100%)" }}>
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span
-                className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
-                style={{ background: "rgba(255,255,255,0.2)", color: "white" }}
-              >
-                AI Intelligence Report
-              </span>
-            </div>
-            <h1 className="text-3xl font-black" style={{ color: "white", fontFamily: "var(--font-display)" }}>
+            <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full mb-2 inline-block"
+              style={{ background: "rgba(255,255,255,0.2)", color: "white" }}>
+              GCS Deal Intelligence
+            </span>
+            <h1 className="text-3xl font-black mt-1" style={{ color: "white", fontFamily: "var(--font-display)" }}>
               {pitch.businessName}
             </h1>
-            <div className="flex items-center gap-4 mt-2 flex-wrap">
-              <div className="flex items-center gap-1.5">
-                <Globe className="h-3.5 w-3.5" style={{ color: "rgba(255,255,255,0.7)" }} />
-                <span className="text-sm" style={{ color: "rgba(255,255,255,0.8)" }}>{pitch.websiteUrl}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Calendar className="h-3.5 w-3.5" style={{ color: "rgba(255,255,255,0.7)" }} />
-                <span className="text-sm" style={{ color: "rgba(255,255,255,0.8)" }}>{formatDate(new Date(pitch.createdAt))}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <User2 className="h-3.5 w-3.5" style={{ color: "rgba(255,255,255,0.7)" }} />
-                <span className="text-sm" style={{ color: "rgba(255,255,255,0.8)" }}>{pitch.createdBy.name ?? pitch.createdBy.email}</span>
-              </div>
+            <div className="flex flex-wrap gap-4 mt-2">
+              {[
+                { icon: Globe, text: pitch.websiteUrl },
+                { icon: Calendar, text: formatDate(new Date(pitch.createdAt)) },
+                { icon: User2, text: pitch.createdBy.name ?? pitch.createdBy.email },
+              ].map(({ icon: Icon, text }, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <Icon className="h-3.5 w-3.5" style={{ color: "rgba(255,255,255,0.65)" }} />
+                  <span className="text-sm" style={{ color: "rgba(255,255,255,0.85)" }}>{text}</span>
+                </div>
+              ))}
             </div>
           </div>
-          <div
-            className="px-5 py-3 rounded-xl text-center"
-            style={{ background: "rgba(255,255,255,0.15)" }}
-          >
-            <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color: "rgba(255,255,255,0.7)" }}>Deal Potential</p>
-            <p className="text-3xl font-black" style={{ color: "white", fontFamily: "var(--font-display)" }}>{dealLabel}</p>
+          <div className="rounded-2xl px-6 py-4 text-center flex-shrink-0" style={{ background: "rgba(255,255,255,0.15)" }}>
+            <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: "rgba(255,255,255,0.7)" }}>Deal Potential</p>
+            <p className="text-4xl font-black" style={{ color: "white", fontFamily: "var(--font-display)" }}>{dealLabel}</p>
+            <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.7)" }}>Score: {pitch.dealScore}/100</p>
           </div>
         </div>
 
-        {/* Score rings row */}
-        <div className="px-8 py-6 grid grid-cols-2 sm:grid-cols-4 gap-6 border-b" style={{ borderColor: "var(--border)" }}>
-          <ScoreRing
-            score={secRisk} color={riskColor}
-            label="Security Risk" sublabel={riskLabel}
-          />
-          <ScoreRing
-            score={pitch.dealScore} color={dealColor}
-            label="Deal Potential" sublabel={dealLabel}
-          />
-          <ScoreRing
-            score={pitch.presenceScore} color="#7c3aed"
-            label="Digital Presence"
-            sublabel={pitch.presenceScore > 65 ? "Strong" : pitch.presenceScore > 40 ? "Moderate" : "Weak"}
-          />
+        {/* Score rings */}
+        <div className="px-8 py-6 grid grid-cols-2 sm:grid-cols-4 gap-6 border-b" style={{ borderColor: "var(--border)", background: "var(--bg-primary)" }}>
+          <ScoreRing score={secRisk} color={riskColor} label="Security Risk"
+            sublabel={secRisk > 60 ? "Critical — GCS Urgency" : secRisk > 30 ? "High — Act Now" : "Low"} />
+          <ScoreRing score={pitch.dealScore} color={dealColor} label="Deal Potential" sublabel={dealLabel} />
+          <ScoreRing score={pitch.presenceScore} color="#7c3aed" label="Digital Presence"
+            sublabel={pitch.presenceScore > 65 ? "Strong" : pitch.presenceScore > 40 ? "Moderate" : "Weak"} />
           <div className="flex flex-col items-center gap-2">
-            <div
-              className="w-24 h-24 rounded-full flex items-center justify-center"
-              style={{ background: "#7c3aed12", border: "7px solid var(--bg-tertiary)", position: "relative" }}
-            >
-              <div
-                className="absolute inset-0 rounded-full"
-                style={{
-                  background: `conic-gradient(#7c3aed ${Math.min(pitch.painCount * 14, 100)}%, transparent 0%)`,
-                  mask: "radial-gradient(farthest-side, transparent calc(100% - 7px), black 0)",
-                  WebkitMask: "radial-gradient(farthest-side, transparent calc(100% - 7px), black 0)",
-                }}
-              />
+            <div className="relative w-24 h-24 flex items-center justify-center"
+              style={{ borderRadius: "50%", background: "#7c3aed12", border: "7px solid var(--bg-tertiary)" }}>
               <span className="text-2xl font-black" style={{ color: "#7c3aed" }}>{pitch.painCount}</span>
             </div>
             <p className="text-xs font-bold text-center" style={{ color: "var(--text-primary)" }}>Pain Points</p>
             <p className="text-[10px] text-center" style={{ color: "var(--text-muted)" }}>
-              {pitch.painCount >= 5 ? "Many opportunities" : pitch.painCount >= 3 ? "Good opportunities" : "Few identified"}
+              {pitch.painCount >= 5 ? "High opportunity" : pitch.painCount >= 3 ? "Good opportunity" : "Some opportunity"}
             </p>
           </div>
         </div>
 
-        {/* Progress metrics */}
-        <div className="px-8 py-6 border-b" style={{ borderColor: "var(--border)" }}>
-          <p className="text-xs font-bold uppercase tracking-wider mb-4" style={{ color: "var(--text-muted)" }}>Performance Metrics</p>
+        {/* Metric bars */}
+        <div className="px-8 py-6 border-b" style={{ borderColor: "var(--border)", background: "var(--bg-primary)" }}>
+          <p className="text-xs font-bold uppercase tracking-wider mb-4" style={{ color: "var(--text-muted)" }}>Intelligence Summary</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <MetricBar
-              label="Security Risk Exposure"
-              value={secRisk}
-              color={riskColor}
-              note={riskLabel}
-            />
-            <MetricBar
-              label="Deal Potential"
-              value={pitch.dealScore}
-              color={dealColor}
-              note={dealLabel}
-            />
-            <MetricBar
-              label="Digital Presence Strength"
-              value={pitch.presenceScore}
-              color="#7c3aed"
-              note={pitch.presenceScore > 65 ? "Strong" : "Needs Improvement"}
-            />
-            <MetricBar
-              label="GCS Opportunity Score"
+            <MetricBar label="Security Risk Exposure" value={secRisk} color={riskColor}
+              note={secRisk > 60 ? "Critical" : secRisk > 30 ? "High" : "Low"} />
+            <MetricBar label="Deal Potential" value={pitch.dealScore} color={dealColor} note={dealLabel} />
+            <MetricBar label="Digital Presence Strength" value={pitch.presenceScore} color="#7c3aed"
+              note={pitch.presenceScore > 65 ? "Strong" : "Needs Work"} />
+            <MetricBar label="GCS Opportunity Score"
               value={Math.min(97, Math.round(0.5 * secRisk + 0.5 * Math.min(pitch.painCount * 14, 100)))}
-              color="#0891b2"
-              note="Based on findings"
-            />
+              color="#0891b2" note="Composite" />
           </div>
         </div>
 
-        {/* Security headers grid */}
+        {/* Security headers */}
         {headers.length > 0 && (
-          <div className="px-8 py-6 border-b" style={{ borderColor: "var(--border)" }}>
-            <p className="text-xs font-bold uppercase tracking-wider mb-4" style={{ color: "var(--text-muted)" }}>
-              Security Headers Audit ({headers.filter((h) => h.present).length}/{headers.length} passing)
-            </p>
+          <div className="px-8 py-5 border-b" style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                Security Headers Audit
+              </p>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                style={{ background: riskColor + "20", color: riskColor }}>
+                {headers.filter((h) => h.present).length}/{headers.length} passing
+              </span>
+            </div>
             <div className="flex flex-wrap gap-2">
               {headers.map((h) => (
-                <span
-                  key={h.name}
+                <span key={h.name}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
                   style={{
                     background: h.present ? "#f0fdf4" : "#fef2f2",
                     color: h.present ? "#16a34a" : "#dc2626",
                     border: `1px solid ${h.present ? "#bbf7d0" : "#fecaca"}`,
-                  }}
-                >
+                  }}>
                   {h.present ? "✅" : "❌"} {h.name}
                 </span>
               ))}
@@ -487,27 +770,21 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
         </p>
         <div className="space-y-3">
           {sections.map((section, i) => (
-            <SectionCard key={i} section={section} index={i} />
+            <SmartSectionCard key={i} section={section} index={i} pitch={pitch} />
           ))}
         </div>
       </div>
 
       {/* Bottom CTA */}
-      <div
-        className="rounded-2xl px-6 py-5 flex items-center justify-between flex-wrap gap-3"
-        style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}
-      >
+      <div className="rounded-2xl px-6 py-5 flex items-center justify-between flex-wrap gap-3"
+        style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
         <div>
           <p className="font-semibold" style={{ color: "var(--text-primary)" }}>Ready to close this deal?</p>
-          <p className="text-sm" style={{ color: "var(--text-muted)" }}>Send the pitch directly to the prospect or build another one.</p>
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>Send a professional consulting email directly to {pitch.businessName}.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button
-            size="sm" className="gap-2 text-white"
-            style={{ background: "var(--brand-primary)" }}
-            onClick={() => setShowEmail(true)}
-          >
-            <Mail className="h-4 w-4" /> Send to Prospect
+          <Button size="sm" className="gap-2 text-white" style={{ background: "var(--brand-primary)" }} onClick={() => setShowEmail(true)}>
+            <Mail className="h-4 w-4" /> Email the Prospect
           </Button>
           <Link href="/portal/admin/pitch-board/new">
             <Button variant="outline" size="sm" className="gap-2">Build Another Pitch</Button>
