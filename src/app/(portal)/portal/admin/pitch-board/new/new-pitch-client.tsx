@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   Sparkles, Globe, ArrowLeft, Check, Loader2,
   Search, BarChart3, Lock, Shield, ClipboardList, Lightbulb, Target,
+  CheckCircle2,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -21,6 +22,7 @@ const PHASES: Phase[] = [
   { label: "Building security report...", Icon: ClipboardList },
   { label: "Identifying opportunities...", Icon: Lightbulb },
   { label: "Crafting your pitch...", Icon: Target },
+  { label: "Verifying completeness & accuracy...", Icon: CheckCircle2 },
 ];
 
 const PHASES_NO_WEBSITE: Phase[] = [
@@ -29,6 +31,7 @@ const PHASES_NO_WEBSITE: Phase[] = [
   { label: "Running business intelligence...", Icon: ClipboardList },
   { label: "Identifying opportunities...", Icon: Lightbulb },
   { label: "Crafting your pitch...", Icon: Target },
+  { label: "Verifying completeness & accuracy...", Icon: CheckCircle2 },
 ];
 
 // ─── Score computation from pitch text ──────────────────────────────────────

@@ -460,18 +460,59 @@ ${pentestSection}
 
 Generate the complete sales pitch and security intelligence report for this prospect.`.trim();
 
-    // Required section text markers for validation
+    // ─── Comprehensive Verification System ──────────────────────────────────
+    // Generate → Validate → Regenerate missing/thin sections → Verify accuracy
+    // Frontend waits for fully verified output before displaying.
+
     const REQUIRED_SECTIONS = [
       "Business Overview", "Digital Footprint", "Security Assessment",
       "Penetration Test", "Pain Points", "GCS Service Recommendations",
       "The Pitch", "Deal Talking Points", "Security Sales Pitch",
     ];
+    const MIN_SECTION_LENGTH = 150; // Minimum chars for a section to be considered "complete"
+    const MAX_REGEN_PASSES = 2;     // Maximum regeneration attempts
+
+    function parseSectionsForValidation(text: string): Map<string, string> {
+      const sections = new Map<string, string>();
+      const parts = text.split(/\n##\s+/).filter(Boolean);
+      for (const part of parts) {
+        const nl = part.indexOf("\n");
+        const heading = nl === -1 ? part.trim() : part.slice(0, nl).trim();
+        const content = nl === -1 ? "" : part.slice(nl + 1).trim();
+        sections.set(heading, content);
+      }
+      return sections;
+    }
+
+    function validateSections(text: string): { missing: string[]; thin: string[] } {
+      const textLower = text.toLowerCase();
+      const sections = parseSectionsForValidation(text);
+
+      const missing: string[] = [];
+      const thin: string[] = [];
+
+      for (const required of REQUIRED_SECTIONS) {
+        if (!textLower.includes(required.toLowerCase())) {
+          missing.push(required);
+        } else {
+          // Find the matching section and check content length
+          const matchKey = [...sections.keys()].find(k => k.toLowerCase().includes(required.toLowerCase()));
+          if (matchKey) {
+            const content = sections.get(matchKey) ?? "";
+            if (content.length < MIN_SECTION_LENGTH) {
+              thin.push(required);
+            }
+          }
+        }
+      }
+      return { missing, thin };
+    }
 
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
         try {
-          // First pass — generate full pitch
+          // ── PASS 1: Generate full pitch ──
           let accumulated = "";
           const response = await client.messages.stream({
             model: "claude-sonnet-4-6",
@@ -481,21 +522,26 @@ Generate the complete sales pitch and security intelligence report for this pros
           });
 
           for await (const chunk of response) {
-            if (
-              chunk.type === "content_block_delta" &&
-              chunk.delta.type === "text_delta"
-            ) {
+            if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
               accumulated += chunk.delta.text;
+              // Stream chunks to frontend for live preview
               controller.enqueue(encoder.encode(chunk.delta.text));
             }
           }
 
-          // Validate: check which sections are missing
-          const accLower = accumulated.toLowerCase();
-          const missing = REQUIRED_SECTIONS.filter(s => !accLower.includes(s.toLowerCase()));
-          if (missing.length > 0) {
-            // Second pass — generate missing sections
-            const missingList = missing.map(s => `## ${s}`).join("\n");
+          // ── VERIFICATION LOOP: Check and regenerate until complete ──
+          for (let pass = 0; pass < MAX_REGEN_PASSES; pass++) {
+            const { missing, thin } = validateSections(accumulated);
+            const needsRegen = [...missing, ...thin];
+
+            if (needsRegen.length === 0) break; // All sections verified
+
+            // Generate only the missing/thin sections
+            const regenList = needsRegen.map(s => `## ${s}`).join("\n");
+            const thinNote = thin.length > 0
+              ? `\n\nThese sections exist but are too brief (under ${MIN_SECTION_LENGTH} characters): ${thin.join(", ")}. Rewrite them with FULL comprehensive detail.`
+              : "";
+
             const followUp = await client.messages.stream({
               model: "claude-sonnet-4-6",
               max_tokens: 8000,
@@ -503,20 +549,19 @@ Generate the complete sales pitch and security intelligence report for this pros
               messages: [
                 { role: "user", content: userMessage },
                 { role: "assistant", content: accumulated },
-                { role: "user", content: `You are missing the following sections from your pitch. Generate ONLY these missing sections now with FULL comprehensive detail:\n\n${missingList}\n\nWrite each section with the same format, depth, and specificity as the sections you already wrote. Every section must be at least 6-10 lines.` },
+                { role: "user", content: `VERIFICATION FAILED — the following sections are missing or incomplete. Generate ONLY these sections now with FULL comprehensive detail:\n\n${regenList}${thinNote}\n\nEach section MUST be at least 8-12 lines with specific, data-driven content. Reference actual findings from the data provided.` },
               ],
             });
 
             controller.enqueue(encoder.encode("\n\n"));
             for await (const chunk of followUp) {
-              if (
-                chunk.type === "content_block_delta" &&
-                chunk.delta.type === "text_delta"
-              ) {
+              if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
+                accumulated += chunk.delta.text;
                 controller.enqueue(encoder.encode(chunk.delta.text));
               }
             }
           }
+
         } catch (err) {
           controller.enqueue(encoder.encode(`\n\nError generating pitch: ${err instanceof Error ? err.message : "Unknown error"}`));
         } finally {
