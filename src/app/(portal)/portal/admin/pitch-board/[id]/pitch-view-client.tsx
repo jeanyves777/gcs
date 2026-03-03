@@ -1037,22 +1037,38 @@ function SecurityReportSection({ report, pitchId }: { report: SecurityReport; pi
 
 function SecuritySalesPitchSection({ content }: { content: string }) {
   const bullets = extractBullets(content);
-  const paras = extractParagraphs(content);
 
   // Parse markdown table rows (skip header + separator rows)
   const tableRows: string[][] = [];
+  const tableHeaderCells: string[] = [];
   const lines = content.split("\n");
   let inTable = false;
   for (const line of lines) {
     if (/^\s*\|/.test(line)) {
       if (/\|[-\s|]+\|/.test(line)) { inTable = true; continue; }
       const cells = line.split("|").map((c) => c.trim()).filter(Boolean);
-      if (cells.length >= 2) tableRows.push(cells);
+      if (cells.length >= 2) {
+        if (!inTable && tableHeaderCells.length === 0) {
+          tableHeaderCells.push(...cells);
+        } else {
+          tableRows.push(cells);
+        }
+      }
       inTable = true;
     } else if (inTable && !line.trim()) {
       inTable = false;
     }
   }
+
+  // Extract paragraphs but strip out markdown table lines and "Action Plan" headings
+  const paras = extractParagraphs(content).filter(p => {
+    const trimmed = p.trim();
+    // Skip paragraphs that are mostly table content (pipe-delimited)
+    if (trimmed.split("\n").every(l => /^\s*\|/.test(l.trim()) || /^\|?[-\s|]+\|?$/.test(l.trim()) || !l.trim())) return false;
+    // Skip "Your Security Action Plan" heading text
+    if (/^(your\s+)?security\s+action\s+plan$/i.test(trimmed)) return false;
+    return true;
+  });
 
   return (
     <div className="space-y-4">
@@ -1068,7 +1084,7 @@ function SecuritySalesPitchSection({ content }: { content: string }) {
         </p>
       </div>
 
-      {/* Paragraphs */}
+      {/* Paragraphs (table content already filtered out) */}
       {paras.map((p, i) => (
         <p key={i} className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}
           dangerouslySetInnerHTML={{ __html: b(p.replace(/\n/g, " ")) }} />
@@ -1081,6 +1097,19 @@ function SecuritySalesPitchSection({ content }: { content: string }) {
             style={{ background: "var(--bg-secondary)", color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
             Security Action Plan
           </p>
+          {/* Table header */}
+          {tableHeaderCells.length > 0 && (
+            <div className="grid gap-2 px-4 py-2" style={{
+              gridTemplateColumns: `repeat(${tableHeaderCells.length}, 1fr)`,
+              background: "var(--bg-tertiary)", borderBottom: "1px solid var(--border)",
+            }}>
+              {tableHeaderCells.map((cell, j) => (
+                <p key={j} className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                  {cell}
+                </p>
+              ))}
+            </div>
+          )}
           <div className="divide-y" style={{ borderColor: "var(--border)" }}>
             {tableRows.map((row, i) => (
               <div key={i} className="grid gap-2 px-4 py-2.5" style={{
@@ -1088,9 +1117,8 @@ function SecuritySalesPitchSection({ content }: { content: string }) {
                 background: i % 2 === 0 ? "var(--bg-primary)" : "var(--bg-secondary)",
               }}>
                 {row.map((cell, j) => (
-                  <p key={j} className="text-xs" style={{ color: j === 0 ? "var(--text-primary)" : "var(--text-secondary)", fontWeight: j === 0 ? 600 : 400 }}>
-                    {cell}
-                  </p>
+                  <p key={j} className="text-xs" style={{ color: j === 0 ? "var(--text-primary)" : "var(--text-secondary)", fontWeight: j === 0 ? 600 : 400 }}
+                    dangerouslySetInnerHTML={{ __html: b(cell) }} />
                 ))}
               </div>
             ))}
