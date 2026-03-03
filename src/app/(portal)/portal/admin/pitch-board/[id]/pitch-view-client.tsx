@@ -101,13 +101,39 @@ type SecurityReport = {
 
 function extractBullets(content: string): string[] {
   return content.split("\n")
-    .filter((l) => /^[-•*]\s+/.test(l.trim()) || /^\d+\.\s+/.test(l.trim()))
-    .map((l) => l.replace(/^[-•*\d.]+\s+/, "").trim())
+    .filter((l) => {
+      const t = l.trim();
+      // Standard bullets: - item, * item, • item, 1. item
+      if (/^[-•]\s+/.test(t) || /^\d+\.\s+/.test(t)) return true;
+      // Single asterisk bullet: * item (but NOT **bold**)
+      if (/^\*\s+/.test(t) && !/^\*\*/.test(t)) return true;
+      // Bold-start items (AI service recommendations): **Name** — detail
+      if (/^\*\*[^*]+\*\*/.test(t)) return true;
+      return false;
+    })
+    .map((l) => {
+      const t = l.trim();
+      // Strip leading bullet markers but keep **bold** intact
+      if (/^\*\*/.test(t)) return t; // bold-start lines keep their formatting
+      return t.replace(/^[-•*\d.]+\s+/, "").trim();
+    })
     .filter(Boolean);
 }
 
 function extractParagraphs(content: string): string[] {
-  return content.split(/\n\n+/).map((p) => p.trim()).filter((p) => p && !p.split("\n").every((l) => /^[-•*\d]/.test(l.trim())));
+  return content.split(/\n\n+/).map((p) => p.trim()).filter((p) => {
+    if (!p) return false;
+    // Only filter out paragraphs that are ACTUAL bullet lists (marker + space),
+    // not bold-starting lines like **Service Name** — detail
+    const lines = p.split("\n");
+    const allBullets = lines.every((l) => {
+      const t = l.trim();
+      if (!t) return true; // blank lines are OK
+      // Actual bullet: starts with -, •, or digit. followed by space
+      return /^[-•]\s/.test(t) || /^\d+\.\s/.test(t) || (/^\*\s/.test(t) && !/^\*\*/.test(t));
+    });
+    return !allBullets;
+  });
 }
 
 function b(t: string): string {
@@ -364,8 +390,12 @@ const PAIN_COLORS = ["#dc2626", "#ea580c", "#d97706", "#ca8a04", "#16a34a", "#08
 const PAIN_SEVERITY = ["Critical", "High", "Medium-High", "Medium", "Moderate", "Low"];
 
 function PainPointsSection({ content }: { content: string }) {
-  const bullets = extractBullets(content);
+  let bullets = extractBullets(content);
   const paras = extractParagraphs(content);
+  // Fallback: if no bullets found, split content into meaningful lines
+  if (bullets.length === 0 && content.trim()) {
+    bullets = content.split("\n").map(l => l.trim()).filter(l => l && l.length > 15 && !paras.includes(l));
+  }
 
   return (
     <div className="space-y-4">
@@ -425,6 +455,17 @@ function getServiceStyle(name: string) {
 function ServicesSection({ content }: { content: string }) {
   const bullets = extractBullets(content);
   const paras = extractParagraphs(content);
+
+  // Fallback: if both extractors found nothing, render raw content
+  if (bullets.length === 0 && paras.length === 0 && content.trim()) {
+    return (
+      <div className="space-y-3">
+        {content.split("\n").filter(l => l.trim()).map((line, i) => (
+          <p key={i} className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(line.trim()) }} />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -514,7 +555,15 @@ function ServicesSection({ content }: { content: string }) {
 // ─── Section: The Pitch ───────────────────────────────────────────────────────
 
 function ThePitchSection({ content, businessName }: { content: string; businessName: string }) {
-  const paras = extractParagraphs(content);
+  let paras = extractParagraphs(content);
+  // Fallback: if extractParagraphs found nothing, split on double newlines directly
+  if (paras.length === 0 && content.trim()) {
+    paras = content.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+  }
+  // Last resort: treat entire content as one paragraph
+  if (paras.length === 0 && content.trim()) {
+    paras = [content.trim()];
+  }
 
   return (
     <div className="space-y-5">
@@ -566,7 +615,11 @@ function ThePitchSection({ content, businessName }: { content: string; businessN
 // ─── Section: Deal Talking Points ─────────────────────────────────────────────
 
 function TalkingPointsSection({ content }: { content: string }) {
-  const bullets = extractBullets(content);
+  let bullets = extractBullets(content);
+  // Fallback: if no bullets found, split on newlines and use non-empty lines
+  if (bullets.length === 0 && content.trim()) {
+    bullets = content.split("\n").map(l => l.trim()).filter(l => l && l.length > 10);
+  }
   const colors = ["#1565C0", "#7c3aed", "#dc2626", "#d97706", "#16a34a", "#0891b2", "#db2777"];
 
   return (
@@ -676,6 +729,18 @@ function SmartSectionCard({
 function DefaultSection({ content }: { content: string }) {
   const bullets = extractBullets(content);
   const paras = extractParagraphs(content);
+
+  // Fallback: if both extractors return empty, render raw content line by line
+  if (bullets.length === 0 && paras.length === 0 && content.trim()) {
+    return (
+      <div className="space-y-3">
+        {content.split("\n").filter(l => l.trim()).map((line, i) => (
+          <p key={i} className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(line.trim()) }} />
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       {paras.map((p, i) => (
