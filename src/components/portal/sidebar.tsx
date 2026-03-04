@@ -12,6 +12,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Shield,
   ShieldCheck,
   FolderOpen,
@@ -67,6 +68,10 @@ export function Sidebar({ role }: SidebarProps) {
   const isAdmin = role === "ADMIN" || role === "STAFF";
   const isGuardSection = pathname.startsWith("/portal/admin/guard");
   const [adminTab, setAdminTab] = useState<"admin" | "guard">(isGuardSection ? "guard" : "admin");
+
+  // For admins, check if the current path is in the client nav section
+  const isClientSection = !pathname.startsWith("/portal/admin");
+  const [portalExpanded, setPortalExpanded] = useState(isClientSection);
 
   const isActive = (href: string, exact = false) =>
     exact ? pathname === href : pathname === href || pathname.startsWith(href + "/");
@@ -143,68 +148,92 @@ export function Sidebar({ role }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
-        {clientNavItems.map((item) => renderItem(item))}
-
-        {isAdmin && (
+        {isAdmin ? (
           <>
-            {/* Admin Tab Switcher */}
-            {collapsed ? (
-              <div className="border-t my-1" style={{ borderColor: "var(--border)" }} />
-            ) : (
-              <div className="pt-3 pb-1 px-1.5">
-                <div
-                  className="flex p-1 rounded-lg"
-                  style={{ background: "var(--bg-secondary)" }}
-                >
-                  <button
-                    onClick={() => setAdminTab("admin")}
-                    className={cn(
-                      "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
-                      adminTab === "admin"
-                        ? "shadow-sm"
-                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                    )}
-                    style={adminTab === "admin" ? {
-                      background: "var(--bg-primary)",
-                      color: "var(--text-primary)",
-                    } : undefined}
-                  >
-                    <Shield className="h-3.5 w-3.5" />
-                    Admin
-                  </button>
-                  <button
-                    onClick={() => setAdminTab("guard")}
-                    className={cn(
-                      "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
-                      adminTab === "guard"
-                        ? "shadow-sm"
-                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                    )}
-                    style={adminTab === "guard" ? {
-                      background: "var(--bg-primary)",
-                      color: "var(--text-primary)",
-                    } : undefined}
-                  >
-                    <ShieldCheck className="h-3.5 w-3.5" />
-                    GcsGuard
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Tab Content */}
+            {/* ADMIN: Tab Switcher on top */}
             {collapsed ? (
               <>
                 {adminNavItems.map((item) => renderItem(item))}
                 <div className="border-t my-1" style={{ borderColor: "var(--border)" }} />
                 {guardNavItems.map((item) => renderItem(item))}
+                <div className="border-t my-1" style={{ borderColor: "var(--border)" }} />
+                {clientNavItems.map((item) => renderItem(item))}
               </>
             ) : (
-              <div className="space-y-0.5">
-                {activeTabItems.map((item) => renderItem(item))}
-              </div>
+              <>
+                {/* Tab Switcher */}
+                <div className="pb-1 px-1.5">
+                  <div
+                    className="flex p-1 rounded-lg"
+                    style={{ background: "var(--bg-secondary)" }}
+                  >
+                    <button
+                      onClick={() => setAdminTab("admin")}
+                      className={cn(
+                        "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                        adminTab === "admin"
+                          ? "shadow-sm"
+                          : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                      )}
+                      style={adminTab === "admin" ? {
+                        background: "var(--bg-primary)",
+                        color: "var(--text-primary)",
+                      } : undefined}
+                    >
+                      <Shield className="h-3.5 w-3.5" />
+                      Admin
+                    </button>
+                    <button
+                      onClick={() => setAdminTab("guard")}
+                      className={cn(
+                        "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                        adminTab === "guard"
+                          ? "shadow-sm"
+                          : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                      )}
+                      style={adminTab === "guard" ? {
+                        background: "var(--bg-primary)",
+                        color: "var(--text-primary)",
+                      } : undefined}
+                    >
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      GcsGuard
+                    </button>
+                  </div>
+                </div>
+
+                {/* Admin/Guard items */}
+                <div className="space-y-0.5">
+                  {activeTabItems.map((item) => renderItem(item))}
+                </div>
+
+                {/* Collapsible Portal Section */}
+                <div className="pt-2">
+                  <button
+                    onClick={() => setPortalExpanded(!portalExpanded)}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors hover:bg-[var(--bg-secondary)]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    <span>Portal</span>
+                    <ChevronDown
+                      className={cn(
+                        "h-3.5 w-3.5 transition-transform duration-200",
+                        !portalExpanded && "-rotate-90"
+                      )}
+                    />
+                  </button>
+                  {portalExpanded && (
+                    <div className="space-y-0.5 mt-0.5">
+                      {clientNavItems.map((item) => renderItem(item))}
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </>
+        ) : (
+          /* Non-admin: just show client items */
+          clientNavItems.map((item) => renderItem(item))
         )}
       </nav>
 
