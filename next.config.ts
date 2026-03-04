@@ -49,7 +49,7 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "**.githubusercontent.com" },
     ],
   },
-  serverExternalPackages: ["@prisma/client", "bcryptjs"],
+  serverExternalPackages: ["@prisma/client", "bcryptjs", "ssh2"],
   async headers() {
     return [
       {
