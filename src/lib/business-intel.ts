@@ -283,8 +283,11 @@ function extractCoreName(businessName: string): string {
     .replace(/\s*[&,]\s*/g, " ")
     .replace(/\s{2,}/g, " ")
     .trim();
-  const words = core.split(/\s+/).filter(w => w.length > 1);
+  // Filter out stop words BEFORE truncating — prevents "and"/"the" from wasting
+  // one of the 3 core-name slots (which weakens verification to only 2 real words)
+  const words = core.split(/\s+/).filter(w => w.length > 1 && !STOP_WORDS.has(w.toLowerCase()));
   if (words.length > 3) core = words.slice(0, 3).join(" ");
+  else core = words.join(" ");
   return core || businessName;
 }
 
@@ -359,12 +362,13 @@ export async function probeYelp(businessName: string, location?: string, phone?:
       if (url4) return { ...base, found: true, url: url4 };
     }
 
-    // 6 — Search with street address (may be registered under different name — skip name verification)
+    // 6 — Search with street address (registered under different name? — use core name verification
+    //     to avoid accepting a completely unrelated business from another city)
     if (address) {
       const streetPart = address.split(",")[0].trim(); // "536 Tyler Street"
       if (streetPart) {
         const results5 = await webSearch(`yelp.com "${streetPart}"`);
-        const url5 = findResultUrl(results5, "yelp.com/biz/", yelpExclude) || findResultUrl(results5, "yelp.com/", yelpExclude);
+        const url5 = findResultUrl(results5, "yelp.com/biz/", yelpExclude, loc || undefined, coreName) || findResultUrl(results5, "yelp.com/", yelpExclude, loc || undefined, coreName);
         if (url5) return { ...base, found: true, url: url5 };
       }
     }
@@ -526,7 +530,7 @@ export async function probeBBB(businessName: string, location?: string, phone?: 
       }
     }
 
-    // 3 — Search BBB API by phone number directly
+    // 3 — Search BBB API by phone number directly (still verify name+city to avoid wrong-business)
     if (phone) {
       try {
         const apiParams = new URLSearchParams({ find_text: phone, find_loc: "", find_type: "Category", page: "1", size: "5" });
@@ -536,9 +540,11 @@ export async function probeBBB(businessName: string, location?: string, phone?: 
           const data = (await apiRes.json()) as { results?: BbbResult[] };
           console.log(`[bbb] API (phone) returned ${data.results?.length ?? 0} results`);
           if (data.results && data.results.length > 0) {
-            // Any result from phone search is a strong match
-            const best = data.results[0];
-            return buildResult(best, "PHONE-SEARCH");
+            // Phone is a strong signal but still verify name+city to prevent wrong-business matches
+            const best = data.results.find((r) => (nameMatch(r) || fuzzyMatch(clean(r.businessName ?? ""), businessName)) && cityVerify(r))
+              || data.results.find((r) => nameMatch(r) || fuzzyMatch(clean(r.businessName ?? ""), businessName));
+            if (best) return buildResult(best, "PHONE-SEARCH");
+            console.log(`[bbb] Phone search returned results but none matched name: ${data.results.slice(0, 3).map(r => `"${clean(r.businessName ?? "")}"`).join(", ")}`);
           }
         }
       } catch (e) { console.log(`[bbb] API (phone) error: ${e instanceof Error ? e.message : e}`); }
