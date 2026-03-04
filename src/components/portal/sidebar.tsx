@@ -12,7 +12,6 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   Shield,
   ShieldCheck,
   FolderOpen,
@@ -67,12 +66,12 @@ export function Sidebar({ role }: SidebarProps) {
   const pathname = usePathname();
   const isAdmin = role === "ADMIN" || role === "STAFF";
   const isGuardSection = pathname.startsWith("/portal/admin/guard");
-  const [guardOpen, setGuardOpen] = useState(true);
+  const [adminTab, setAdminTab] = useState<"admin" | "guard">(isGuardSection ? "guard" : "admin");
 
   const isActive = (href: string, exact = false) =>
     exact ? pathname === href : pathname === href || pathname.startsWith(href + "/");
 
-  const renderItem = (item: { href: string; label: string; icon: React.ElementType; exact?: boolean }, indent = false) => {
+  const renderItem = (item: { href: string; label: string; icon: React.ElementType; exact?: boolean }) => {
     const active = isActive(item.href, item.exact);
     const Icon = item.icon;
 
@@ -102,18 +101,19 @@ export function Sidebar({ role }: SidebarProps) {
         key={item.href}
         href={item.href}
         className={cn(
-          "flex items-center gap-3 rounded-lg text-sm font-medium transition-colors",
-          indent ? "px-3 py-1.5 pl-9" : "px-3 py-2.5",
+          "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
           active
             ? "bg-[var(--brand-primary)] text-white"
             : "text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
         )}
       >
-        <Icon className={cn("flex-shrink-0", indent ? "h-3.5 w-3.5" : "h-4.5 w-4.5")} />
+        <Icon className="h-4.5 w-4.5 flex-shrink-0" />
         <span>{item.label}</span>
       </Link>
     );
   };
+
+  const activeTabItems = adminTab === "guard" ? guardNavItems : adminNavItems;
 
   return (
     <aside
@@ -147,52 +147,62 @@ export function Sidebar({ role }: SidebarProps) {
 
         {isAdmin && (
           <>
-            <div className={cn("pt-3 pb-1", collapsed ? "hidden" : "block")}>
-              <div className="flex items-center gap-2 px-3">
-                <Shield className="h-3.5 w-3.5 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
-                <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                  Admin
-                </span>
+            {/* Admin Tab Switcher */}
+            {collapsed ? (
+              <div className="border-t my-1" style={{ borderColor: "var(--border)" }} />
+            ) : (
+              <div className="pt-3 pb-1 px-1.5">
+                <div
+                  className="flex p-1 rounded-lg"
+                  style={{ background: "var(--bg-secondary)" }}
+                >
+                  <button
+                    onClick={() => setAdminTab("admin")}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                      adminTab === "admin"
+                        ? "shadow-sm"
+                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    )}
+                    style={adminTab === "admin" ? {
+                      background: "var(--bg-primary)",
+                      color: "var(--text-primary)",
+                    } : undefined}
+                  >
+                    <Shield className="h-3.5 w-3.5" />
+                    Admin
+                  </button>
+                  <button
+                    onClick={() => setAdminTab("guard")}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                      adminTab === "guard"
+                        ? "shadow-sm"
+                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    )}
+                    style={adminTab === "guard" ? {
+                      background: "var(--bg-primary)",
+                      color: "var(--text-primary)",
+                    } : undefined}
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    GcsGuard
+                  </button>
+                </div>
               </div>
-            </div>
-            {collapsed && <div className="border-t my-1" style={{ borderColor: "var(--border)" }} />}
-            {adminNavItems.map((item) => renderItem(item))}
+            )}
 
-            {/* GcsGuard Section */}
+            {/* Tab Content */}
             {collapsed ? (
               <>
+                {adminNavItems.map((item) => renderItem(item))}
                 <div className="border-t my-1" style={{ borderColor: "var(--border)" }} />
                 {guardNavItems.map((item) => renderItem(item))}
               </>
             ) : (
-              <>
-                <div className="pt-3 pb-1">
-                  <button
-                    onClick={() => setGuardOpen(!guardOpen)}
-                    className="flex items-center gap-2 px-3 w-full group"
-                  >
-                    <ShieldCheck
-                      className="h-3.5 w-3.5 flex-shrink-0 transition-colors"
-                      style={{ color: isGuardSection ? "var(--brand-primary)" : "var(--text-muted)" }}
-                    />
-                    <span
-                      className="text-[11px] font-semibold uppercase tracking-wider flex-1 text-left transition-colors"
-                      style={{ color: isGuardSection ? "var(--brand-primary)" : "var(--text-muted)" }}
-                    >
-                      GcsGuard
-                    </span>
-                    <ChevronDown
-                      className={cn("h-3 w-3 transition-transform", guardOpen ? "" : "-rotate-90")}
-                      style={{ color: "var(--text-muted)" }}
-                    />
-                  </button>
-                </div>
-                {guardOpen && (
-                  <div className="space-y-0.5">
-                    {guardNavItems.map((item) => renderItem(item, true))}
-                  </div>
-                )}
-              </>
+              <div className="space-y-0.5">
+                {activeTabItems.map((item) => renderItem(item))}
+              </div>
             )}
           </>
         )}
