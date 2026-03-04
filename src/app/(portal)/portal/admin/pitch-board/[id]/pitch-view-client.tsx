@@ -10,7 +10,7 @@ import {
   ChevronDown, ChevronUp, X, Send, Server, Cloud, Code2, Sparkles, AlertTriangle,
   TrendingUp, CheckCircle2, Info, Quote, Share2, Lock, Wifi, Database, Terminal,
   Globe2, ShieldAlert, ShieldCheck, Search, MapPin, Phone, Clock, ExternalLink,
-  Star, Building, Network, Download,
+  Star, Building, Network, Download, RefreshCw,
 } from "lucide-react";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -1524,9 +1524,30 @@ function ReviewCard({ review }: { review: GoogleReviewBI }) {
   );
 }
 
-function BusinessIntelCard({ bi }: { bi: BusinessIntelData }) {
+function BusinessIntelCard({ bi, pitchId, onUpdate }: { bi: BusinessIntelData; pitchId: string; onUpdate: (bi: BusinessIntelData) => void }) {
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [showAllHours, setShowAllHours] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+
+  const handleRetryPlatforms = async () => {
+    setRetrying(true);
+    try {
+      const res = await fetch(`/api/admin/pitch-board/pitches/${pitchId}/retry-platforms`, { method: "POST" });
+      if (!res.ok) throw new Error("Retry failed");
+      const data = await res.json();
+      if (data.businessIntelData) {
+        onUpdate(data.businessIntelData);
+        const yelpFound = data.yelp?.found;
+        const bbbFound = data.bbb?.found;
+        toast.success(`Retry complete: Yelp ${yelpFound ? "found" : "not found"}, BBB ${bbbFound ? "found" : "not found"}`);
+      }
+    } catch {
+      toast.error("Failed to retry platform detection");
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   const gbp = bi.google;
   // Filter out Yelp and BBB from pills since they have dedicated cards above
   const platformMentions = bi.otherMentions.filter((m) => m.source !== "Yelp" && m.source !== "BBB");
@@ -1667,7 +1688,19 @@ function BusinessIntelCard({ bi }: { bi: BusinessIntelData }) {
 
         {/* Directory presence */}
         <div className="space-y-2">
-          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Directory & Platform Presence</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Directory & Platform Presence</p>
+            <button
+              onClick={handleRetryPlatforms}
+              disabled={retrying}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+              style={{ background: "var(--bg-tertiary)", color: "var(--brand-primary)", border: "1px solid var(--border)" }}
+              title="Re-check Yelp & BBB listings"
+            >
+              <RefreshCw className={`h-3 w-3 ${retrying ? "animate-spin" : ""}`} />
+              {retrying ? "Checking..." : "Retry Yelp/BBB"}
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             {bi.yelp && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
@@ -1676,6 +1709,11 @@ function BusinessIntelCard({ bi }: { bi: BusinessIntelData }) {
                   {bi.yelp.found ? <CheckCircle2 className="h-3 w-3" style={{ color: "#16a34a" }} /> : <X className="h-3 w-3" style={{ color: "#dc2626" }} />} Yelp
                 </span>
                 {bi.yelp.rating && <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{bi.yelp.rating}/5</span>}
+                {bi.yelp.found && bi.yelp.url && (
+                  <a href={bi.yelp.url} target="_blank" rel="noopener noreferrer" className="ml-auto">
+                    <ExternalLink className="h-3 w-3" style={{ color: "#16a34a" }} />
+                  </a>
+                )}
               </div>
             )}
             {bi.bbb && (
@@ -1685,6 +1723,11 @@ function BusinessIntelCard({ bi }: { bi: BusinessIntelData }) {
                   {bi.bbb.found ? <CheckCircle2 className="h-3 w-3" style={{ color: "#16a34a" }} /> : <X className="h-3 w-3" style={{ color: "#dc2626" }} />} BBB
                 </span>
                 {bi.bbb.snippet && <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{bi.bbb.snippet}</span>}
+                {bi.bbb.found && bi.bbb.url && (
+                  <a href={bi.bbb.url} target="_blank" rel="noopener noreferrer" className="ml-auto">
+                    <ExternalLink className="h-3 w-3" style={{ color: "#16a34a" }} />
+                  </a>
+                )}
               </div>
             )}
           </div>
@@ -1917,11 +1960,11 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
     } catch { return null; }
   })();
 
-  // Parse stored business intel JSON
-  const businessIntel: BusinessIntelData | null = (() => {
+  // Parse stored business intel JSON (use state so retry can update it)
+  const [businessIntel, setBusinessIntel] = useState<BusinessIntelData | null>(() => {
     if (!pitch.businessIntelData) return null;
     try { return JSON.parse(pitch.businessIntelData) as BusinessIntelData; } catch { return null; }
-  })();
+  });
 
   // Parse email send history
   const emailsSentLog: Array<{ email: string; sentAt: string }> = (() => {
@@ -2163,7 +2206,7 @@ export function PitchViewClient({ pitch }: { pitch: Pitch }) {
       )}
 
       {/* Business Intel Card */}
-      {businessIntel && <BusinessIntelCard bi={businessIntel} />}
+      {businessIntel && <BusinessIntelCard bi={businessIntel} pitchId={pitch.id} onUpdate={setBusinessIntel} />}
 
       {/* Full Security Report Section */}
       {securityReport && (

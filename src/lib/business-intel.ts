@@ -318,7 +318,7 @@ function makeYelpSlug(name: string, city: string): string {
   );
 }
 
-async function probeYelp(businessName: string, location?: string, phone?: string): Promise<WebMention> {
+export async function probeYelp(businessName: string, location?: string, phone?: string): Promise<WebMention> {
   const base: WebMention = { source: "Yelp", url: null, rating: null, reviewCount: null, found: false, snippet: null };
 
   try {
@@ -401,16 +401,15 @@ function extractBbbUrl(html: string): string | null {
   return null;
 }
 
-async function probeBBB(businessName: string, location?: string): Promise<WebMention> {
+export async function probeBBB(businessName: string, location?: string): Promise<WebMention> {
   const base: WebMention = { source: "BBB", url: null, rating: null, reviewCount: null, found: false, snippet: null };
 
   try {
     // 1 — BBB Search API (returns structured JSON — most reliable method)
-    // BBB's search is picky with exact names, so try both the full name
-    // AND the core name (e.g. "Integrity Tax" instead of "Integrity Tax & Accounting Services").
     const coreName = extractCoreName(businessName);
     const searchNames = [businessName];
     if (coreName !== businessName) searchNames.push(coreName);
+    console.log(`[bbb] Searching for "${businessName}" (core: "${coreName}") in "${location || ""}"`);
 
     for (const searchName of searchNames) {
       try {
@@ -421,10 +420,12 @@ async function probeBBB(businessName: string, location?: string): Promise<WebMen
           page: "1",
           size: "5",
         });
+        console.log(`[bbb] API call: find_text="${searchName}"`);
         const apiRes = await fetchWithTimeout(
           `https://www.bbb.org/api/search?${apiParams}`,
           12000
         );
+        console.log(`[bbb] API status: ${apiRes.status}`);
         if (apiRes.ok) {
           type BbbResult = {
             businessName?: string;
@@ -433,8 +434,8 @@ async function probeBBB(businessName: string, location?: string): Promise<WebMen
             reviewCount?: number;
           };
           const data = (await apiRes.json()) as { results?: BbbResult[] };
+          console.log(`[bbb] API returned ${data.results?.length ?? 0} results`);
           if (data.results && data.results.length > 0) {
-            // Find best match by comparing names — ONLY accept if name actually matches
             const coreNameLower = coreName.toLowerCase();
             const best = data.results.find((r) => {
               const rName = (r.businessName ?? "").replace(/<[^>]+>/g, "").toLowerCase();
@@ -447,21 +448,23 @@ async function probeBBB(businessName: string, location?: string): Promise<WebMen
               );
             });
 
-            // Don't fall back to results[0] — it could be a completely unrelated business
             if (best) {
               const profileUrl = best.reportUrl
                 ? `https://www.bbb.org${best.reportUrl}`
                 : null;
+              const cleanName = (best.businessName ?? "").replace(/<[^>]+>/g, "");
+              console.log(`[bbb] MATCH: "${cleanName}" -> ${profileUrl}`);
               return {
                 ...base,
                 found: true,
                 url: profileUrl,
-                snippet: (best.businessName ?? "").replace(/<[^>]+>/g, "") || null,
+                snippet: cleanName || null,
               };
             }
+            console.log(`[bbb] No name match. Top results: ${data.results.slice(0, 3).map(r => (r.businessName ?? "").replace(/<[^>]+>/g, "")).join(", ")}`);
           }
         }
-      } catch { /* try next name or DDG fallback */ }
+      } catch (e) { console.log(`[bbb] API error: ${e instanceof Error ? e.message : e}`); }
     }
 
     // 2 — DDG site search fallback
