@@ -17,13 +17,14 @@ const createSchema = z.object({
   country: z.string().max(100).optional().nullable(),
   industry: z.string().max(200).optional().nullable(),
   description: z.string().max(2000).optional().nullable(),
-  subscriptionTier: z.enum(["NONE", "GCSGUARD_MANAGED", "GCSGUARD_NON_MANAGED"]).optional(),
+  subscriptionTier: z.enum(["NONE", "GCSGUARD_MANAGED_FREE", "GCSGUARD_MANAGED", "GCSGUARD_NON_MANAGED"]).optional(),
   googleRating: z.number().min(0).max(5).optional().nullable(),
   yelpUrl: z.string().max(500).optional().nullable(),
   bbbUrl: z.string().max(500).optional().nullable(),
   socialLinks: z.string().max(5000).optional().nullable(),
   notes: z.string().max(5000).optional().nullable(),
   logo: z.string().max(500).optional().nullable(),
+  trialEndsAt: z.string().datetime().optional().nullable(),
 });
 
 export async function GET() {
@@ -76,8 +77,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Auto-set 30-day trial for every new organization
+    const trialEndsAt = result.data.trialEndsAt
+      ? new Date(result.data.trialEndsAt)
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
     const org = await db.organization.create({
-      data: result.data,
+      data: { ...result.data, trialEndsAt },
       include: {
         _count: {
           select: { users: true, projects: true, invoices: true, tickets: true, guardAgents: true },

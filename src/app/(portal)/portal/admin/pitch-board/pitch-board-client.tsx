@@ -71,8 +71,10 @@ export function PitchBoardClient({ pitches: initial, hideHeader }: { pitches: Pi
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <Sparkles className="h-5 w-5" style={{ color: "var(--brand-primary)" }} />
-              <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
+              <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
+                <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
+                  <Sparkles className="h-5 w-5" />
+                </div>
                 AI Pitch Board
               </h1>
               <span

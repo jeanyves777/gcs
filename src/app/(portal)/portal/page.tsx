@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { requireAuth } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
-import { FolderKanban, Headphones, Receipt, Bell, TrendingUp } from "lucide-react";
+import { FolderKanban, Headphones, Receipt, Bell, TrendingUp, LayoutDashboard } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 
@@ -27,7 +27,10 @@ export default async function PortalDashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
+        <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
+          <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
+            <LayoutDashboard className="h-5 w-5" />
+          </div>
           Welcome back, {user.name?.split(" ")[0] ?? "there"} 👋
         </h1>
         <p className="mt-1" style={{ color: "var(--text-secondary)" }}>Here&apos;s an overview of your account.</p>

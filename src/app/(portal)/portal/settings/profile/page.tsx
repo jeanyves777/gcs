@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2 } from "lucide-react";
+import { Loader2, User } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -60,7 +60,12 @@ export default function ProfileSettingsPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>Profile</h1>
+        <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
+          <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
+            <User className="h-5 w-5" />
+          </div>
+          Profile
+        </h1>
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--text-muted)" }} />
         </div>

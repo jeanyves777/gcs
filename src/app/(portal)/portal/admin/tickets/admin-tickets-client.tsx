@@ -68,10 +68,10 @@ export function AdminTicketsClient({ tickets }: Props) {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1
-          className="text-2xl font-bold"
-          style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}
-        >
+        <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
+          <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
+            <Ticket className="h-5 w-5" />
+          </div>
           Ticket Management
         </h1>
         <span className="text-sm" style={{ color: "var(--text-muted)" }}>

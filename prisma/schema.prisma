@@ -77,13 +77,14 @@ model Organization {
   country          String?   @default("US")
   industry         String?
   description      String?
-  subscriptionTier String    @default("NONE") // NONE | GCSGUARD_MANAGED | GCSGUARD_NON_MANAGED
+  subscriptionTier String    @default("NONE") // NONE | GCSGUARD_MANAGED_FREE | GCSGUARD_MANAGED | GCSGUARD_NON_MANAGED
   isActive         Boolean   @default(true)
   googleRating     Float?
   yelpUrl          String?
   bbbUrl           String?
   socialLinks      String?   // JSON: {facebook, linkedin, instagram, ...}
   notes            String?
+  trialEndsAt      DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?

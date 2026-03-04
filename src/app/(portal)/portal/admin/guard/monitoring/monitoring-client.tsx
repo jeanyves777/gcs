@@ -58,8 +58,10 @@ export function MonitoringClient({ urlMonitors, services }: Props) {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
-          <Activity className="h-6 w-6" style={{ color: "var(--brand-primary)" }} />
+        <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)" }}>
+          <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
+            <Activity className="h-5 w-5" />
+          </div>
           Monitoring Overview
         </h1>
         <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>

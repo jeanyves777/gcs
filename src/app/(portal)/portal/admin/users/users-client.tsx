@@ -103,10 +103,10 @@ export function UsersClient({ users: initial }: { users: User[] }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1
-            className="text-2xl font-bold"
-            style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}
-          >
+          <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
+            <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
+              <Users className="h-5 w-5" />
+            </div>
             Users
           </h1>
           <p className="text-sm mt-0.5" style={{ color: "var(--text-muted)" }}>

@@ -51,7 +51,10 @@ export function AgentsClient({ agents }: { agents: Agent[] }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
+          <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)" }}>
+            <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
+              <Server className="h-5 w-5" />
+            </div>
             Agents
           </h1>
           <p className="text-sm" style={{ color: "var(--text-secondary)" }}>

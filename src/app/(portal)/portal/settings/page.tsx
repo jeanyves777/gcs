@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
-import { User, Shield, Bell, ChevronRight } from "lucide-react";
+import { User, Shield, Bell, ChevronRight, Settings as SettingsIcon } from "lucide-react";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -14,7 +14,12 @@ const items = [
 export default function SettingsPage() {
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>Settings</h1>
+      <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
+        <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
+          <SettingsIcon className="h-5 w-5" />
+        </div>
+        Settings
+      </h1>
       <div className="space-y-2">
         {items.map(({ href, icon: Icon, label, desc }) => (
           <Link key={href} href={href}>

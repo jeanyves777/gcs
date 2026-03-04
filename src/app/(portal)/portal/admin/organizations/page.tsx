@@ -30,6 +30,7 @@ export default async function AdminOrgsPage() {
     createdAt: o.createdAt.toISOString(),
     updatedAt: o.updatedAt.toISOString(),
     deletedAt: o.deletedAt?.toISOString() ?? null,
+    trialEndsAt: o.trialEndsAt?.toISOString() ?? null,
   }));
 
   return <OrganizationsClient initialOrgs={serialized} />;

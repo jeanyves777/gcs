@@ -133,7 +133,12 @@ export default function SecuritySettingsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>Security</h1>
+      <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
+        <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
+          <Shield className="h-5 w-5" />
+        </div>
+        Security
+      </h1>
       <div className="space-y-4">
         <Card className="card-base">
           <CardContent className="p-5 flex items-center gap-4">

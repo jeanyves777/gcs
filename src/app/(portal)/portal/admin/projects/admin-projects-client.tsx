@@ -81,10 +81,10 @@ export function AdminProjectsClient({ projects }: { projects: Project[] }) {
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1
-            className="text-2xl font-bold"
-            style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}
-          >
+          <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
+            <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
+              <FolderKanban className="h-5 w-5" />
+            </div>
             Projects
           </h1>
           <p className="text-sm mt-0.5" style={{ color: "var(--text-muted)" }}>

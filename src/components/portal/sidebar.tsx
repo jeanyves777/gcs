@@ -8,6 +8,7 @@ import {
   FolderKanban,
   Headphones,
   Receipt,
+  CreditCard,
   Bell,
   Settings,
   ChevronLeft,
@@ -36,6 +37,7 @@ const clientNavItems = [
   { href: "/portal/projects", label: "Projects", icon: FolderKanban },
   { href: "/portal/support", label: "Support", icon: Headphones },
   { href: "/portal/invoices", label: "Invoices", icon: Receipt },
+  { href: "/portal/billing", label: "Billing", icon: CreditCard },
   { href: "/portal/notifications", label: "Notifications", icon: Bell },
   { href: "/portal/settings", label: "Settings", icon: Settings },
 ];

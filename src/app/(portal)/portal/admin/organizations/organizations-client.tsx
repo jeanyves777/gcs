@@ -33,6 +33,7 @@ interface Org {
   bbbUrl: string | null;
   socialLinks: string | null;
   notes: string | null;
+  trialEndsAt: string | null;
   createdAt: string;
   _count: { users: number; projects: number; invoices: number; tickets: number; guardAgents: number };
 }
@@ -57,6 +58,7 @@ type FormData = {
   bbbUrl: string;
   socialLinks: string;
   notes: string;
+  trialEndsAt: string;
 };
 
 const emptyForm: FormData = {
@@ -64,11 +66,12 @@ const emptyForm: FormData = {
   address: "", city: "", state: "", zipCode: "", country: "US",
   industry: "", description: "", subscriptionTier: "NONE",
   isActive: true, googleRating: "", yelpUrl: "", bbbUrl: "",
-  socialLinks: "", notes: "",
+  socialLinks: "", notes: "", trialEndsAt: "",
 };
 
 const tierStyle: Record<string, { bg: string; color: string; label: string }> = {
   NONE: { bg: "var(--bg-tertiary)", color: "var(--text-muted)", label: "No Plan" },
+  GCSGUARD_MANAGED_FREE: { bg: "var(--warning-bg)", color: "var(--warning)", label: "Managed (Free)" },
   GCSGUARD_MANAGED: { bg: "var(--success-bg)", color: "var(--success)", label: "Managed" },
   GCSGUARD_NON_MANAGED: { bg: "var(--info-bg)", color: "var(--info)", label: "Non-Managed" },
 };
@@ -103,6 +106,7 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
   const totalProjects = orgs.reduce((s, o) => s + o._count.projects, 0);
   const activeOrgs = orgs.filter((o) => o.isActive).length;
   const planCounts = {
+    GCSGUARD_MANAGED_FREE: orgs.filter((o) => o.subscriptionTier === "GCSGUARD_MANAGED_FREE").length,
     GCSGUARD_MANAGED: orgs.filter((o) => o.subscriptionTier === "GCSGUARD_MANAGED").length,
     GCSGUARD_NON_MANAGED: orgs.filter((o) => o.subscriptionTier === "GCSGUARD_NON_MANAGED").length,
     NONE: orgs.filter((o) => o.subscriptionTier === "NONE").length,
@@ -137,6 +141,7 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
       bbbUrl: org.bbbUrl || "",
       socialLinks: org.socialLinks || "",
       notes: org.notes || "",
+      trialEndsAt: org.trialEndsAt ? org.trialEndsAt.split("T")[0] : "",
     });
     setAiFilledFields(new Set());
     setSheetOpen(true);
@@ -170,6 +175,7 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
         bbbUrl: form.bbbUrl.trim() || null,
         socialLinks: form.socialLinks.trim() || null,
         notes: form.notes.trim() || null,
+        trialEndsAt: form.trialEndsAt ? new Date(form.trialEndsAt).toISOString() : null,
       };
 
       const url = editingId ? `/api/admin/organizations/${editingId}` : "/api/admin/organizations";
@@ -323,9 +329,9 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
           { label: "Total", value: orgs.length, icon: Building2, color: "blue" },
           { label: "Active", value: activeOrgs, icon: Shield, color: "green" },
           { label: "Managed", value: planCounts.GCSGUARD_MANAGED, icon: Server, color: "emerald" },
+          { label: "Free", value: planCounts.GCSGUARD_MANAGED_FREE, icon: Star, color: "amber" },
           { label: "Non-Managed", value: planCounts.GCSGUARD_NON_MANAGED, icon: Shield, color: "cyan" },
           { label: "Users", value: totalUsers, icon: Users, color: "purple" },
-          { label: "Projects", value: totalProjects, icon: FolderOpen, color: "orange" },
         ].map(({ label, value, icon: Icon, color }) => (
           <Card key={label}>
             <CardContent className="py-3">
@@ -360,6 +366,7 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
           {[
             { key: "ALL", label: "All Plans", count: orgs.length },
             { key: "GCSGUARD_MANAGED", label: "Managed", count: planCounts.GCSGUARD_MANAGED },
+            { key: "GCSGUARD_MANAGED_FREE", label: "Free", count: planCounts.GCSGUARD_MANAGED_FREE },
             { key: "GCSGUARD_NON_MANAGED", label: "Non-Managed", count: planCounts.GCSGUARD_NON_MANAGED },
             { key: "NONE", label: "No Plan", count: planCounts.NONE },
           ].map(({ key, label, count }) => (
@@ -639,7 +646,7 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
                   spellCheck={false} />
               </div>
 
-              {/* Subscription + Status */}
+              {/* Subscription + Status + Trial */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--text-secondary)" }}>Service Plan</label>
@@ -650,6 +657,7 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
                     style={{ background: "var(--bg-primary)", borderColor: "var(--border)", color: "var(--text-primary)" }}
                   >
                     <option value="NONE">No Plan</option>
+                    <option value="GCSGUARD_MANAGED_FREE">Managed (Free) — $0/mo</option>
                     <option value="GCSGUARD_MANAGED">GcsGuard Managed — $49/user/mo</option>
                     <option value="GCSGUARD_NON_MANAGED">GcsGuard Non-Managed — $19/user/mo</option>
                   </select>
@@ -666,6 +674,21 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
                     </div>
                     <span>{form.isActive ? "Active" : "Inactive"}</span>
                   </button>
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--text-secondary)" }}>
+                    Trial End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={form.trialEndsAt}
+                    onChange={(e) => updateField("trialEndsAt", e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border text-sm"
+                    style={{ background: "var(--bg-primary)", borderColor: "var(--border)", color: "var(--text-primary)" }}
+                  />
+                  <p className="text-[11px] mt-1" style={{ color: "var(--text-muted)" }}>
+                    Auto-set to 30 days from creation. Leave empty for no trial.
+                  </p>
                 </div>
               </div>
 

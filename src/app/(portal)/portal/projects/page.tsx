@@ -27,7 +27,12 @@ export default async function ProjectsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>Projects</h1>
+      <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
+        <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
+          <FolderKanban className="h-5 w-5" />
+        </div>
+        Projects
+      </h1>
 
       {projects.length === 0 ? (
         <div className="text-center py-20">

@@ -41,7 +41,12 @@ export function NotificationsClient({ notifications: initial }: { notifications:
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>Notifications</h1>
+        <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
+          <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
+            <Bell className="h-5 w-5" />
+          </div>
+          Notifications
+        </h1>
         {unreadCount > 0 && (
           <Button
             variant="outline"

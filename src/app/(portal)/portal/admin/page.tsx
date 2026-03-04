@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
 import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
-import { FolderOpen, MessageCircle, Receipt, Users } from "lucide-react";
+import { FolderOpen, MessageCircle, Receipt, Users, LayoutDashboard } from "lucide-react";
 
 export const metadata: Metadata = { title: "Admin Overview" };
 
@@ -63,10 +63,10 @@ export default async function AdminOverviewPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1
-          className="text-2xl font-bold"
-          style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}
-        >
+        <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
+          <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
+            <LayoutDashboard className="h-5 w-5" />
+          </div>
           Admin Overview
         </h1>
         <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>

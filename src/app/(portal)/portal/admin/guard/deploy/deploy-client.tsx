@@ -176,8 +176,10 @@ export function DeployClient({ organizations }: Props) {
           <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
-            <Rocket className="h-6 w-6" style={{ color: "var(--brand-primary)" }} />
+          <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)" }}>
+            <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
+              <Rocket className="h-5 w-5" />
+            </div>
             Deploy GcsGuard Agent
           </h1>
           <p className="text-sm" style={{ color: "var(--text-secondary)" }}>

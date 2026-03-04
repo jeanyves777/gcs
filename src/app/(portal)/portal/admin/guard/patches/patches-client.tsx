@@ -51,8 +51,10 @@ export function PatchesClient({ agents, totalPending, totalSecurity }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
-            <Package className="h-6 w-6" style={{ color: "var(--brand-primary)" }} />
+          <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)" }}>
+            <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
+              <Package className="h-5 w-5" />
+            </div>
             Patch Management
           </h1>
           <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
