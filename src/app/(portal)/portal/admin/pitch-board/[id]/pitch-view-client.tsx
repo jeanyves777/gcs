@@ -1746,10 +1746,10 @@ function BusinessIntelCard({ bi, pitchId, onUpdate }: { bi: BusinessIntelData; p
               disabled={retrying}
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold transition-colors hover:opacity-80"
               style={{ background: "var(--bg-tertiary)", color: "var(--brand-primary)", border: "1px solid var(--border)" }}
-              title="Re-check all missing platform listings"
+              title="Re-scan all platforms (corrects wrong matches and finds new listings)"
             >
               <RefreshCw className={`h-3 w-3 ${retrying ? "animate-spin" : ""}`} />
-              {retrying ? "Checking all..." : "Retry Missing"}
+              {retrying ? "Re-scanning all..." : "Re-scan All"}
             </button>
           </div>
           {(() => {
