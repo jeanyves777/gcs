@@ -63,11 +63,11 @@ export async function POST(
     // Re-run BBB if missing
     if (!currentBbbFound) {
       try {
-        const result = await probeBBB(businessName, location);
+        const result = await probeBBB(businessName, location, phone, googleAddress);
         biData.bbb = result;
         diagnostics["BBB"] = result.found
           ? `Found: ${result.url}`
-          : "Not found — BBB API returned no matching business name";
+          : "Not found — BBB API returned no matching business (name, phone, or address)";
       } catch (e) {
         diagnostics["BBB"] = `Error: ${e instanceof Error ? e.message : "unknown"}`;
       }

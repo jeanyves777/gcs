@@ -363,14 +363,14 @@ export async function probeYelp(businessName: string, location?: string, phone?:
 
 // ─── BBB probe (BBB Search API → Google/Claude fallback) ─────────────────────
 
-export async function probeBBB(businessName: string, location?: string): Promise<WebMention> {
+export async function probeBBB(businessName: string, location?: string, phone?: string, address?: string): Promise<WebMention> {
   const base: WebMention = { source: "BBB", url: null, rating: null, reviewCount: null, found: false, snippet: null };
 
   try {
     const coreName = extractCoreName(businessName);
     const searchNames = [businessName];
     if (coreName !== businessName) searchNames.push(coreName);
-    console.log(`[bbb] Searching for "${businessName}" (core: "${coreName}") in "${location || ""}"`);
+    console.log(`[bbb] Searching for "${businessName}" (core: "${coreName}") in "${location || ""}" phone="${phone || ""}" addr="${address || ""}"`);
 
     // Helper: fuzzy name match — checks if business names share significant words
     const nameWords = (name: string) => name.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(w => w.length > 2);
@@ -381,7 +381,46 @@ export async function probeBBB(businessName: string, location?: string): Promise
       return shared.length >= Math.min(2, wordsA.length); // at least 2 shared words (or all words if name is short)
     };
 
-    // 1 — BBB Search API (returns structured JSON)
+    // Helper: normalize phone for comparison — strip everything but digits
+    const normalizePhone = (p: string) => p.replace(/\D/g, "").replace(/^1/, ""); // strip +1/1 prefix
+
+    // Helper: match by phone number
+    const phoneMatch = (resultPhone: string): boolean => {
+      if (!phone || !resultPhone) return false;
+      return normalizePhone(phone) === normalizePhone(resultPhone);
+    };
+
+    // Helper: match by street address — compare street number + street name
+    const addressMatch = (resultAddr: string): boolean => {
+      if (!address || !resultAddr) return false;
+      // Extract just "536 Tyler" from "536 Tyler Street, Pittsfield, MA 01201, USA"
+      const extractStreet = (a: string) => {
+        const streetPart = a.split(",")[0].trim().toLowerCase();
+        // Get number + first word of street name: "536 tyler street" → "536 tyler"
+        const words = streetPart.split(/\s+/);
+        if (words.length >= 2 && /^\d+$/.test(words[0])) return words[0] + " " + words[1];
+        return streetPart;
+      };
+      return extractStreet(address) === extractStreet(resultAddr);
+    };
+
+    // Extended BBB result type — BBB API returns phone, address, city, state, etc.
+    type BbbResult = {
+      businessName?: string; reportUrl?: string; rating?: string; reviewCount?: number;
+      phone?: string; address?: string; city?: string; state?: string; postalCode?: string;
+    };
+
+    // Helper: build result from BBB API match
+    const buildResult = (r: BbbResult, matchType: string): WebMention => {
+      const clean = (n: string) => (n ?? "").replace(/<[^>]+>/g, "");
+      const profileUrl = r.reportUrl ? `https://www.bbb.org${r.reportUrl}` : null;
+      const cleanName = clean(r.businessName ?? "");
+      console.log(`[bbb] ${matchType} MATCH: "${cleanName}" -> ${profileUrl}`);
+      return { ...base, found: true, url: profileUrl, snippet: cleanName || null };
+    };
+
+    // 1 — BBB Search API (returns structured JSON) — try name match first
+    let allApiResults: BbbResult[] = [];
     for (const searchName of searchNames) {
       try {
         const apiParams = new URLSearchParams({ find_text: searchName, find_loc: location || "", find_type: "Category", page: "1", size: "10" });
@@ -389,11 +428,11 @@ export async function probeBBB(businessName: string, location?: string): Promise
         const apiRes = await fetchWithTimeout(`https://www.bbb.org/api/search?${apiParams}`, 12000);
         console.log(`[bbb] API status: ${apiRes.status}`);
         if (apiRes.ok) {
-          type BbbResult = { businessName?: string; reportUrl?: string; rating?: string; reviewCount?: number };
           const data = (await apiRes.json()) as { results?: BbbResult[] };
           console.log(`[bbb] API returned ${data.results?.length ?? 0} results`);
           if (data.results && data.results.length > 0) {
-            // Try strict match first, then fuzzy match
+            allApiResults = [...allApiResults, ...data.results];
+            // Try strict name match first, then fuzzy name match
             const clean = (n: string) => (n ?? "").replace(/<[^>]+>/g, "");
             const best = data.results.find((r) => {
               const rClean = clean(r.businessName ?? "");
@@ -403,19 +442,77 @@ export async function probeBBB(businessName: string, location?: string): Promise
                 || rClean.toLowerCase().includes(coreL) || coreL.includes(rClean.toLowerCase());
             }) || data.results.find((r) => fuzzyMatch(clean(r.businessName ?? ""), businessName));
 
-            if (best) {
-              const profileUrl = best.reportUrl ? `https://www.bbb.org${best.reportUrl}` : null;
-              const cleanName = clean(best.businessName ?? "");
-              console.log(`[bbb] MATCH: "${cleanName}" -> ${profileUrl}`);
-              return { ...base, found: true, url: profileUrl, snippet: cleanName || null };
-            }
-            console.log(`[bbb] No name match. Top results: ${data.results.slice(0, 5).map(r => clean(r.businessName ?? "")).join(", ")}`);
+            if (best) return buildResult(best, "NAME");
+            console.log(`[bbb] No name match. Top results: ${data.results.slice(0, 5).map(r => `"${clean(r.businessName ?? "")}" ph:${r.phone || "?"} addr:${r.address || "?"}`).join(", ")}`);
           }
         }
       } catch (e) { console.log(`[bbb] API error: ${e instanceof Error ? e.message : e}`); }
     }
 
-    // 2 — Web search fallback (Google/Claude/DDG)
+    // 1b — BBB API without location (catches wrong location data)
+    if (location) {
+      try {
+        const apiParams = new URLSearchParams({ find_text: businessName, find_loc: "", find_type: "Category", page: "1", size: "10" });
+        console.log(`[bbb] API call (no-loc): find_text="${businessName}"`);
+        const apiRes = await fetchWithTimeout(`https://www.bbb.org/api/search?${apiParams}`, 12000);
+        if (apiRes.ok) {
+          const data = (await apiRes.json()) as { results?: BbbResult[] };
+          console.log(`[bbb] API (no-loc) returned ${data.results?.length ?? 0} results`);
+          if (data.results && data.results.length > 0) {
+            allApiResults = [...allApiResults, ...data.results];
+            const clean = (n: string) => (n ?? "").replace(/<[^>]+>/g, "");
+            const best = data.results.find((r) => {
+              const rClean = clean(r.businessName ?? "");
+              const rCore = extractCoreName(rClean);
+              const coreL = coreName.toLowerCase();
+              return rCore.toLowerCase().includes(coreL) || coreL.includes(rCore.toLowerCase())
+                || rClean.toLowerCase().includes(coreL) || coreL.includes(rClean.toLowerCase());
+            }) || data.results.find((r) => fuzzyMatch(clean(r.businessName ?? ""), businessName));
+
+            if (best) return buildResult(best, "NAME (no-loc)");
+          }
+        }
+      } catch (e) { console.log(`[bbb] API (no-loc) error: ${e instanceof Error ? e.message : e}`); }
+    }
+
+    // 2 — Phone/address matching on ALL collected API results (catches different business names)
+    if (allApiResults.length > 0 && (phone || address)) {
+      console.log(`[bbb] Trying phone/address match on ${allApiResults.length} API results...`);
+      // Phone match first (most reliable)
+      if (phone) {
+        const phoneHit = allApiResults.find(r => phoneMatch(r.phone ?? ""));
+        if (phoneHit) return buildResult(phoneHit, "PHONE");
+      }
+      // Address match (street number + street name)
+      if (address) {
+        const addrHit = allApiResults.find(r => {
+          // BBB may return address as separate field, or combined
+          const rAddr = [r.address, r.city, r.state].filter(Boolean).join(", ");
+          return addressMatch(rAddr) || addressMatch(r.address ?? "");
+        });
+        if (addrHit) return buildResult(addrHit, "ADDRESS");
+      }
+    }
+
+    // 3 — Search BBB API by phone number directly
+    if (phone) {
+      try {
+        const apiParams = new URLSearchParams({ find_text: phone, find_loc: "", find_type: "Category", page: "1", size: "5" });
+        console.log(`[bbb] API call (phone): find_text="${phone}"`);
+        const apiRes = await fetchWithTimeout(`https://www.bbb.org/api/search?${apiParams}`, 12000);
+        if (apiRes.ok) {
+          const data = (await apiRes.json()) as { results?: BbbResult[] };
+          console.log(`[bbb] API (phone) returned ${data.results?.length ?? 0} results`);
+          if (data.results && data.results.length > 0) {
+            // Any result from phone search is a strong match
+            const best = data.results[0];
+            return buildResult(best, "PHONE-SEARCH");
+          }
+        }
+      } catch (e) { console.log(`[bbb] API (phone) error: ${e instanceof Error ? e.message : e}`); }
+    }
+
+    // 4 — Web search fallback (Google/Claude/DDG)
     const loc = location || "";
     const bbbPattern = /bbb\.org\//;
     const results = await webSearch(`site:bbb.org "${businessName}" ${loc}`.trim());
@@ -423,19 +520,26 @@ export async function probeBBB(businessName: string, location?: string): Promise
     const bbbUrl = findResultUrl(results, bbbPattern, ["search", "/api/"]);
     if (bbbUrl) return { ...base, found: true, url: bbbUrl };
 
-    // 3 — Search with core name
+    // 5 — Search with core name
     if (coreName !== businessName) {
       const results2 = await webSearch(`site:bbb.org "${coreName}" ${loc}`.trim());
       const url2 = findResultUrl(results2, bbbPattern, ["search", "/api/"]);
       if (url2) return { ...base, found: true, url: url2 };
     }
 
-    // 4 — Search WITHOUT location (catches wrong location data)
+    // 6 — Search WITHOUT location (catches wrong location data)
     if (loc) {
       const results3 = await webSearch(`site:bbb.org "${businessName}"`);
       console.log(`[bbb] No-location search returned ${results3.length} URLs: ${results3.slice(0, 3).map(r => r.link).join(", ")}`);
       const url3 = findResultUrl(results3, bbbPattern, ["search", "/api/"]);
       if (url3) return { ...base, found: true, url: url3 };
+    }
+
+    // 7 — Search by phone number on web
+    if (phone) {
+      const results4 = await webSearch(`site:bbb.org "${phone}"`);
+      const url4 = findResultUrl(results4, bbbPattern, ["search", "/api/"]);
+      if (url4) return { ...base, found: true, url: url4 };
     }
   } catch { /* ignore */ }
 
@@ -987,7 +1091,7 @@ export async function runBusinessIntel(
   // ── PHASE 2: Platform probes WITH location context (parallel — no DDG rate limit) ──
   const [yelpResult, bbbResult, mentionsResult] = await Promise.allSettled([
     probeYelp(businessName, cityState, phone),
-    probeBBB(businessName, cityState),
+    probeBBB(businessName, cityState, phone, google?.address ?? ""),
     probePlatformPresence(businessName, websiteHtml, cityState),
   ]);
 
