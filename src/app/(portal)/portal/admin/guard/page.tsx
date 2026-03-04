@@ -7,7 +7,7 @@ export const metadata = { title: "GcsGuard — Security Operations" };
 export default async function GuardDashboardPage() {
   await requireRole(["ADMIN", "STAFF"]);
 
-  const [agents, openAlerts, recentAlerts] = await Promise.all([
+  const [agents, openAlerts, recentAlerts, inactiveServices, downMonitors, allAgentPatchCounts] = await Promise.all([
     db.guardAgent.findMany({
       select: {
         id: true,
@@ -37,10 +37,21 @@ export default async function GuardDashboardPage() {
       orderBy: { createdAt: "desc" },
       take: 20,
     }),
+    db.guardServiceStatus.count({ where: { isActive: false } }),
+    db.guardUrlMonitor.count({ where: { isDown: true, isActive: true } }),
+    db.guardAgent.findMany({
+      where: { status: { not: "DECOMMISSIONED" } },
+      select: { pendingUpdates: true, securityUpdates: true },
+    }),
   ]);
 
   const severityMap: Record<string, number> = {};
   for (const a of openAlerts) severityMap[a.severity] = a._count;
+
+  const totalPendingUpdates = allAgentPatchCounts.reduce((sum, a) => sum + a.pendingUpdates, 0);
+  const totalSecurityUpdates = allAgentPatchCounts.reduce((sum, a) => sum + a.securityUpdates, 0);
+  const totalServices = await db.guardServiceStatus.count();
+  const totalUrlMonitors = await db.guardUrlMonitor.count({ where: { isActive: true } });
 
   return (
     <GuardDashboardClient
@@ -52,6 +63,9 @@ export default async function GuardDashboardPage() {
         low: severityMap["LOW"] || 0,
       }}
       recentAlerts={JSON.parse(JSON.stringify(recentAlerts))}
+      patchStats={{ totalPending: totalPendingUpdates, totalSecurity: totalSecurityUpdates }}
+      serviceStats={{ total: totalServices, inactive: inactiveServices }}
+      urlMonitorStats={{ total: totalUrlMonitors, down: downMonitors }}
     />
   );
 }

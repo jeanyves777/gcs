@@ -52,6 +52,9 @@ model User {
   resolvedAlerts        GuardAlert[]    @relation("AlertResolver")
   assignedIncidents     GuardIncident[] @relation("IncidentAssignee")
   createdCommands       GuardCommand[]  @relation("CommandCreator")
+  approvedPatches       GuardPatchHistory[]      @relation("PatchApprover")
+  configTemplates       GuardConfigTemplate[]    @relation("ConfigTemplateCreator")
+  configDeployments     GuardConfigDeployment[]  @relation("ConfigDeployer")
 
   @@index([email])
   @@index([organizationId])
@@ -438,18 +441,30 @@ model GuardAgent {
   ipAddress     String?
   os            String?
   kernelVersion String?
+  distro        String?   // "ubuntu", "debian", "centos", "rhel"
+  distroVersion String?   // "22.04", "11", "9"
+  packageManager String?  // "apt", "yum", "dnf"
   status        String    @default("PENDING") // PENDING | ONLINE | OFFLINE | DEGRADED
   lastHeartbeat DateTime?
+  lastInventorySync DateTime?
+  lastPatchCheck    DateTime?
+  pendingUpdates    Int       @default(0)
+  securityUpdates   Int       @default(0)
   config        String? // JSON: monitoring intervals, thresholds
 
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
 
-  metrics  GuardMetric[]
-  alerts   GuardAlert[]
-  commands GuardCommand[]
-  scans    GuardScan[]
-  devices  GuardDevice[]
+  metrics           GuardMetric[]
+  alerts            GuardAlert[]
+  commands          GuardCommand[]
+  scans             GuardScan[]
+  devices           GuardDevice[]
+  packages          GuardPackage[]
+  patchHistory      GuardPatchHistory[]
+  configDeployments GuardConfigDeployment[]
+  urlMonitors       GuardUrlMonitor[]
+  serviceStatuses   GuardServiceStatus[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -569,4 +584,141 @@ model GuardDevice {
   @@unique([agentId, macAddress])
   @@index([agentId, deviceType])
   @@index([isAuthorized])
+}
+
+// ============================================================
+// GCSGUARD — Patch Management, Config Management, Monitoring
+// ============================================================
+
+model GuardPackage {
+  id               String   @id @default(cuid())
+  name             String
+  version          String
+  newVersion       String?
+  source           String   @default("apt") // apt | yum | dnf | npm | pip
+  isSecurityUpdate Boolean  @default(false)
+  status           String   @default("INSTALLED") // INSTALLED | UPDATE_AVAILABLE | UPDATING | UPDATED
+  agentId          String
+  agent            GuardAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  lastChecked      DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([agentId, name, source])
+  @@index([agentId, status])
+  @@index([isSecurityUpdate])
+}
+
+model GuardPatchHistory {
+  id           String    @id @default(cuid())
+  packageName  String
+  fromVersion  String
+  toVersion    String
+  source       String    @default("apt")
+  status       String    @default("PENDING") // PENDING | APPROVED | INSTALLING | COMPLETED | FAILED | ROLLED_BACK
+  output       String?
+  error        String?
+  agentId      String
+  agent        GuardAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  approvedById String?
+  approvedBy   User?     @relation("PatchApprover", fields: [approvedById], references: [id])
+  createdAt    DateTime  @default(now())
+  approvedAt   DateTime?
+  completedAt  DateTime?
+
+  @@index([agentId, status])
+  @@index([createdAt])
+}
+
+model GuardConfigTemplate {
+  id             String   @id @default(cuid())
+  name           String
+  filePath       String
+  content        String
+  description    String?
+  restartService String?
+  version        Int      @default(1)
+  createdById    String
+  createdBy      User     @relation("ConfigTemplateCreator", fields: [createdById], references: [id])
+  deployments    GuardConfigDeployment[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([filePath])
+}
+
+model GuardConfigDeployment {
+  id              String    @id @default(cuid())
+  filePath        String
+  status          String    @default("PENDING") // PENDING | DEPLOYING | COMPLETED | FAILED | ROLLED_BACK
+  previousContent String?
+  newContent      String
+  diff            String?
+  output          String?
+  error           String?
+  templateId      String?
+  template        GuardConfigTemplate? @relation(fields: [templateId], references: [id])
+  agentId         String
+  agent           GuardAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  deployedById    String
+  deployedBy      User     @relation("ConfigDeployer", fields: [deployedById], references: [id])
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+
+  @@index([agentId, status])
+  @@index([templateId])
+}
+
+model GuardUrlMonitor {
+  id             String   @id @default(cuid())
+  url            String
+  name           String
+  method         String   @default("GET")
+  expectedStatus Int      @default(200)
+  timeoutMs      Int      @default(10000)
+  intervalSec    Int      @default(60)
+  isActive       Boolean  @default(true)
+  agentId        String
+  agent          GuardAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  lastStatus     Int?
+  lastResponseMs Int?
+  lastChecked    DateTime?
+  lastError      String?
+  isDown         Boolean  @default(false)
+  downSince      DateTime?
+  checks         GuardUrlCheck[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([agentId, isActive])
+}
+
+model GuardUrlCheck {
+  id         String   @id @default(cuid())
+  statusCode Int?
+  responseMs Int?
+  error      String?
+  isUp       Boolean
+  monitorId  String
+  monitor    GuardUrlMonitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  checkedAt  DateTime @default(now())
+
+  @@index([monitorId, checkedAt])
+}
+
+model GuardServiceStatus {
+  id          String   @id @default(cuid())
+  serviceName String
+  isActive    Boolean  @default(true)
+  isEnabled   Boolean  @default(true)
+  subState    String?
+  memoryUsage Int?
+  cpuUsage    Float?
+  uptime      Int?
+  agentId     String
+  agent       GuardAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  lastChecked DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([agentId, serviceName])
+  @@index([agentId])
 }

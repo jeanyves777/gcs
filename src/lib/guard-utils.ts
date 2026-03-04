@@ -25,6 +25,18 @@ export const ALERT_TYPES = {
   RESOURCE_SPIKE: { label: "Resource Spike", icon: "Activity" },
   NEW_DEVICE: { label: "New Device", icon: "Wifi" },
   UNAUTHORIZED_DEVICE: { label: "Unauthorized Device", icon: "WifiOff" },
+  URL_DOWN: { label: "URL Down", icon: "Globe" },
+  SERVICE_DOWN: { label: "Service Down", icon: "ServerCrash" },
+  PATCH_AVAILABLE: { label: "Patch Available", icon: "Download" },
+  CONFIG_DEPLOYED: { label: "Config Deployed", icon: "FileCheck" },
+} as const;
+
+export const PACKAGE_SOURCES = {
+  apt: { label: "APT (Debian/Ubuntu)", icon: "Package" },
+  yum: { label: "YUM (RHEL/CentOS)", icon: "Package" },
+  dnf: { label: "DNF (Fedora/RHEL 8+)", icon: "Package" },
+  npm: { label: "npm (Node.js)", icon: "Hexagon" },
+  pip: { label: "pip (Python)", icon: "Code" },
 } as const;
 
 export const DEVICE_TYPES = {
@@ -48,6 +60,18 @@ export const COMMAND_TYPES = {
   KILL_PROCESS: { label: "Kill Process", description: "Terminate a running process" },
   NETWORK_SCAN: { label: "Network Scan", description: "Discover devices on the network" },
   CUSTOM: { label: "Custom Command", description: "Run a custom shell command" },
+  COLLECT_PACKAGES: { label: "Collect Packages", description: "Scan installed packages and available updates" },
+  INSTALL_PACKAGES: { label: "Install Packages", description: "Install or update specific packages" },
+  SYSTEM_UPGRADE: { label: "System Upgrade", description: "Run system-wide upgrade (security or all)" },
+  ROLLBACK_PACKAGE: { label: "Rollback Package", description: "Downgrade a package to a previous version" },
+  GET_CONFIG: { label: "Get Config", description: "Fetch current config file content from server" },
+  PUSH_CONFIG: { label: "Push Config", description: "Deploy a config file to the server" },
+  ROLLBACK_CONFIG: { label: "Rollback Config", description: "Restore a config file from backup" },
+  COLLECT_SERVICES: { label: "Collect Services", description: "List systemd service statuses" },
+  CHECK_URLS: { label: "Check URLs", description: "Run health checks on monitored URLs" },
+  COLLECT_LOGS: { label: "Collect Logs", description: "Fetch log entries from the server" },
+  COLLECT_SYSTEM_VERSIONS: { label: "System Versions", description: "Collect software version information" },
+  CLEAR_CACHE: { label: "Clear Cache", description: "Clear system caches (apt, nginx, systemd)" },
 } as const;
 
 export function formatUptime(seconds: number): string {

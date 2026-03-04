@@ -11,10 +11,13 @@ import {
   ChevronRight,
   Rocket,
   RefreshCw,
+  Package,
+  Globe,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { GuardNav } from "@/components/guard/guard-nav";
 
 interface Agent {
   id: string;
@@ -46,6 +49,9 @@ interface Props {
   agents: Agent[];
   alertCounts: { critical: number; high: number; medium: number; low: number };
   recentAlerts: Alert[];
+  patchStats: { totalPending: number; totalSecurity: number };
+  serviceStats: { total: number; inactive: number };
+  urlMonitorStats: { total: number; down: number };
 }
 
 const severityColors: Record<string, string> = {
@@ -69,7 +75,7 @@ function timeAgo(date: string) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-export function GuardDashboardClient({ agents, alertCounts, recentAlerts }: Props) {
+export function GuardDashboardClient({ agents, alertCounts, recentAlerts, patchStats, serviceStats, urlMonitorStats }: Props) {
   const [alerts, setAlerts] = useState(recentAlerts);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -99,6 +105,8 @@ export function GuardDashboardClient({ agents, alertCounts, recentAlerts }: Prop
 
   return (
     <div className="space-y-6">
+      <GuardNav />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -157,8 +165,8 @@ export function GuardDashboardClient({ agents, alertCounts, recentAlerts }: Prop
         </CardContent>
       </Card>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Stats Grid — 7 cards in a responsive grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
         <Card>
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-3">
@@ -220,6 +228,62 @@ export function GuardDashboardClient({ agents, alertCounts, recentAlerts }: Prop
                 <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Network Devices</p>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* New: Pending Patches */}
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                <Package className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+              </div>
+              <div>
+                <p className={`text-2xl font-bold ${patchStats.totalSecurity > 0 ? "text-red-600" : ""}`} style={patchStats.totalSecurity === 0 ? { color: "var(--text-primary)" } : undefined}>
+                  {patchStats.totalPending}
+                </p>
+                <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Pending Patches</p>
+              </div>
+            </div>
+            {patchStats.totalSecurity > 0 && (
+              <p className="mt-2 text-xs text-red-600 font-medium">{patchStats.totalSecurity} security</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* New: Services */}
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-teal-100 dark:bg-teal-900/30">
+                <Activity className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>{serviceStats.total}</p>
+                <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Services</p>
+              </div>
+            </div>
+            {serviceStats.inactive > 0 && (
+              <p className="mt-2 text-xs text-red-600 font-medium">{serviceStats.inactive} inactive</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* New: URL Monitors */}
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
+                <Globe className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>{urlMonitorStats.total}</p>
+                <p className="text-xs" style={{ color: "var(--text-secondary)" }}>URL Monitors</p>
+              </div>
+            </div>
+            {urlMonitorStats.down > 0 && (
+              <p className="mt-2 text-xs text-red-600 font-medium">{urlMonitorStats.down} DOWN</p>
+            )}
           </CardContent>
         </Card>
       </div>

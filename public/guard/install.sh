@@ -35,10 +35,20 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-echo -e "${GREEN}[1/5]${NC} Creating directories..."
+echo -e "${GREEN}[1/6]${NC} Creating directories..."
 mkdir -p /etc/gcsguard /var/log/gcsguard
 
-echo -e "${GREEN}[2/5]${NC} Writing configuration..."
+echo -e "${GREEN}[2/6]${NC} Installing dependencies..."
+if command -v apt-get &>/dev/null; then
+  apt-get update -qq 2>/dev/null
+  apt-get install -y -qq unattended-upgrades curl python3 2>/dev/null || true
+elif command -v dnf &>/dev/null; then
+  dnf install -y -q dnf-automatic curl python3 2>/dev/null || true
+elif command -v yum &>/dev/null; then
+  yum install -y -q yum-cron curl python3 2>/dev/null || true
+fi
+
+echo -e "${GREEN}[3/6]${NC} Writing configuration..."
 cat > /etc/gcsguard/agent.conf << EOF
 # GcsGuard Agent Configuration
 API_KEY="${API_KEY}"
@@ -50,11 +60,11 @@ NETWORK_SCAN_INTERVAL=600
 EOF
 chmod 600 /etc/gcsguard/agent.conf
 
-echo -e "${GREEN}[3/5]${NC} Downloading agent..."
+echo -e "${GREEN}[4/6]${NC} Downloading agent..."
 curl -sSL "https://itatgcs.com/guard/gcsguard-agent.sh" -o /usr/local/bin/gcsguard-agent
 chmod +x /usr/local/bin/gcsguard-agent
 
-echo -e "${GREEN}[4/5]${NC} Creating systemd service..."
+echo -e "${GREEN}[5/6]${NC} Creating systemd service..."
 cat > /etc/systemd/system/gcsguard.service << 'EOF'
 [Unit]
 Description=GcsGuard Security Monitoring Agent
@@ -74,7 +84,7 @@ SyslogIdentifier=gcsguard
 WantedBy=multi-user.target
 EOF
 
-echo -e "${GREEN}[5/5]${NC} Starting agent..."
+echo -e "${GREEN}[6/6]${NC} Starting agent..."
 systemctl daemon-reload
 systemctl enable gcsguard
 systemctl start gcsguard
