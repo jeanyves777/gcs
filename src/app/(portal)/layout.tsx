@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { isGCSStaff } from "@/lib/auth-utils";
 import { Sidebar } from "@/components/portal/sidebar";
 import { Topbar } from "@/components/portal/topbar";
-import { AIChatWidget } from "@/components/portal/ai-chat-widget";
+import { AdminAIChat } from "@/components/portal/admin-ai-chat";
 
 export default async function PortalLayout({
   children,
@@ -20,6 +21,8 @@ export default async function PortalLayout({
     where: { userId: session.user.id, readAt: null },
   });
 
+  const showAdminAI = isGCSStaff(session.user.role);
+
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-secondary)" }}>
       <Sidebar role={session.user.role} />
@@ -35,7 +38,7 @@ export default async function PortalLayout({
         </main>
       </div>
 
-      <AIChatWidget />
+      {showAdminAI && <AdminAIChat />}
     </div>
   );
 }

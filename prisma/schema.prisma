@@ -29,6 +29,7 @@ model User {
   isActive          Boolean   @default(true)
   lastLoginAt       DateTime?
   notificationPrefs String?   // JSON: { project_updates, ticket_replies, invoice_notifications, chat_messages, system_announcements }
+  aiPinHash         String?   // bcrypt hash of admin AI PIN
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   deletedAt         DateTime?
