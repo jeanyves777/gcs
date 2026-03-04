@@ -49,6 +49,9 @@ model User {
   assignedTickets       Ticket[]        @relation("TicketAssignee")
   pitches               Pitch[]
   leadSearches          LeadSearch[]
+  resolvedAlerts        GuardAlert[]    @relation("AlertResolver")
+  assignedIncidents     GuardIncident[] @relation("IncidentAssignee")
+  createdCommands       GuardCommand[]  @relation("CommandCreator")
 
   @@index([email])
   @@index([organizationId])
@@ -68,10 +71,11 @@ model Organization {
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
 
-  users    User[]
-  projects Project[]
-  tickets  Ticket[]
-  invoices Invoice[]
+  users       User[]
+  projects    Project[]
+  tickets     Ticket[]
+  invoices    Invoice[]
+  guardAgents GuardAgent[]
 
   @@index([domain])
 }
@@ -419,4 +423,150 @@ model Pitch {
 
   @@index([createdById])
   @@index([createdAt])
+}
+
+// ============================================================
+// GCSGUARD — Managed Security Monitoring
+// ============================================================
+
+model GuardAgent {
+  id            String    @id @default(cuid())
+  name          String
+  apiKey        String    @unique
+  apiKeyPrefix  String
+  hostname      String?
+  ipAddress     String?
+  os            String?
+  kernelVersion String?
+  status        String    @default("PENDING") // PENDING | ONLINE | OFFLINE | DEGRADED
+  lastHeartbeat DateTime?
+  config        String? // JSON: monitoring intervals, thresholds
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  metrics  GuardMetric[]
+  alerts   GuardAlert[]
+  commands GuardCommand[]
+  scans    GuardScan[]
+  devices  GuardDevice[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([status])
+}
+
+model GuardAlert {
+  id               String    @id @default(cuid())
+  type             String // BRUTE_FORCE | FILE_CHANGE | SUSPICIOUS_PROCESS | PORT_SCAN | MALWARE | CONFIG_CHANGE | RESOURCE_SPIKE
+  severity         String // CRITICAL | HIGH | MEDIUM | LOW | INFO
+  title            String
+  description      String
+  evidence         String? // JSON: raw log lines, metrics, file diffs
+  status           String    @default("OPEN") // OPEN | INVESTIGATING | RESOLVED | FALSE_POSITIVE
+  aiAnalysis       String?
+  aiRecommendation String?
+  resolvedAt       DateTime?
+
+  resolvedById String?
+  resolvedBy   User?          @relation("AlertResolver", fields: [resolvedById], references: [id])
+  agentId      String
+  agent        GuardAgent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  incidentId   String?
+  incident     GuardIncident? @relation(fields: [incidentId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([agentId, status])
+  @@index([severity])
+  @@index([createdAt])
+}
+
+model GuardIncident {
+  id          String    @id @default(cuid())
+  title       String
+  severity    String
+  status      String    @default("OPEN") // OPEN | INVESTIGATING | CONTAINED | RESOLVED
+  description String?
+  aiSummary   String?
+
+  alerts       GuardAlert[]
+  assignedToId String?
+  assignedTo   User?    @relation("IncidentAssignee", fields: [assignedToId], references: [id])
+
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+}
+
+model GuardCommand {
+  id      String  @id @default(cuid())
+  type    String // BLOCK_IP | UNBLOCK_IP | RESTART_SERVICE | RUN_SCAN | KILL_PROCESS | CUSTOM
+  payload String // JSON: command parameters
+  status  String  @default("PENDING") // PENDING | SENT | EXECUTING | COMPLETED | FAILED
+  result  String? // JSON: execution output
+
+  agentId     String
+  agent       GuardAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  createdById String
+  createdBy   User       @relation("CommandCreator", fields: [createdById], references: [id])
+
+  createdAt   DateTime  @default(now())
+  sentAt      DateTime?
+  completedAt DateTime?
+
+  @@index([agentId, status])
+}
+
+model GuardMetric {
+  id       String  @id @default(cuid())
+  type     String // CPU | MEMORY | DISK | LOAD | NETWORK_IN | NETWORK_OUT
+  value    Float
+  metadata String? // JSON: per-core CPU, per-disk usage, etc.
+
+  agentId String
+  agent   GuardAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  timestamp DateTime @default(now())
+
+  @@index([agentId, type, timestamp])
+}
+
+model GuardScan {
+  id           String    @id @default(cuid())
+  type         String // FULL | QUICK | VULNERABILITY | FILE_INTEGRITY
+  status       String    @default("RUNNING") // RUNNING | COMPLETED | FAILED
+  results      String? // JSON: full scan results
+  findingCount Int       @default(0)
+  completedAt  DateTime?
+
+  agentId String
+  agent   GuardAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  startedAt DateTime @default(now())
+
+  @@index([agentId])
+}
+
+model GuardDevice {
+  id          String  @id @default(cuid())
+  macAddress  String
+  ipAddress   String?
+  hostname    String?
+  vendor      String? // OUI lookup: Cisco, HP, Yealink, Ubiquiti, etc.
+  deviceType  String  @default("UNKNOWN") // WORKSTATION | SERVER | PRINTER | IP_PHONE | WIFI_AP | ROUTER | SWITCH | IOT | CAMERA | UNKNOWN
+  os          String? // Detected OS fingerprint
+  isAuthorized Boolean @default(false) // Admin-approved device
+  isOnline    Boolean @default(true)
+  firstSeen   DateTime @default(now())
+  lastSeen    DateTime @default(now())
+  metadata    String? // JSON: open ports, services, SNMP data
+
+  agentId String
+  agent   GuardAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, macAddress])
+  @@index([agentId, deviceType])
+  @@index([isAuthorized])
 }

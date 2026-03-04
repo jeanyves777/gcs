@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Shield,
+  ShieldCheck,
   FolderOpen,
   MessageCircle,
   Users,
@@ -33,6 +34,7 @@ const clientNavItems = [
 
 const adminNavItems = [
   { href: "/portal/admin", label: "Overview", icon: LayoutDashboard, exact: true },
+  { href: "/portal/admin/guard", label: "GcsGuard", icon: ShieldCheck },
   { href: "/portal/admin/pitch-board", label: "Pitch Board", icon: Sparkles },
   { href: "/portal/admin/projects", label: "Projects", icon: FolderOpen },
   { href: "/portal/admin/tickets", label: "Tickets", icon: MessageCircle },
