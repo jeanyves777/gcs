@@ -833,38 +833,58 @@ export async function probePlatformPresence(businessName: string, websiteHtml?: 
   }
 
   // ── SECONDARY SOURCE: Web search (Google/Claude) ──
-  // Broad query surfaces Yelp, BBB, Facebook, YP, etc. — like typing in Google.
+  const locationPart = location || "";
+
+  // Phase A: Broad queries (surfaces multiple platforms at once)
   const stillMissing = platforms.filter(p => !results.get(p.source)?.found).map(p => p.source);
   if (stillMissing.length > 0) {
-    const locationPart = location || "";
-
-    // Query 1: Business name + location (surfaces most listings)
+    // Query 1: Business name + location
     const sr1 = await webSearch(`"${businessName}" ${locationPart}`.trim());
     scanSearchResults(sr1);
 
-    // Query 2: Only if still missing social platforms
-    const socialMissing = ["Facebook", "Instagram", "LinkedIn"].filter(p => !results.get(p)?.found);
-    if (socialMissing.length > 0) {
-      const sr2 = await webSearch(`"${businessName}" ${locationPart} ${socialMissing.join(" ").toLowerCase()}`.trim());
+    // Query 2: Search by phone number
+    if (phone) {
+      const sr2 = await webSearch(`"${phone}" ${locationPart}`.trim());
       scanSearchResults(sr2);
     }
 
-    // Query 3: Search by phone number (catches businesses with different names)
-    const stillMissing2 = platforms.filter(p => !results.get(p.source)?.found);
-    if (stillMissing2.length > 0 && phone) {
-      const sr3 = await webSearch(`"${phone}" ${locationPart}`.trim());
-      scanSearchResults(sr3);
-    }
-
-    // Query 4: Search by street address (catches businesses with different names)
-    const stillMissing3 = platforms.filter(p => !results.get(p.source)?.found);
-    if (stillMissing3.length > 0 && address) {
-      const streetPart = address.split(",")[0].trim(); // "536 Tyler Street"
+    // Query 3: Search by street address
+    if (address) {
+      const streetPart = address.split(",")[0].trim();
       if (streetPart) {
-        const sr4 = await webSearch(`"${streetPart}" ${locationPart}`.trim());
-        scanSearchResults(sr4);
+        const sr3 = await webSearch(`"${streetPart}" ${locationPart}`.trim());
+        scanSearchResults(sr3);
       }
     }
+  }
+
+  // Phase B: Dedicated per-platform searches for still-missing platforms
+  // Much more effective than broad queries — e.g. facebook.com "Business Name" Las Vegas
+  const dedicatedPlatforms = [
+    { source: "Facebook",    keyword: "facebook.com",    domain: "facebook.com" },
+    { source: "Instagram",   keyword: "instagram.com",   domain: "instagram.com" },
+    { source: "LinkedIn",    keyword: "linkedin.com",    domain: "linkedin.com" },
+    { source: "Yellow Pages",keyword: "yellowpages.com", domain: "yellowpages.com" },
+    { source: "Nextdoor",    keyword: "nextdoor.com",    domain: "nextdoor.com" },
+    { source: "Angi",        keyword: "angi.com",        domain: "angi.com" },
+    { source: "Thumbtack",   keyword: "thumbtack.com",   domain: "thumbtack.com" },
+    { source: "Manta",       keyword: "manta.com",       domain: "manta.com" },
+  ];
+
+  for (const dp of dedicatedPlatforms) {
+    if (results.get(dp.source)?.found) continue;
+
+    const platformDef = platforms.find(p => p.source === dp.source);
+    if (!platformDef) continue;
+
+    try {
+      const sr = await webSearch(`${dp.keyword} "${businessName}" ${locationPart}`.trim());
+      const url = findResultUrl(sr, dp.domain, platformDef.exclude, locationPart || undefined, businessName);
+      if (url) {
+        results.set(dp.source, { ...results.get(dp.source)!, found: true, url, snippet: null });
+        console.log(`[platform] Dedicated search found ${dp.source}: ${url}`);
+      }
+    } catch { /* ignore */ }
   }
 
   return [...results.values()];

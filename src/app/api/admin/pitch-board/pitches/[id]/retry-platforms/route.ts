@@ -137,6 +137,19 @@ export async function POST(
       diagnostics["_platformScan"] = `Error: ${e instanceof Error ? e.message : "unknown"}`;
     }
 
+    // Auto-populate Google Maps from Google Places data (we already know the business is on Google)
+    if (biData.google?.found) {
+      const gmIdx = (biData.otherMentions || []).findIndex((m: WebMention) => m.source === "Google Maps");
+      if (gmIdx !== -1 && !biData.otherMentions[gmIdx].found) {
+        biData.otherMentions[gmIdx] = {
+          ...biData.otherMentions[gmIdx],
+          found: true,
+          url: biData.google.googleMapsUrl || null,
+        };
+        diagnostics["Google Maps"] = `Found: Google Places confirmed (${biData.google.googleMapsUrl || "linked"})`;
+      }
+    }
+
     // Fill diagnostics for platforms not yet covered
     for (const m of biData.otherMentions || []) {
       if (!diagnostics[m.source]) {
