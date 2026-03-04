@@ -327,10 +327,10 @@ export async function probeYelp(businessName: string, location?: string, phone?:
       if (url2) return { ...base, found: true, url: url2 };
     }
 
-    // 3 — Search WITHOUT location (no city verification, but still verify business name)
+    // 3 — Search WITHOUT location in query (wider net, but still verify city + name on results)
     if (loc) {
       const results3 = await webSearch(`yelp.com "${businessName}"`);
-      const url3 = findResultUrl(results3, "yelp.com/biz/", yelpExclude, undefined, businessName) || findResultUrl(results3, "yelp.com/", yelpExclude, undefined, businessName);
+      const url3 = findResultUrl(results3, "yelp.com/biz/", yelpExclude, loc, businessName) || findResultUrl(results3, "yelp.com/", yelpExclude, loc, businessName);
       if (url3) return { ...base, found: true, url: url3 };
     }
 
@@ -561,11 +561,11 @@ export async function probeBBB(businessName: string, location?: string, phone?: 
       if (url2) return { ...base, found: true, url: url2 };
     }
 
-    // 6 — Search WITHOUT location (still verify business name)
+    // 6 — Search WITHOUT location in query (wider net, but still verify city + name on results)
     if (loc) {
       const results3 = await webSearch(`bbb.org "${businessName}"`);
       console.log(`[bbb] No-location search returned ${results3.length} URLs: ${results3.slice(0, 3).map(r => r.link).join(", ")}`);
-      const url3 = findResultUrl(results3, bbbPattern, ["search", "/api/"], undefined, businessName);
+      const url3 = findResultUrl(results3, bbbPattern, ["search", "/api/"], loc, businessName);
       if (url3) return { ...base, found: true, url: url3 };
     }
 
