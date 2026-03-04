@@ -724,12 +724,12 @@ function findResultUrl(
 
     const text = `${r.title} ${r.snippet} ${r.link}`.toLowerCase();
 
-    // Business name verification: require at least 2 significant words (or all if name is short)
+    // Business name verification: require ALL significant words to match
+    // e.g. "Integrity Tax Services" → must find "integrity" AND "tax" AND "services" in result
     if (nameWords.length > 0) {
       const matched = nameWords.filter(w => text.includes(w));
-      const threshold = Math.min(2, nameWords.length);
-      if (matched.length < threshold) {
-        console.log(`[verify] Skipping "${r.title}" — name words matched ${matched.length}/${nameWords.length} (need ${threshold}): [${matched.join(",")}] vs [${nameWords.join(",")}]`);
+      if (matched.length < nameWords.length) {
+        console.log(`[verify] Skipping "${r.title}" — name words matched ${matched.length}/${nameWords.length}: [${matched.join(",")}] missing [${nameWords.filter(w => !text.includes(w)).join(",")}]`);
         continue;
       }
     }
@@ -813,11 +813,10 @@ export async function probePlatformPresence(businessName: string, websiteHtml?: 
 
         const text = `${sr.title} ${sr.snippet} ${sr.link}`.toLowerCase();
 
-        // Business name verification for directory platforms (avoids matching wrong-name business)
+        // Business name verification for directory platforms — require ALL significant words
         if (needsNameVerify.has(p.source) && bizNameWords.length > 0) {
           const matched = bizNameWords.filter(w => text.includes(w));
-          const threshold = Math.min(2, bizNameWords.length);
-          if (matched.length < threshold) continue; // Wrong business name — skip
+          if (matched.length < bizNameWords.length) continue; // Wrong business name — skip
         }
 
         // City verification for directory platforms (avoids matching wrong city's business)
