@@ -1528,18 +1528,26 @@ function BusinessIntelCard({ bi, pitchId, onUpdate }: { bi: BusinessIntelData; p
   const [showAllReviews, setShowAllReviews] = useState(false);
   const [showAllHours, setShowAllHours] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [retryDiagnostics, setRetryDiagnostics] = useState<Record<string, string> | null>(null);
 
   const handleRetryPlatforms = async () => {
     setRetrying(true);
+    setRetryDiagnostics(null);
     try {
       const res = await fetch(`/api/admin/pitch-board/pitches/${pitchId}/retry-platforms`, { method: "POST" });
       if (!res.ok) throw new Error("Retry failed");
       const data = await res.json();
       if (data.businessIntelData) {
         onUpdate(data.businessIntelData);
-        const yelpFound = data.yelp?.found;
-        const bbbFound = data.bbb?.found;
-        toast.success(`Retry complete: Yelp ${yelpFound ? "found" : "not found"}, BBB ${bbbFound ? "found" : "not found"}`);
+        setRetryDiagnostics(data.diagnostics || null);
+        // Count how many were newly found
+        const allPlatforms = [
+          data.businessIntelData.yelp,
+          data.businessIntelData.bbb,
+          ...(data.businessIntelData.otherMentions || []),
+        ].filter(Boolean);
+        const foundCount = allPlatforms.filter((m: WebMentionBI) => m.found).length;
+        toast.success(`Retry complete: ${foundCount} platforms found`);
       }
     } catch {
       toast.error("Failed to retry platform detection");
@@ -1686,69 +1694,97 @@ function BusinessIntelCard({ bi, pitchId, onUpdate }: { bi: BusinessIntelData; p
           </div>
         )}
 
-        {/* Directory presence */}
+        {/* Directory presence — unified grid with all platforms */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Directory & Platform Presence</p>
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+              Directory & Platform Presence
+              <span className="ml-2 text-[10px] font-normal" style={{ color: "var(--text-muted)" }}>
+                ({[bi.yelp, bi.bbb, ...platformMentions].filter(m => m?.found).length} found / {[bi.yelp, bi.bbb, ...platformMentions].filter(Boolean).length} checked)
+              </span>
+            </p>
             <button
               onClick={handleRetryPlatforms}
               disabled={retrying}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold transition-colors hover:opacity-80"
               style={{ background: "var(--bg-tertiary)", color: "var(--brand-primary)", border: "1px solid var(--border)" }}
-              title="Re-check Yelp & BBB listings"
+              title="Re-check all missing platform listings"
             >
               <RefreshCw className={`h-3 w-3 ${retrying ? "animate-spin" : ""}`} />
-              {retrying ? "Checking..." : "Retry Yelp/BBB"}
+              {retrying ? "Checking all..." : "Retry Missing"}
             </button>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            {bi.yelp && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
-                style={{ background: bi.yelp.found ? "#f0fdf4" : "#fef2f2", border: `1px solid ${bi.yelp.found ? "#bbf7d0" : "#fecaca"}` }}>
-                <span className="text-xs font-semibold inline-flex items-center gap-0.5" style={{ color: bi.yelp.found ? "#16a34a" : "#dc2626" }}>
-                  {bi.yelp.found ? <CheckCircle2 className="h-3 w-3" style={{ color: "#16a34a" }} /> : <X className="h-3 w-3" style={{ color: "#dc2626" }} />} Yelp
-                </span>
-                {bi.yelp.rating && <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{bi.yelp.rating}/5</span>}
-                {bi.yelp.found && bi.yelp.url && (
-                  <a href={bi.yelp.url} target="_blank" rel="noopener noreferrer" className="ml-auto">
-                    <ExternalLink className="h-3 w-3" style={{ color: "#16a34a" }} />
-                  </a>
+          {(() => {
+            // Build unified list of all platforms
+            const allPlatforms: WebMentionBI[] = [];
+            if (bi.yelp) allPlatforms.push(bi.yelp);
+            if (bi.bbb) allPlatforms.push(bi.bbb);
+            // Add other mentions but skip Yelp/BBB dupes
+            for (const m of bi.otherMentions) {
+              if (m.source !== "Yelp" && m.source !== "BBB") allPlatforms.push(m);
+            }
+            const foundPlatforms = allPlatforms.filter(m => m.found);
+            const missingPlatforms = allPlatforms.filter(m => !m.found);
+
+            return (
+              <>
+                {/* Found platforms — clickable links */}
+                {foundPlatforms.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                    {foundPlatforms.map((m) => (
+                      <a
+                        key={m.source}
+                        href={m.url || "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors hover:opacity-80"
+                        style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" }}
+                      >
+                        <CheckCircle2 className="h-3 w-3 shrink-0" style={{ color: "#16a34a" }} />
+                        <span className="truncate">{m.source}</span>
+                        {m.rating && <span className="text-[10px] ml-auto" style={{ color: "var(--text-muted)" }}>{m.rating}/5</span>}
+                        {m.url && <ExternalLink className="h-3 w-3 shrink-0 ml-auto" style={{ color: "#16a34a" }} />}
+                      </a>
+                    ))}
+                  </div>
                 )}
-              </div>
-            )}
-            {bi.bbb && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
-                style={{ background: bi.bbb.found ? "#f0fdf4" : "#fef2f2", border: `1px solid ${bi.bbb.found ? "#bbf7d0" : "#fecaca"}` }}>
-                <span className="text-xs font-semibold inline-flex items-center gap-0.5" style={{ color: bi.bbb.found ? "#16a34a" : "#dc2626" }}>
-                  {bi.bbb.found ? <CheckCircle2 className="h-3 w-3" style={{ color: "#16a34a" }} /> : <X className="h-3 w-3" style={{ color: "#dc2626" }} />} BBB
-                </span>
-                {bi.bbb.snippet && <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{bi.bbb.snippet}</span>}
-                {bi.bbb.found && bi.bbb.url && (
-                  <a href={bi.bbb.url} target="_blank" rel="noopener noreferrer" className="ml-auto">
-                    <ExternalLink className="h-3 w-3" style={{ color: "#16a34a" }} />
-                  </a>
+
+                {/* Missing platforms */}
+                {missingPlatforms.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                    {missingPlatforms.map((m) => (
+                      <div
+                        key={m.source}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium"
+                        style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca" }}
+                        title={retryDiagnostics?.[m.source] || "Not found"}
+                      >
+                        <X className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{m.source}</span>
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </div>
-            )}
-          </div>
-          {bi.otherMentions.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {found.map((m) => (
-                <a key={m.source} href={m.url ?? "#"} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
-                  style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" }}>
-                  <CheckCircle2 className="h-3 w-3" style={{ color: "#16a34a" }} /> {m.source}
-                </a>
-              ))}
-              {missing.slice(0, 6).map((m) => (
-                <span key={m.source}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
-                  style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
-                  <X className="h-3 w-3" style={{ color: "#dc2626" }} /> {m.source}
-                </span>
-              ))}
-            </div>
-          )}
+
+                {/* Retry diagnostics (shown after retry) */}
+                {retryDiagnostics && (
+                  <details className="mt-1">
+                    <summary className="text-[10px] font-semibold cursor-pointer" style={{ color: "var(--text-muted)" }}>
+                      Retry diagnostics
+                    </summary>
+                    <div className="mt-1 rounded-lg p-2 space-y-0.5 text-[10px]" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+                      {Object.entries(retryDiagnostics).filter(([k]) => !k.startsWith("_")).map(([platform, msg]) => (
+                        <div key={platform} className="flex gap-2">
+                          <span className="font-semibold w-20 shrink-0" style={{ color: "var(--text-primary)" }}>{platform}:</span>
+                          <span style={{ color: msg.startsWith("Found") || msg.startsWith("Already found") ? "#16a34a" : "#dc2626" }}>{msg}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </>
+            );
+          })()}
         </div>
 
         {/* Domain & Infrastructure */}

@@ -559,7 +559,7 @@ async function _ddgFetch(query: string, timeoutMs: number): Promise<string> {
   }
 }
 
-async function probePlatformPresence(businessName: string, websiteHtml?: string, location?: string): Promise<WebMention[]> {
+export async function probePlatformPresence(businessName: string, websiteHtml?: string, location?: string): Promise<WebMention[]> {
   const platforms = [
     { source: "Facebook",     domains: ["facebook.com"],     exclude: ["sharer", "login", "help", "groups", "watch", "events"], hrefPattern: /href=["'][^"']*facebook\.com\/(?!sharer|login|help|groups|watch|events)[^"']{3,}/i },
     { source: "Instagram",    domains: ["instagram.com"],    exclude: ["accounts/login"], hrefPattern: /href=["'][^"']*instagram\.com\/(?!accounts\/login)[^"']{3,}/i },

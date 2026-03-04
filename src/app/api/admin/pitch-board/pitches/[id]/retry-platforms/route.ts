@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { isGCSStaff } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
-import { probeYelp, probeBBB } from "@/lib/business-intel";
+import { probeYelp, probeBBB, probePlatformPresence } from "@/lib/business-intel";
+import type { WebMention } from "@/lib/business-intel";
 
 export async function POST(
   _req: NextRequest,
@@ -20,49 +21,105 @@ export async function POST(
       return NextResponse.json({ error: "Pitch not found" }, { status: 404 });
     }
 
-    // Parse existing BI data
-    let biData = pitch.businessIntelData ? JSON.parse(pitch.businessIntelData) : null;
+    const biData = pitch.businessIntelData ? JSON.parse(pitch.businessIntelData) : null;
     if (!biData) {
       return NextResponse.json({ error: "No business intel data to retry" }, { status: 400 });
     }
 
     const businessName = pitch.businessName;
-    // Extract location from Google Places address or domain
     const googleAddress = biData.google?.address || "";
     const location = googleAddress
       ? googleAddress.replace(/^[^,]+,\s*/, "").replace(/,\s*USA?$/i, "").trim()
       : "";
     const phone = biData.google?.phone || undefined;
 
-    console.log(`[retry-platforms] Retrying Yelp/BBB for "${businessName}" in "${location}"`);
+    // Identify which platforms are currently missing
+    const currentYelpFound = biData.yelp?.found === true;
+    const currentBbbFound = biData.bbb?.found === true;
+    const missingPlatforms = (biData.otherMentions || [])
+      .filter((m: WebMention) => !m.found)
+      .map((m: WebMention) => m.source);
 
-    // Run both probes in parallel
-    const [yelpResult, bbbResult] = await Promise.allSettled([
-      probeYelp(businessName, location, phone),
-      probeBBB(businessName, location),
-    ]);
+    const diagnostics: Record<string, string> = {};
 
-    const newYelp = yelpResult.status === "fulfilled" ? yelpResult.value : null;
-    const newBbb = bbbResult.status === "fulfilled" ? bbbResult.value : null;
+    console.log(`[retry-platforms] Retrying for "${businessName}" in "${location}"`);
+    console.log(`[retry-platforms] Missing: Yelp=${!currentYelpFound}, BBB=${!currentBbbFound}, others=${missingPlatforms.join(", ")}`);
 
-    // Update BI data with new results
-    if (newYelp) biData.yelp = newYelp;
-    if (newBbb) biData.bbb = newBbb;
+    // Re-run Yelp if missing
+    if (!currentYelpFound) {
+      try {
+        const result = await probeYelp(businessName, location, phone);
+        biData.yelp = result;
+        diagnostics["Yelp"] = result.found
+          ? `Found: ${result.url}`
+          : "Not found — no Yelp listing matched via DuckDuckGo search or direct URL probing";
+      } catch (e) {
+        diagnostics["Yelp"] = `Error: ${e instanceof Error ? e.message : "unknown"}`;
+      }
+    } else {
+      diagnostics["Yelp"] = `Already found: ${biData.yelp.url || "linked"}`;
+    }
 
-    // Also update otherMentions array if Yelp/BBB are in there
-    if (biData.otherMentions) {
-      for (const mention of biData.otherMentions) {
-        if (mention.source === "Yelp" && newYelp) {
-          mention.found = newYelp.found;
-          mention.url = newYelp.url;
-          mention.rating = newYelp.rating;
-          mention.snippet = newYelp.snippet;
+    // Re-run BBB if missing
+    if (!currentBbbFound) {
+      try {
+        const result = await probeBBB(businessName, location);
+        biData.bbb = result;
+        diagnostics["BBB"] = result.found
+          ? `Found: ${result.url}`
+          : "Not found — BBB API returned no matching business name";
+      } catch (e) {
+        diagnostics["BBB"] = `Error: ${e instanceof Error ? e.message : "unknown"}`;
+      }
+    } else {
+      diagnostics["BBB"] = `Already found: ${biData.bbb.url || "linked"}`;
+    }
+
+    // Re-run broad platform presence for ALL missing platforms
+    if (missingPlatforms.length > 0) {
+      try {
+        const newMentions = await probePlatformPresence(businessName, undefined, location);
+
+        // Merge: only update platforms that were missing and are now found
+        for (const newM of newMentions) {
+          const idx = (biData.otherMentions || []).findIndex((m: WebMention) => m.source === newM.source);
+          if (idx !== -1) {
+            const current = biData.otherMentions[idx];
+            if (!current.found && newM.found) {
+              biData.otherMentions[idx] = newM;
+              diagnostics[newM.source] = `Found: ${newM.url || "detected via search"}`;
+            } else if (!current.found && !newM.found) {
+              diagnostics[newM.source] = "Not found — no listing detected via DuckDuckGo search";
+            }
+            // If already found, don't overwrite
+            if (current.found && !diagnostics[newM.source]) {
+              diagnostics[newM.source] = `Already found: ${current.url || "linked"}`;
+            }
+          }
         }
-        if (mention.source === "BBB" && newBbb) {
-          mention.found = newBbb.found;
-          mention.url = newBbb.url;
-          mention.snippet = newBbb.snippet;
+
+        // Sync: if Yelp/BBB found via platform presence but missed by dedicated probes
+        const yelpFromMentions = newMentions.find(m => m.source === "Yelp");
+        if (yelpFromMentions?.found && !biData.yelp?.found) {
+          biData.yelp = yelpFromMentions;
+          diagnostics["Yelp"] = `Found via broad search: ${yelpFromMentions.url || "detected"}`;
         }
+        const bbbFromMentions = newMentions.find(m => m.source === "BBB");
+        if (bbbFromMentions?.found && !biData.bbb?.found) {
+          biData.bbb = bbbFromMentions;
+          diagnostics["BBB"] = `Found via broad search: ${bbbFromMentions.url || "detected"}`;
+        }
+      } catch (e) {
+        diagnostics["_platformScan"] = `Error: ${e instanceof Error ? e.message : "unknown"}`;
+      }
+    }
+
+    // Fill diagnostics for platforms not yet covered
+    for (const m of biData.otherMentions || []) {
+      if (!diagnostics[m.source]) {
+        diagnostics[m.source] = m.found
+          ? `Found: ${m.url || "linked"}`
+          : "Not found";
       }
     }
 
@@ -72,12 +129,11 @@ export async function POST(
       data: { businessIntelData: JSON.stringify(biData) },
     });
 
-    console.log(`[retry-platforms] Done. Yelp: ${newYelp?.found ? "FOUND" : "not found"}, BBB: ${newBbb?.found ? "FOUND" : "not found"}`);
+    console.log(`[retry-platforms] Done. Results:`, JSON.stringify(diagnostics, null, 2));
 
     return NextResponse.json({
-      yelp: newYelp,
-      bbb: newBbb,
       businessIntelData: biData,
+      diagnostics,
     });
   } catch (err) {
     console.error("[retry-platforms] Error:", err);
