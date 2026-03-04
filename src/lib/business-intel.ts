@@ -6,6 +6,8 @@
  * All checks degrade gracefully if keys are missing or requests fail.
  */
 
+import { proxiedFetch } from "./proxy-rotator";
+
 const PLACES_BASE = "https://maps.googleapis.com/maps/api/place";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -276,7 +278,7 @@ function extractCityState(address: string | null): string {
 
 function extractCoreName(businessName: string): string {
   let core = businessName
-    .replace(/\b(LLC|Inc\.?|Corp\.?|Corporation|Company|Co\.?|Services|Solutions|Group|Associates|Enterprises|International|Ltd\.?)\b/gi, "")
+    .replace(/\b(LLC|Inc\.?|Corp\.?|Corporation|Company|Co\.?|Services|Solutions|Group|Associates|Enterprises|International|Ltd\.?|Accounting|Bookkeeping|Consulting|Management|Professional|Agency|Firm|Partners|Practice)\b/gi, "")
     .replace(/\s*[&,]\s*/g, " ")
     .replace(/\s{2,}/g, " ")
     .trim();
@@ -285,55 +287,95 @@ function extractCoreName(businessName: string): string {
   return core || businessName;
 }
 
-// ─── Yelp probe (DuckDuckGo primary — Yelp blocks server-side fetches) ───────
+// ─── Yelp probe (DDG search → direct URL slug probing fallback) ──────────────
+
+function extractYelpUrl(html: string): string | null {
+  const patterns = [
+    /https?:\/\/(?:www\.)?yelp\.com\/biz\/[a-z0-9_-]+/gi,
+    /yelp\.com\/biz\/[a-z0-9_-]+/gi,
+  ];
+  for (const pattern of patterns) {
+    const matches = [...html.matchAll(pattern)];
+    for (const m of matches) {
+      const url = m[0].startsWith("http") ? m[0] : `https://www.${m[0]}`;
+      if (/\/(search|writeareview|signup|login)/.test(url)) continue;
+      if (!url.includes("duckduckgo")) return url.split(/[?#&;]/)[0];
+    }
+  }
+  return null;
+}
+
+function makeYelpSlug(name: string, city: string): string {
+  return (
+    "https://www.yelp.com/biz/" +
+    (name + " " + city)
+      .toLowerCase()
+      .replace(/&/g, "and")
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+  );
+}
 
 async function probeYelp(businessName: string, location?: string, phone?: string): Promise<WebMention> {
   const base: WebMention = { source: "Yelp", url: null, rating: null, reviewCount: null, found: false, snippet: null };
 
-  // Helper to extract a yelp.com/biz/ URL from DuckDuckGo HTML
-  function extractYelpUrl(html: string): string | null {
-    // Look for yelp.com/biz/ URLs in result links and text
-    const patterns = [
-      /https?:\/\/(?:www\.)?yelp\.com\/biz\/[a-z0-9_-]+/gi,
-      /yelp\.com\/biz\/[a-z0-9_-]+/gi,
-    ];
-    for (const pattern of patterns) {
-      const matches = [...html.matchAll(pattern)];
-      for (const m of matches) {
-        const url = m[0].startsWith("http") ? m[0] : `https://www.${m[0]}`;
-        // Skip search/writeareview/generic pages
-        if (/\/(search|writeareview|signup|login)/.test(url)) continue;
-        if (!url.includes("duckduckgo")) return url.split(/[?#&;]/)[0];
-      }
-    }
-    return null;
-  }
-
   try {
-    const coreName = extractCoreName(businessName);
     const loc = location || "";
 
-    // Run multiple DuckDuckGo searches in parallel — different name variants
-    const queries = [
-      `site:yelp.com "${businessName}" ${loc}`.trim(),
-      coreName !== businessName ? `site:yelp.com "${coreName}" ${loc}`.trim() : null,
-      phone ? `site:yelp.com "${phone}"` : null,
-    ].filter((q): q is string => !!q);
+    // 1 — DuckDuckGo site search (most reliable when not rate-limited)
+    const html = await duckDuckGoSearch(`site:yelp.com "${businessName}" ${loc}`.trim());
+    if (html) {
+      const url = extractYelpUrl(html);
+      if (url) return { ...base, found: true, url };
+    }
 
-    const results = await Promise.allSettled(
-      queries.map(async (q) => {
-        let html = await duckDuckGoSearch(q);
-        if (!html) {
-          await new Promise(r => setTimeout(r, 1000));
-          html = await duckDuckGoSearch(q);
-        }
-        return html ? extractYelpUrl(html) : null;
-      })
-    );
+    // 2 — DDG with core name (catches name discrepancies)
+    const coreName = extractCoreName(businessName);
+    if (coreName !== businessName) {
+      const html2 = await duckDuckGoSearch(`site:yelp.com "${coreName}" ${loc}`.trim());
+      if (html2) {
+        const url = extractYelpUrl(html2);
+        if (url) return { ...base, found: true, url };
+      }
+    }
 
-    for (const r of results) {
-      if (r.status === "fulfilled" && r.value) {
-        return { ...base, found: true, url: r.value };
+    // 3 — Direct URL slug probing (fallback when DDG is rate-limited)
+    // Yelp URLs follow yelp.com/biz/business-name-city — we construct likely
+    // slugs and check if the page exists (HTTP 200).
+    // NOTE: Must use a browser-like UA — Yelp blocks bot UAs with 403.
+    if (location) {
+      const city = location.split(",")[0].trim();
+      const slugVariants = [
+        makeYelpSlug(businessName, city),
+        makeYelpSlug(coreName, city),
+      ];
+      const unique = [...new Set(slugVariants)];
+      for (const slugUrl of unique) {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 8000);
+          const res = await fetch(slugUrl, {
+            signal: controller.signal,
+            redirect: "follow",
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+          });
+          clearTimeout(timer);
+          if (res.status === 200) return { ...base, found: true, url: slugUrl };
+        } catch { /* try next */ }
+      }
+    }
+
+    // 4 — DDG with phone number (last resort)
+    if (phone) {
+      const html3 = await duckDuckGoSearch(`site:yelp.com "${phone}"`);
+      if (html3) {
+        const url = extractYelpUrl(html3);
+        if (url) return { ...base, found: true, url };
       }
     }
   } catch { /* ignore */ }
@@ -341,53 +383,101 @@ async function probeYelp(businessName: string, location?: string, phone?: string
   return base;
 }
 
-// ─── BBB probe (DuckDuckGo primary — BBB renders with JavaScript) ────────────
+// ─── BBB probe (BBB Search API → DDG fallback) ──────────────────────────────
+
+function extractBbbUrl(html: string): string | null {
+  const patterns = [
+    /https?:\/\/(?:www\.)?bbb\.org\/us\/[a-z]{2}\/[^"'\s<>]+/gi,
+    /bbb\.org\/us\/[a-z]{2}\/[^"'\s<>]+/gi,
+  ];
+  for (const pattern of patterns) {
+    const matches = [...html.matchAll(pattern)];
+    for (const m of matches) {
+      const url = m[0].startsWith("http") ? m[0] : `https://www.${m[0]}`;
+      if (/\/search\b/.test(url)) continue;
+      if (!url.includes("duckduckgo")) return url.split(/[?#&;]/)[0];
+    }
+  }
+  return null;
+}
 
 async function probeBBB(businessName: string, location?: string): Promise<WebMention> {
   const base: WebMention = { source: "BBB", url: null, rating: null, reviewCount: null, found: false, snippet: null };
 
-  // Helper to extract a bbb.org business profile URL from DuckDuckGo HTML
-  function extractBbbUrl(html: string): string | null {
-    const patterns = [
-      /https?:\/\/(?:www\.)?bbb\.org\/us\/[a-z]{2}\/[^"'\s<>]+/gi,
-      /bbb\.org\/us\/[a-z]{2}\/[^"'\s<>]+/gi,
-    ];
-    for (const pattern of patterns) {
-      const matches = [...html.matchAll(pattern)];
-      for (const m of matches) {
-        const url = m[0].startsWith("http") ? m[0] : `https://www.${m[0]}`;
-        // Skip search pages, only accept business profiles
-        if (/\/search\b/.test(url)) continue;
-        if (!url.includes("duckduckgo")) return url.split(/[?#&;]/)[0];
-      }
-    }
-    return null;
-  }
-
   try {
+    // 1 — BBB Search API (returns structured JSON — most reliable method)
+    // BBB's search is picky with exact names, so try both the full name
+    // AND the core name (e.g. "Integrity Tax" instead of "Integrity Tax & Accounting Services").
     const coreName = extractCoreName(businessName);
-    const loc = location || "";
+    const searchNames = [businessName];
+    if (coreName !== businessName) searchNames.push(coreName);
 
-    // Run multiple searches — full name and core name variants
-    const queries = [
-      `site:bbb.org "${businessName}" ${loc}`.trim(),
-      coreName !== businessName ? `site:bbb.org "${coreName}" ${loc}`.trim() : null,
-    ].filter((q): q is string => !!q);
+    for (const searchName of searchNames) {
+      try {
+        const apiParams = new URLSearchParams({
+          find_text: searchName,
+          find_loc: location || "",
+          find_type: "Category",
+          page: "1",
+          size: "5",
+        });
+        const apiRes = await fetchWithTimeout(
+          `https://www.bbb.org/api/search?${apiParams}`,
+          12000
+        );
+        if (apiRes.ok) {
+          type BbbResult = {
+            businessName?: string;
+            reportUrl?: string;
+            rating?: string;
+            reviewCount?: number;
+          };
+          const data = (await apiRes.json()) as { results?: BbbResult[] };
+          if (data.results && data.results.length > 0) {
+            // Find best match by comparing names — ONLY accept if name actually matches
+            const coreNameLower = coreName.toLowerCase();
+            const best = data.results.find((r) => {
+              const rName = (r.businessName ?? "").replace(/<[^>]+>/g, "").toLowerCase();
+              const rCore = extractCoreName(r.businessName ?? "").toLowerCase();
+              return (
+                rCore.includes(coreNameLower) ||
+                coreNameLower.includes(rCore) ||
+                rName.includes(coreNameLower) ||
+                coreNameLower.includes(rName)
+              );
+            });
 
-    const results = await Promise.allSettled(
-      queries.map(async (q) => {
-        let html = await duckDuckGoSearch(q);
-        if (!html) {
-          await new Promise(r => setTimeout(r, 1000));
-          html = await duckDuckGoSearch(q);
+            // Don't fall back to results[0] — it could be a completely unrelated business
+            if (best) {
+              const profileUrl = best.reportUrl
+                ? `https://www.bbb.org${best.reportUrl}`
+                : null;
+              return {
+                ...base,
+                found: true,
+                url: profileUrl,
+                snippet: (best.businessName ?? "").replace(/<[^>]+>/g, "") || null,
+              };
+            }
+          }
         }
-        return html ? extractBbbUrl(html) : null;
-      })
-    );
+      } catch { /* try next name or DDG fallback */ }
+    }
 
-    for (const r of results) {
-      if (r.status === "fulfilled" && r.value) {
-        return { ...base, found: true, url: r.value };
+    // 2 — DDG site search fallback
+    const loc = location || "";
+    const html = await duckDuckGoSearch(`site:bbb.org "${businessName}" ${loc}`.trim());
+    if (html) {
+      const url = extractBbbUrl(html);
+      if (url) return { ...base, found: true, url };
+    }
+
+    // 3 — DDG with core name
+    if (coreName !== businessName) {
+      const html2 = await duckDuckGoSearch(`site:bbb.org "${coreName}" ${loc}`.trim());
+      if (html2) {
+        const url = extractBbbUrl(html2);
+        if (url) return { ...base, found: true, url };
       }
     }
   } catch { /* ignore */ }
@@ -395,26 +485,73 @@ async function probeBBB(businessName: string, location?: string): Promise<WebMen
   return base;
 }
 
-// ─── Platform presence detection (independent search) ────────────────────────
+// ─── DuckDuckGo Search (with free IP rotation) ───────────────────────────────
+// DDG rate-limits by source IP (HTTP 202 botnet challenge after 2-3 rapid
+// requests from the same IP).  We route each request through a random free
+// proxy so every request appears to come from a different IP address.
+// If all proxies fail, we fall back to direct fetch with a safety gap.
+//
+// The serial queue is kept as a safety net — even with proxy rotation,
+// hammering DDG from many IPs simultaneously could trigger other defenses.
+// The gap is short (500 ms) since each request uses a different IP.
+
+let _ddgQueue: Promise<void> = Promise.resolve();
+const DDG_GAP_MS = 2000; // 2s gap between requests (safety net for direct fetch)
+
+// Rotate User-Agent strings to look more natural
+const _userAgents = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
+];
 
 async function duckDuckGoSearch(query: string, timeoutMs = 15000): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return new Promise<string>((resolve) => {
+    _ddgQueue = _ddgQueue
+      .then(async () => {
+        const html = await _ddgFetch(query, timeoutMs);
+        await new Promise((r) => setTimeout(r, DDG_GAP_MS));
+        resolve(html);
+      })
+      .catch(() => {
+        resolve("");
+      });
+  });
+}
+
+async function _ddgFetch(query: string, timeoutMs: number): Promise<string> {
+  const ua = _userAgents[Math.floor(Math.random() * _userAgents.length)];
+  const headers: Record<string, string> = {
+    "User-Agent": ua,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+  };
+
   try {
     const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}&kl=us-en`;
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-    });
-    clearTimeout(timer);
+
+    // Route through rotating proxy (falls back to direct if no proxies)
+    const res = await proxiedFetch(url, { headers, timeoutMs, maxRetries: 3 });
+
+    // DDG returns 202 + botnet challenge page when it rate-limits
+    if (res.status === 202) {
+      console.log(`[business-intel] DDG 202 rate-limit for: ${query}`);
+      return "";
+    }
     if (!res.ok) return "";
-    return await res.text();
+
+    const html = await res.text();
+
+    // Double-check: discard captcha/challenge pages
+    if (html.includes("cc=botnet") || html.includes("challenge-form")) {
+      console.log(`[business-intel] DDG botnet challenge for: ${query}`);
+      return "";
+    }
+
+    return html;
   } catch {
-    clearTimeout(timer);
     return "";
   }
 }
@@ -494,32 +631,25 @@ async function probePlatformPresence(businessName: string, websiteHtml?: string,
     }
   }
 
-  // ── SECONDARY SOURCE: Broad DuckDuckGo searches (like a human would) ──
-  // Instead of restrictive site: filters, search broadly — just like typing
-  // "Business Name City State" in Google. The search results naturally surface
-  // Yelp, BBB, Facebook, Yellow Pages, etc. as top results.
+  // ── SECONDARY SOURCE: Broad DuckDuckGo search (surfaces local listings) ──
+  // One well-crafted broad query surfaces Yelp, BBB, Facebook, YP, etc.
+  // naturally — just like typing "Business Name City State" in Google.
+  // We use 1-2 queries (sequential, rate-limited) instead of 3 parallel ones
+  // to avoid tripping DDG's bot detection.
   const stillMissing = platforms.filter(p => !results.get(p.source)?.found).map(p => p.source);
   if (stillMissing.length > 0) {
     const locationPart = location || "";
-    // Broad queries that mimic how a human would Google a business
-    const queries = [
-      // Query 1: Business name + location (this is what surfaces all the local listings)
-      `"${businessName}" ${locationPart}`.trim(),
-      // Query 2: Business name + common listing keywords (catches review sites)
-      `"${businessName}" ${locationPart} reviews listing`.trim(),
-      // Query 3: Targeted social media search for remaining platforms
-      `"${businessName}" ${locationPart} facebook instagram linkedin`.trim(),
-    ];
 
-    // Run all queries in parallel with retries
-    await Promise.allSettled(queries.map(async (query) => {
-      let html = await duckDuckGoSearch(query);
-      if (!html) {
-        await new Promise(r => setTimeout(r, 1500));
-        html = await duckDuckGoSearch(query);
-      }
-      if (html) scanForPlatforms(html);
-    }));
+    // Query 1: Business name + location (surfaces most listings)
+    const html1 = await duckDuckGoSearch(`"${businessName}" ${locationPart}`.trim());
+    if (html1) scanForPlatforms(html1);
+
+    // Query 2: Only if still missing social platforms — targeted search
+    const socialMissing = ["Facebook", "Instagram", "LinkedIn"].filter(p => !results.get(p)?.found);
+    if (socialMissing.length > 0) {
+      const html2 = await duckDuckGoSearch(`"${businessName}" ${locationPart} ${socialMissing.join(" ").toLowerCase()}`.trim());
+      if (html2) scanForPlatforms(html2);
+    }
   }
 
   return [...results.values()];
@@ -665,19 +795,9 @@ async function fetchWebSearchMentions(businessName: string, domain: string): Pro
 
   for (const query of queries) {
     try {
-      const controller = new AbortController();
-      setTimeout(() => controller.abort(), 10000);
-
-      const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}&kl=us-en`;
-      const res = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          "Accept": "text/html",
-        },
-      });
-      if (!res.ok) continue;
-      const html = await res.text();
+      // Use the rate-limited DDG search (avoids 202 botnet blocks)
+      const html = await duckDuckGoSearch(query);
+      if (!html) continue;
 
       // Extract snippets from result-snippet cells
       const snippetMatches = [...html.matchAll(/<td[^>]*class="[^"]*result-snippet[^"]*"[^>]*>([\s\S]*?)<\/td>/gi)];
@@ -706,21 +826,9 @@ export async function discoverFacebookPage(businessName: string): Promise<Facebo
   };
 
   try {
-    // Step 1: DuckDuckGo site search for Facebook page
-    const query = `site:facebook.com "${businessName}"`;
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), 6000);
-
-    const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}&kl=us-en`;
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "text/html",
-      },
-    });
-    if (!res.ok) return notFound;
-    const html = await res.text();
+    // Step 1: DuckDuckGo site search for Facebook page (rate-limited)
+    const html = await duckDuckGoSearch(`site:facebook.com "${businessName}"`);
+    if (!html) return notFound;
 
     // Extract first Facebook page link from results
     const linkMatches = [...html.matchAll(/<a[^>]+class="[^"]*result-link[^"]*"[^>]+href="([^"]+)"/gi)];
@@ -917,18 +1025,23 @@ export async function runBusinessIntel(
   const cityState = extractCityState(google?.address ?? null);
   const phone = google?.phone ?? "";
 
-  // ── PHASE 2: Platform probes WITH location context (parallel) ──
-  const [yelpResult, bbbResult, mentionResults] =
-    await Promise.allSettled([
-      probeYelp(businessName, cityState, phone),
-      probeBBB(businessName, cityState),
-      probePlatformPresence(businessName, websiteHtml, cityState),
-    ]);
+  // ── PHASE 2: Platform probes WITH location context ──
+  // IMPORTANT: Run sequentially, NOT in parallel!  DuckDuckGo rate-limits
+  // automated requests after 2-3 rapid calls (returns 202 botnet challenge).
+  // The DDG queue serialises individual requests with 2.5 s gaps, but running
+  // probes sequentially also avoids queueing 8+ requests that would take 20 s.
 
-  // Merge all results: dedicated probes override platform presence detection
-  const yelp = yelpResult.status === "fulfilled" ? yelpResult.value : null;
-  const bbb = bbbResult.status === "fulfilled" ? bbbResult.value : null;
-  const mentions = mentionResults.status === "fulfilled" ? [...mentionResults.value] : [];
+  // 2a. Yelp probe (1-3 DDG requests)
+  let yelp: WebMention | null = null;
+  try { yelp = await probeYelp(businessName, cityState, phone); } catch { /* ignore */ }
+
+  // 2b. BBB probe (1-2 DDG requests)
+  let bbb: WebMention | null = null;
+  try { bbb = await probeBBB(businessName, cityState); } catch { /* ignore */ }
+
+  // 2c. Broad platform presence (1-2 DDG requests + website HTML scan)
+  let mentions: WebMention[] = [];
+  try { mentions = await probePlatformPresence(businessName, websiteHtml, cityState); } catch { /* ignore */ }
 
   // If Google Places found the business, ensure Google Maps shows as found
   if (google?.found) {
