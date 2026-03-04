@@ -48,7 +48,7 @@ export async function POST(
     // Re-run Yelp if missing
     if (!currentYelpFound) {
       try {
-        const result = await probeYelp(businessName, location, phone);
+        const result = await probeYelp(businessName, location, phone, googleAddress);
         biData.yelp = result;
         diagnostics["Yelp"] = result.found
           ? `Found: ${result.url}`
@@ -78,7 +78,7 @@ export async function POST(
     // Re-run broad platform presence for ALL missing platforms
     if (missingPlatforms.length > 0) {
       try {
-        const newMentions = await probePlatformPresence(businessName, undefined, location);
+        const newMentions = await probePlatformPresence(businessName, undefined, location, phone, googleAddress);
 
         // Merge: only update platforms that were missing and are now found
         for (const newM of newMentions) {

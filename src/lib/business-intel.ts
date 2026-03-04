@@ -303,7 +303,7 @@ function makeYelpSlug(name: string, city: string): string {
   );
 }
 
-export async function probeYelp(businessName: string, location?: string, phone?: string): Promise<WebMention> {
+export async function probeYelp(businessName: string, location?: string, phone?: string, address?: string): Promise<WebMention> {
   const base: WebMention = { source: "Yelp", url: null, rating: null, reviewCount: null, found: false, snippet: null };
 
   try {
@@ -355,6 +355,16 @@ export async function probeYelp(businessName: string, location?: string, phone?:
       const results4 = await webSearch(`site:yelp.com "${phone}"`);
       const url4 = findResultUrl(results4, "yelp.com/biz/", yelpExclude) || findResultUrl(results4, "yelp.com/", yelpExclude);
       if (url4) return { ...base, found: true, url: url4 };
+    }
+
+    // 6 — Search with street address (catches businesses registered under different names)
+    if (address) {
+      const streetPart = address.split(",")[0].trim(); // "536 Tyler Street"
+      if (streetPart) {
+        const results5 = await webSearch(`site:yelp.com "${streetPart}"`);
+        const url5 = findResultUrl(results5, "yelp.com/biz/", yelpExclude) || findResultUrl(results5, "yelp.com/", yelpExclude);
+        if (url5) return { ...base, found: true, url: url5 };
+      }
     }
   } catch { /* ignore */ }
 
@@ -669,7 +679,7 @@ function findResultUrl(results: SearchResult[], domainPattern: string | RegExp, 
   return null;
 }
 
-export async function probePlatformPresence(businessName: string, websiteHtml?: string, location?: string): Promise<WebMention[]> {
+export async function probePlatformPresence(businessName: string, websiteHtml?: string, location?: string, phone?: string, address?: string): Promise<WebMention[]> {
   const platforms = [
     { source: "Facebook",     domains: ["facebook.com"],     exclude: ["sharer", "login", "help", "groups", "watch", "events"], hrefPattern: /href=["'][^"']*facebook\.com\/(?!sharer|login|help|groups|watch|events)[^"']{3,}/i },
     { source: "Instagram",    domains: ["instagram.com"],    exclude: ["accounts/login"], hrefPattern: /href=["'][^"']*instagram\.com\/(?!accounts\/login)[^"']{3,}/i },
@@ -740,6 +750,23 @@ export async function probePlatformPresence(businessName: string, websiteHtml?: 
     if (socialMissing.length > 0) {
       const sr2 = await webSearch(`"${businessName}" ${locationPart} ${socialMissing.join(" ").toLowerCase()}`.trim());
       scanSearchResults(sr2);
+    }
+
+    // Query 3: Search by phone number (catches businesses with different names)
+    const stillMissing2 = platforms.filter(p => !results.get(p.source)?.found);
+    if (stillMissing2.length > 0 && phone) {
+      const sr3 = await webSearch(`"${phone}" ${locationPart}`.trim());
+      scanSearchResults(sr3);
+    }
+
+    // Query 4: Search by street address (catches businesses with different names)
+    const stillMissing3 = platforms.filter(p => !results.get(p.source)?.found);
+    if (stillMissing3.length > 0 && address) {
+      const streetPart = address.split(",")[0].trim(); // "536 Tyler Street"
+      if (streetPart) {
+        const sr4 = await webSearch(`"${streetPart}" ${locationPart}`.trim());
+        scanSearchResults(sr4);
+      }
     }
   }
 
@@ -1090,9 +1117,9 @@ export async function runBusinessIntel(
 
   // ── PHASE 2: Platform probes WITH location context (parallel — no DDG rate limit) ──
   const [yelpResult, bbbResult, mentionsResult] = await Promise.allSettled([
-    probeYelp(businessName, cityState, phone),
+    probeYelp(businessName, cityState, phone, google?.address ?? ""),
     probeBBB(businessName, cityState, phone, google?.address ?? ""),
-    probePlatformPresence(businessName, websiteHtml, cityState),
+    probePlatformPresence(businessName, websiteHtml, cityState, phone, google?.address ?? ""),
   ]);
 
   let yelp = yelpResult.status === "fulfilled" ? yelpResult.value : null;
