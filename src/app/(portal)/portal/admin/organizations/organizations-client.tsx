@@ -88,8 +88,10 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiFilledFields, setAiFilledFields] = useState<Set<string>>(new Set());
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [planFilter, setPlanFilter] = useState<string>("ALL");
 
   const filtered = orgs.filter((o) => {
+    if (planFilter !== "ALL" && o.subscriptionTier !== planFilter) return false;
     const q = search.toLowerCase();
     return o.name.toLowerCase().includes(q) ||
       (o.domain?.toLowerCase().includes(q)) ||
@@ -100,6 +102,11 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
   const totalUsers = orgs.reduce((s, o) => s + o._count.users, 0);
   const totalProjects = orgs.reduce((s, o) => s + o._count.projects, 0);
   const activeOrgs = orgs.filter((o) => o.isActive).length;
+  const planCounts = {
+    GCSGUARD_MANAGED: orgs.filter((o) => o.subscriptionTier === "GCSGUARD_MANAGED").length,
+    GCSGUARD_NON_MANAGED: orgs.filter((o) => o.subscriptionTier === "GCSGUARD_NON_MANAGED").length,
+    NONE: orgs.filter((o) => o.subscriptionTier === "NONE").length,
+  };
 
   function openCreate() {
     setEditingId(null);
@@ -311,10 +318,12 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
         {[
           { label: "Total", value: orgs.length, icon: Building2, color: "blue" },
           { label: "Active", value: activeOrgs, icon: Shield, color: "green" },
+          { label: "Managed", value: planCounts.GCSGUARD_MANAGED, icon: Server, color: "emerald" },
+          { label: "Non-Managed", value: planCounts.GCSGUARD_NON_MANAGED, icon: Shield, color: "cyan" },
           { label: "Users", value: totalUsers, icon: Users, color: "purple" },
           { label: "Projects", value: totalProjects, icon: FolderOpen, color: "orange" },
         ].map(({ label, value, icon: Icon, color }) => (
@@ -334,17 +343,40 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
         ))}
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--text-muted)" }} />
-        <input
-          type="text"
-          placeholder="Search by name, domain, industry, or city..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 rounded-lg border text-sm"
-          style={{ background: "var(--bg-primary)", borderColor: "var(--border)", color: "var(--text-primary)" }}
-        />
+      {/* Search + Plan Filters */}
+      <div className="space-y-3">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "var(--text-muted)" }} />
+          <input
+            type="text"
+            placeholder="Search by name, domain, industry, or city..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 rounded-lg border text-sm"
+            style={{ background: "var(--bg-primary)", borderColor: "var(--border)", color: "var(--text-primary)" }}
+          />
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {[
+            { key: "ALL", label: "All Plans", count: orgs.length },
+            { key: "GCSGUARD_MANAGED", label: "Managed", count: planCounts.GCSGUARD_MANAGED },
+            { key: "GCSGUARD_NON_MANAGED", label: "Non-Managed", count: planCounts.GCSGUARD_NON_MANAGED },
+            { key: "NONE", label: "No Plan", count: planCounts.NONE },
+          ].map(({ key, label, count }) => (
+            <button
+              key={key}
+              onClick={() => setPlanFilter(key)}
+              className="px-3 py-1.5 rounded-full text-xs font-medium transition-all border"
+              style={{
+                background: planFilter === key ? "var(--brand-primary)" : "var(--bg-secondary)",
+                color: planFilter === key ? "white" : "var(--text-secondary)",
+                borderColor: planFilter === key ? "var(--brand-primary)" : "var(--border)",
+              }}
+            >
+              {label} ({count})
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Table */}
