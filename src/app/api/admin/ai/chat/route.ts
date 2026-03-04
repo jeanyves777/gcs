@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
 
         while (true) {
           const response = await client.messages.create({
-            model: "claude-sonnet-4-5-20241022",
+            model: "claude-sonnet-4-5-20250514",
             max_tokens: 4096,
             system: buildSystemPrompt(currentPath || "/portal/admin"),
             messages: currentMessages,

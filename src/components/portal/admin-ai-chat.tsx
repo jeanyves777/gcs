@@ -308,14 +308,14 @@ export function AdminAIChat() {
             <div
               className="absolute -inset-1.5 rounded-full opacity-60 group-hover:opacity-100 transition-opacity animate-pulse"
               style={{
-                background: "linear-gradient(135deg, var(--brand-primary), #8B5CF6, var(--brand-primary))",
+                background: "var(--brand-primary)",
                 filter: "blur(6px)",
               }}
             />
             <div
               className="relative flex items-center justify-center w-14 h-14 rounded-full shadow-2xl transition-transform group-hover:scale-110"
               style={{
-                background: "linear-gradient(135deg, var(--brand-primary), #7C3AED)",
+                background: "var(--brand-primary)",
               }}
             >
               <Brain className="w-6 h-6 text-white" />
@@ -342,7 +342,7 @@ export function AdminAIChat() {
               className="sticky top-0 z-10 flex items-center justify-between px-5 py-3.5 border-b flex-shrink-0"
               style={{
                 borderColor: "var(--border)",
-                background: "linear-gradient(135deg, var(--brand-primary), #7C3AED)",
+                background: "var(--brand-primary)",
               }}
             >
               <div className="flex items-center gap-3">
@@ -439,7 +439,7 @@ function PinGate({
           <div
             className="w-16 h-16 rounded-2xl flex items-center justify-center"
             style={{
-              background: "linear-gradient(135deg, var(--brand-primary), #7C3AED)",
+              background: "var(--brand-primary)",
             }}
           >
             {pinLoading ? (
@@ -513,7 +513,7 @@ function PinGate({
             disabled={pinLoading || pin.length < 4}
             className="w-full py-3 rounded-xl text-white font-medium transition-all disabled:opacity-50"
             style={{
-              background: "linear-gradient(135deg, var(--brand-primary), #7C3AED)",
+              background: "var(--brand-primary)",
             }}
           >
             {pinLoading ? (
@@ -621,7 +621,7 @@ function ChatView({
             disabled={!input.trim() || isStreaming}
             className="flex items-center justify-center w-8 h-8 rounded-lg text-white transition-all disabled:opacity-30"
             style={{
-              background: "linear-gradient(135deg, var(--brand-primary), #7C3AED)",
+              background: "var(--brand-primary)",
             }}
           >
             {isStreaming ? (
@@ -654,7 +654,7 @@ function EmptyState({ onQuickAction }: { onQuickAction: (text: string) => void }
       <div
         className="w-16 h-16 rounded-2xl flex items-center justify-center"
         style={{
-          background: "linear-gradient(135deg, var(--brand-primary), #7C3AED)",
+          background: "var(--brand-primary)",
         }}
       >
         <Sparkles className="w-7 h-7 text-white" />
@@ -714,7 +714,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           style={
             isUser
               ? {
-                  background: "linear-gradient(135deg, var(--brand-primary), #7C3AED)",
+                  background: "var(--brand-primary)",
                   color: "white",
                 }
               : {
@@ -761,15 +761,15 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
               ? "rgba(239,68,68,0.15)"
               : tool.success === false
               ? "rgba(239,68,68,0.15)"
-              : "rgba(124,58,237,0.15)",
+              : "var(--bg-secondary)",
           }}
         >
           {tool.status === "running" ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: "#7C3AED" }} />
+            <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: "var(--brand-primary)" }} />
           ) : tool.success === false ? (
             <XCircle className="w-3.5 h-3.5 text-red-500" />
           ) : (
-            <Wrench className="w-3.5 h-3.5" style={{ color: "#7C3AED" }} />
+            <Wrench className="w-3.5 h-3.5" style={{ color: "var(--brand-primary)" }} />
           )}
         </div>
 
@@ -870,7 +870,7 @@ function FormattedText({ text }: { text: string }) {
                   <code
                     key={j}
                     className="px-1 py-0.5 rounded text-xs"
-                    style={{ background: "rgba(124,58,237,0.15)" }}
+                    style={{ background: "var(--bg-secondary)" }}
                   >
                     {part.slice(1, -1)}
                   </code>
