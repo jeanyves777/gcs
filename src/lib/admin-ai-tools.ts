@@ -62,7 +62,7 @@ export const adminTools: ToolDef[] = [
         phone: { type: "string" }, email: { type: "string" }, address: { type: "string" },
         city: { type: "string" }, state: { type: "string" }, zipCode: { type: "string" },
         industry: { type: "string" }, description: { type: "string" },
-        subscriptionTier: { type: "string", enum: ["BASIC", "PROFESSIONAL", "ENTERPRISE"] },
+        subscriptionTier: { type: "string", enum: ["NONE", "GCSGUARD_MANAGED", "GCSGUARD_NON_MANAGED"] },
       },
       required: ["name"],
     },

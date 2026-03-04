@@ -77,7 +77,7 @@ model Organization {
   country          String?   @default("US")
   industry         String?
   description      String?
-  subscriptionTier String    @default("BASIC") // BASIC | PROFESSIONAL | ENTERPRISE
+  subscriptionTier String    @default("NONE") // NONE | GCSGUARD_MANAGED | GCSGUARD_NON_MANAGED
   isActive         Boolean   @default(true)
   googleRating     Float?
   yelpUrl          String?

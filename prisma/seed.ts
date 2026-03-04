@@ -14,7 +14,7 @@ async function main() {
       name: "Global Computing Solutions",
       domain: "itatgcs.com",
       website: "https://www.itatgcs.com",
-      subscriptionTier: "ENTERPRISE",
+      subscriptionTier: "GCSGUARD_MANAGED",
     },
   });
 
@@ -27,7 +27,7 @@ async function main() {
       domain: "acmecorp.com",
       website: "https://acmecorp.com",
       phone: "+1 (555) 234-5678",
-      subscriptionTier: "PROFESSIONAL",
+      subscriptionTier: "GCSGUARD_NON_MANAGED",
     },
   });
 

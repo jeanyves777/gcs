@@ -17,7 +17,7 @@ const updateSchema = z.object({
   country: z.string().max(100).optional().nullable(),
   industry: z.string().max(200).optional().nullable(),
   description: z.string().max(2000).optional().nullable(),
-  subscriptionTier: z.enum(["BASIC", "PROFESSIONAL", "ENTERPRISE"]).optional(),
+  subscriptionTier: z.enum(["NONE", "GCSGUARD_MANAGED", "GCSGUARD_NON_MANAGED"]).optional(),
   isActive: z.boolean().optional(),
   googleRating: z.number().min(0).max(5).optional().nullable(),
   yelpUrl: z.string().max(500).optional().nullable(),

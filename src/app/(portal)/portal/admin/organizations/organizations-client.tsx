@@ -62,15 +62,15 @@ type FormData = {
 const emptyForm: FormData = {
   name: "", domain: "", website: "", phone: "", email: "",
   address: "", city: "", state: "", zipCode: "", country: "US",
-  industry: "", description: "", subscriptionTier: "BASIC",
+  industry: "", description: "", subscriptionTier: "NONE",
   isActive: true, googleRating: "", yelpUrl: "", bbbUrl: "",
   socialLinks: "", notes: "",
 };
 
-const tierStyle: Record<string, { bg: string; color: string }> = {
-  BASIC: { bg: "var(--bg-tertiary)", color: "var(--text-muted)" },
-  PROFESSIONAL: { bg: "var(--info-bg)", color: "var(--info)" },
-  ENTERPRISE: { bg: "var(--warning-bg)", color: "var(--warning)" },
+const tierStyle: Record<string, { bg: string; color: string; label: string }> = {
+  NONE: { bg: "var(--bg-tertiary)", color: "var(--text-muted)", label: "No Plan" },
+  GCSGUARD_MANAGED: { bg: "var(--success-bg)", color: "var(--success)", label: "Managed" },
+  GCSGUARD_NON_MANAGED: { bg: "var(--info-bg)", color: "var(--info)", label: "Non-Managed" },
 };
 
 function formatDate(d: string) {
@@ -353,7 +353,7 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
           <CardTitle className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
             <div className="grid grid-cols-[2.5fr_1fr_0.8fr_0.8fr_0.8fr_0.8fr_0.8fr] gap-4 items-center">
               <span>Organization</span>
-              <span>Tier</span>
+              <span>Plan</span>
               <span className="flex items-center gap-1"><Users className="h-3 w-3" /> Users</span>
               <span className="flex items-center gap-1"><FolderOpen className="h-3 w-3" /> Projects</span>
               <span className="flex items-center gap-1"><Receipt className="h-3 w-3" /> Invoices</span>
@@ -373,7 +373,7 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
           ) : (
             <div className="divide-y" style={{ borderColor: "var(--border)" }}>
               {filtered.map((org) => {
-                const tier = tierStyle[org.subscriptionTier] ?? tierStyle.BASIC;
+                const tier = tierStyle[org.subscriptionTier] ?? tierStyle.NONE;
                 return (
                   <button
                     key={org.id}
@@ -406,7 +406,7 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
                         className="text-[10px] w-fit"
                         style={{ background: tier.bg, color: tier.color, border: `1px solid ${tier.color}30` }}
                       >
-                        {org.subscriptionTier}
+                        {tier.label}
                       </Badge>
                       <Badge
                         className="text-[10px] w-fit"
@@ -610,16 +610,16 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
               {/* Subscription + Status */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--text-secondary)" }}>Subscription Tier</label>
+                  <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--text-secondary)" }}>Service Plan</label>
                   <select
                     value={form.subscriptionTier}
                     onChange={(e) => updateField("subscriptionTier", e.target.value)}
                     className="w-full px-3 py-2 rounded-lg border text-sm"
                     style={{ background: "var(--bg-primary)", borderColor: "var(--border)", color: "var(--text-primary)" }}
                   >
-                    <option value="BASIC">Basic</option>
-                    <option value="PROFESSIONAL">Professional</option>
-                    <option value="ENTERPRISE">Enterprise</option>
+                    <option value="NONE">No Plan</option>
+                    <option value="GCSGUARD_MANAGED">GcsGuard Managed — $49/user/mo</option>
+                    <option value="GCSGUARD_NON_MANAGED">GcsGuard Non-Managed — $19/user/mo</option>
                   </select>
                 </div>
                 <div>
