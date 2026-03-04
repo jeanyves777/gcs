@@ -6,6 +6,7 @@
  * All checks degrade gracefully if keys are missing or requests fail.
  */
 
+import Anthropic from "@anthropic-ai/sdk";
 import { proxiedFetch } from "./proxy-rotator";
 
 const PLACES_BASE = "https://maps.googleapis.com/maps/api/place";
@@ -289,22 +290,6 @@ function extractCoreName(businessName: string): string {
 
 // ─── Yelp probe (DDG search → direct URL slug probing fallback) ──────────────
 
-function extractYelpUrl(html: string): string | null {
-  const patterns = [
-    /https?:\/\/(?:www\.)?yelp\.com\/biz\/[a-z0-9_-]+/gi,
-    /yelp\.com\/biz\/[a-z0-9_-]+/gi,
-  ];
-  for (const pattern of patterns) {
-    const matches = [...html.matchAll(pattern)];
-    for (const m of matches) {
-      const url = m[0].startsWith("http") ? m[0] : `https://www.${m[0]}`;
-      if (/\/(search|writeareview|signup|login)/.test(url)) continue;
-      if (!url.includes("duckduckgo")) return url.split(/[?#&;]/)[0];
-    }
-  }
-  return null;
-}
-
 function makeYelpSlug(name: string, city: string): string {
   return (
     "https://www.yelp.com/biz/" +
@@ -323,46 +308,31 @@ export async function probeYelp(businessName: string, location?: string, phone?:
 
   try {
     const loc = location || "";
-
-    // 1 — DuckDuckGo site search (most reliable when not rate-limited)
-    const html = await duckDuckGoSearch(`site:yelp.com "${businessName}" ${loc}`.trim());
-    if (html) {
-      const url = extractYelpUrl(html);
-      if (url) return { ...base, found: true, url };
-    }
-
-    // 2 — DDG with core name (catches name discrepancies)
     const coreName = extractCoreName(businessName);
+
+    // 1 — Web search for Yelp listing (Google/Claude/DDG)
+    const results = await webSearch(`site:yelp.com "${businessName}" ${loc}`.trim());
+    const yelpUrl = findResultUrl(results, "yelp.com/biz/", ["search", "writeareview", "signup", "login"]);
+    if (yelpUrl) return { ...base, found: true, url: yelpUrl };
+
+    // 2 — Search with core name variant
     if (coreName !== businessName) {
-      const html2 = await duckDuckGoSearch(`site:yelp.com "${coreName}" ${loc}`.trim());
-      if (html2) {
-        const url = extractYelpUrl(html2);
-        if (url) return { ...base, found: true, url };
-      }
+      const results2 = await webSearch(`site:yelp.com "${coreName}" ${loc}`.trim());
+      const url2 = findResultUrl(results2, "yelp.com/biz/", ["search", "writeareview"]);
+      if (url2) return { ...base, found: true, url: url2 };
     }
 
-    // 3 — Direct URL slug probing (fallback when DDG is rate-limited)
-    // Yelp URLs follow yelp.com/biz/business-name-city — we construct likely
-    // slugs and check if the page exists (HTTP 200).
-    // NOTE: Must use a browser-like UA — Yelp blocks bot UAs with 403.
+    // 3 — Direct URL slug probing (constructs likely Yelp URLs and checks if they exist)
     if (location) {
       const city = location.split(",")[0].trim();
-      const slugVariants = [
-        makeYelpSlug(businessName, city),
-        makeYelpSlug(coreName, city),
-      ];
-      const unique = [...new Set(slugVariants)];
-      for (const slugUrl of unique) {
+      const slugVariants = [...new Set([makeYelpSlug(businessName, city), makeYelpSlug(coreName, city)])];
+      for (const slugUrl of slugVariants) {
         try {
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), 8000);
           const res = await fetch(slugUrl, {
-            signal: controller.signal,
-            redirect: "follow",
-            headers: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            },
+            signal: controller.signal, redirect: "follow",
+            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "Accept": "text/html" },
           });
           clearTimeout(timer);
           if (res.status === 200) return { ...base, found: true, url: slugUrl };
@@ -370,193 +340,209 @@ export async function probeYelp(businessName: string, location?: string, phone?:
       }
     }
 
-    // 4 — DDG with phone number (last resort)
+    // 4 — Search with phone number
     if (phone) {
-      const html3 = await duckDuckGoSearch(`site:yelp.com "${phone}"`);
-      if (html3) {
-        const url = extractYelpUrl(html3);
-        if (url) return { ...base, found: true, url };
-      }
+      const results3 = await webSearch(`site:yelp.com "${phone}"`);
+      const url3 = findResultUrl(results3, "yelp.com/biz/", ["search", "writeareview"]);
+      if (url3) return { ...base, found: true, url: url3 };
     }
   } catch { /* ignore */ }
 
   return base;
 }
 
-// ─── BBB probe (BBB Search API → DDG fallback) ──────────────────────────────
-
-function extractBbbUrl(html: string): string | null {
-  const patterns = [
-    /https?:\/\/(?:www\.)?bbb\.org\/us\/[a-z]{2}\/[^"'\s<>]+/gi,
-    /bbb\.org\/us\/[a-z]{2}\/[^"'\s<>]+/gi,
-  ];
-  for (const pattern of patterns) {
-    const matches = [...html.matchAll(pattern)];
-    for (const m of matches) {
-      const url = m[0].startsWith("http") ? m[0] : `https://www.${m[0]}`;
-      if (/\/search\b/.test(url)) continue;
-      if (!url.includes("duckduckgo")) return url.split(/[?#&;]/)[0];
-    }
-  }
-  return null;
-}
+// ─── BBB probe (BBB Search API → Google/Claude fallback) ─────────────────────
 
 export async function probeBBB(businessName: string, location?: string): Promise<WebMention> {
   const base: WebMention = { source: "BBB", url: null, rating: null, reviewCount: null, found: false, snippet: null };
 
   try {
-    // 1 — BBB Search API (returns structured JSON — most reliable method)
     const coreName = extractCoreName(businessName);
     const searchNames = [businessName];
     if (coreName !== businessName) searchNames.push(coreName);
     console.log(`[bbb] Searching for "${businessName}" (core: "${coreName}") in "${location || ""}"`);
 
+    // Helper: fuzzy name match — checks if business names share significant words
+    const nameWords = (name: string) => name.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(w => w.length > 2);
+    const fuzzyMatch = (a: string, b: string): boolean => {
+      const wordsA = nameWords(a);
+      const wordsB = nameWords(b);
+      const shared = wordsA.filter(w => wordsB.some(w2 => w2.includes(w) || w.includes(w2)));
+      return shared.length >= Math.min(2, wordsA.length); // at least 2 shared words (or all words if name is short)
+    };
+
+    // 1 — BBB Search API (returns structured JSON)
     for (const searchName of searchNames) {
       try {
-        const apiParams = new URLSearchParams({
-          find_text: searchName,
-          find_loc: location || "",
-          find_type: "Category",
-          page: "1",
-          size: "5",
-        });
+        const apiParams = new URLSearchParams({ find_text: searchName, find_loc: location || "", find_type: "Category", page: "1", size: "10" });
         console.log(`[bbb] API call: find_text="${searchName}"`);
-        const apiRes = await fetchWithTimeout(
-          `https://www.bbb.org/api/search?${apiParams}`,
-          12000
-        );
+        const apiRes = await fetchWithTimeout(`https://www.bbb.org/api/search?${apiParams}`, 12000);
         console.log(`[bbb] API status: ${apiRes.status}`);
         if (apiRes.ok) {
-          type BbbResult = {
-            businessName?: string;
-            reportUrl?: string;
-            rating?: string;
-            reviewCount?: number;
-          };
+          type BbbResult = { businessName?: string; reportUrl?: string; rating?: string; reviewCount?: number };
           const data = (await apiRes.json()) as { results?: BbbResult[] };
           console.log(`[bbb] API returned ${data.results?.length ?? 0} results`);
           if (data.results && data.results.length > 0) {
-            const coreNameLower = coreName.toLowerCase();
+            // Try strict match first, then fuzzy match
+            const clean = (n: string) => (n ?? "").replace(/<[^>]+>/g, "");
             const best = data.results.find((r) => {
-              const rName = (r.businessName ?? "").replace(/<[^>]+>/g, "").toLowerCase();
-              const rCore = extractCoreName(r.businessName ?? "").toLowerCase();
-              return (
-                rCore.includes(coreNameLower) ||
-                coreNameLower.includes(rCore) ||
-                rName.includes(coreNameLower) ||
-                coreNameLower.includes(rName)
-              );
-            });
+              const rClean = clean(r.businessName ?? "");
+              const rCore = extractCoreName(rClean);
+              const coreL = coreName.toLowerCase();
+              return rCore.toLowerCase().includes(coreL) || coreL.includes(rCore.toLowerCase())
+                || rClean.toLowerCase().includes(coreL) || coreL.includes(rClean.toLowerCase());
+            }) || data.results.find((r) => fuzzyMatch(clean(r.businessName ?? ""), businessName));
 
             if (best) {
-              const profileUrl = best.reportUrl
-                ? `https://www.bbb.org${best.reportUrl}`
-                : null;
-              const cleanName = (best.businessName ?? "").replace(/<[^>]+>/g, "");
+              const profileUrl = best.reportUrl ? `https://www.bbb.org${best.reportUrl}` : null;
+              const cleanName = clean(best.businessName ?? "");
               console.log(`[bbb] MATCH: "${cleanName}" -> ${profileUrl}`);
-              return {
-                ...base,
-                found: true,
-                url: profileUrl,
-                snippet: cleanName || null,
-              };
+              return { ...base, found: true, url: profileUrl, snippet: cleanName || null };
             }
-            console.log(`[bbb] No name match. Top results: ${data.results.slice(0, 3).map(r => (r.businessName ?? "").replace(/<[^>]+>/g, "")).join(", ")}`);
+            console.log(`[bbb] No name match. Top results: ${data.results.slice(0, 5).map(r => clean(r.businessName ?? "")).join(", ")}`);
           }
         }
       } catch (e) { console.log(`[bbb] API error: ${e instanceof Error ? e.message : e}`); }
     }
 
-    // 2 — DDG site search fallback
+    // 2 — Web search fallback (Google/Claude/DDG)
     const loc = location || "";
-    const html = await duckDuckGoSearch(`site:bbb.org "${businessName}" ${loc}`.trim());
-    if (html) {
-      const url = extractBbbUrl(html);
-      if (url) return { ...base, found: true, url };
-    }
+    const results = await webSearch(`site:bbb.org "${businessName}" ${loc}`.trim());
+    const bbbUrl = findResultUrl(results, /bbb\.org\/us\//, ["search"]);
+    if (bbbUrl) return { ...base, found: true, url: bbbUrl };
 
-    // 3 — DDG with core name
+    // 3 — Search with core name
     if (coreName !== businessName) {
-      const html2 = await duckDuckGoSearch(`site:bbb.org "${coreName}" ${loc}`.trim());
-      if (html2) {
-        const url = extractBbbUrl(html2);
-        if (url) return { ...base, found: true, url };
-      }
+      const results2 = await webSearch(`site:bbb.org "${coreName}" ${loc}`.trim());
+      const url2 = findResultUrl(results2, /bbb\.org\/us\//, ["search"]);
+      if (url2) return { ...base, found: true, url: url2 };
     }
   } catch { /* ignore */ }
 
   return base;
 }
 
-// ─── DuckDuckGo Search (with free IP rotation) ───────────────────────────────
-// DDG rate-limits by source IP (HTTP 202 botnet challenge after 2-3 rapid
-// requests from the same IP).  We route each request through a random free
-// proxy so every request appears to come from a different IP address.
-// If all proxies fail, we fall back to direct fetch with a safety gap.
-//
-// The serial queue is kept as a safety net — even with proxy rotation,
-// hammering DDG from many IPs simultaneously could trigger other defenses.
-// The gap is short (500 ms) since each request uses a different IP.
+// ─── Web Search (Google Custom Search → Claude → DuckDuckGo fallback) ────────
+// Uses Google Custom Search API (if GOOGLE_CSE_ID is set) for fast, reliable
+// results — the same results you see when searching Google.
+// Falls back to Claude API with web search tool (uses ANTHROPIC_API_KEY).
+// Last resort: DuckDuckGo Lite (often rate-limited from server IPs).
 
-let _ddgQueue: Promise<void> = Promise.resolve();
-const DDG_GAP_MS = 2000; // 2s gap between requests (safety net for direct fetch)
+type SearchResult = { title: string; link: string; snippet: string };
 
-// Rotate User-Agent strings to look more natural
-const _userAgents = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15",
-];
-
-async function duckDuckGoSearch(query: string, timeoutMs = 15000): Promise<string> {
-  return new Promise<string>((resolve) => {
-    _ddgQueue = _ddgQueue
-      .then(async () => {
-        const html = await _ddgFetch(query, timeoutMs);
-        await new Promise((r) => setTimeout(r, DDG_GAP_MS));
-        resolve(html);
-      })
-      .catch(() => {
-        resolve("");
-      });
-  });
-}
-
-async function _ddgFetch(query: string, timeoutMs: number): Promise<string> {
-  const ua = _userAgents[Math.floor(Math.random() * _userAgents.length)];
-  const headers: Record<string, string> = {
-    "User-Agent": ua,
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-  };
+async function claudeSearch(query: string): Promise<SearchResult[]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return [];
 
   try {
-    const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}&kl=us-en`;
+    const client = new Anthropic({ apiKey });
+    const response = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 512,
+      tools: [{ type: "web_search_20250305" as const, name: "web_search", max_uses: 1 }],
+      messages: [{ role: "user", content: `Search the web for: ${query}\nReturn the top results as JSON: [{"title":"...","link":"https://...","snippet":"..."}]. Only JSON.` }],
+    });
 
-    // Route through rotating proxy (falls back to direct if no proxies)
-    const res = await proxiedFetch(url, { headers, timeoutMs, maxRetries: 3 });
-
-    // DDG returns 202 + botnet challenge page when it rate-limits
-    if (res.status === 202) {
-      console.log(`[business-intel] DDG 202 rate-limit for: ${query}`);
-      return "";
+    // Extract URLs from web search tool results (server-side blocks)
+    const results: SearchResult[] = [];
+    for (const block of response.content) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const b = block as any;
+      if (b.type === "web_search_tool_result" && Array.isArray(b.content)) {
+        for (const item of b.content) {
+          if (item.type === "web_search_result" && item.url) {
+            results.push({ title: item.title || "", link: item.url, snippet: item.page_snippet || "" });
+          }
+        }
+      }
     }
-    if (!res.ok) return "";
+    if (results.length > 0) return results;
 
-    const html = await res.text();
-
-    // Double-check: discard captcha/challenge pages
-    if (html.includes("cc=botnet") || html.includes("challenge-form")) {
-      console.log(`[business-intel] DDG botnet challenge for: ${query}`);
-      return "";
+    // Fallback: parse Claude's text response for JSON array
+    let text = "";
+    for (const block of response.content) {
+      if (block.type === "text") text += block.text;
     }
-
-    return html;
-  } catch {
-    return "";
+    const jsonMatch = text.match(/\[[\s\S]*?\]/);
+    if (jsonMatch) {
+      try { return JSON.parse(jsonMatch[0]) as SearchResult[]; } catch { /* ignore */ }
+    }
+  } catch (e) {
+    console.log(`[search] Claude search error: ${e instanceof Error ? e.message : e}`);
   }
+  return [];
+}
+
+async function ddgSearch(query: string): Promise<SearchResult[]> {
+  try {
+    const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}&kl=us-en`;
+    const res = await proxiedFetch(url, {
+      headers: { "User-Agent": ua, "Accept": "text/html", "Accept-Language": "en-US,en;q=0.9" },
+      timeoutMs: 12000, maxRetries: 2,
+    });
+    if (res.status === 202 || !res.ok) return [];
+    const html = await res.text();
+    if (html.includes("cc=botnet") || html.includes("challenge-form")) return [];
+
+    const links = [...html.matchAll(/<a[^>]+class="[^"]*result-link[^"]*"[^>]+href="([^"]+)"/gi)];
+    const snippets = [...html.matchAll(/<td[^>]*class="[^"]*result-snippet[^"]*"[^>]*>([\s\S]*?)<\/td>/gi)];
+    return links.map((m, i) => ({
+      title: "",
+      link: m[1],
+      snippet: snippets[i]?.[1]?.replace(/<[^>]+>/g, " ").trim() || "",
+    }));
+  } catch { return []; }
+}
+
+/**
+ * Unified web search: tries Google CSE → Claude → DDG.
+ * Returns clean {title, link, snippet} results.
+ */
+async function webSearch(query: string): Promise<SearchResult[]> {
+  // 1. Google Custom Search (if GOOGLE_CSE_ID is configured — optional)
+  const googleKey = process.env.GOOGLE_API_KEY || process.env.GOOGLE_PLACES_API_KEY;
+  const cseId = process.env.GOOGLE_CSE_ID;
+  if (googleKey && cseId) {
+    try {
+      const params = new URLSearchParams({ key: googleKey, cx: cseId, q: query, num: "10" });
+      const res = await fetchWithTimeout(`https://www.googleapis.com/customsearch/v1?${params}`, 10000);
+      if (res.ok) {
+        const data = (await res.json()) as { items?: { title: string; link: string; snippet: string }[] };
+        const items = (data.items || []).map(item => ({ title: item.title || "", link: item.link || "", snippet: item.snippet || "" }));
+        if (items.length > 0) {
+          console.log(`[search] Google CSE returned ${items.length} results for: ${query}`);
+          return items;
+        }
+      }
+    } catch (e) { console.log(`[search] Google CSE error: ${e instanceof Error ? e.message : e}`); }
+  }
+
+  // 2. Claude with web search (primary — uses existing ANTHROPIC_API_KEY)
+  let results = await claudeSearch(query);
+  if (results.length > 0) {
+    console.log(`[search] Claude returned ${results.length} results for: ${query}`);
+    return results;
+  }
+
+  // 3. DuckDuckGo (last resort — often rate-limited from server)
+  results = await ddgSearch(query);
+  if (results.length > 0) {
+    console.log(`[search] DDG returned ${results.length} results for: ${query}`);
+  } else {
+    console.log(`[search] All search engines failed for: ${query}`);
+  }
+  return results;
+}
+
+/** Find a URL in search results matching a domain pattern */
+function findResultUrl(results: SearchResult[], domainPattern: string | RegExp, exclude: string[] = []): string | null {
+  for (const r of results) {
+    const link = r.link.toLowerCase();
+    const matches = typeof domainPattern === "string" ? link.includes(domainPattern) : domainPattern.test(link);
+    if (matches && !exclude.some(ex => link.includes(ex))) return r.link;
+  }
+  return null;
 }
 
 export async function probePlatformPresence(businessName: string, websiteHtml?: string, location?: string): Promise<WebMention[]> {
@@ -600,58 +586,36 @@ export async function probePlatformPresence(businessName: string, websiteHtml?: 
     }
   }
 
-  // Helper to scan DuckDuckGo result HTML for platform URLs
-  function scanForPlatforms(html: string) {
-    const htmlLower = html.toLowerCase();
-    const allLinks = [...html.matchAll(/href="(https?:\/\/[^"]+)"/gi)].map(m => m[1]);
-    const textUrls = [...html.matchAll(/(https?:\/\/[^\s<"']+)/gi)].map(m => m[1]);
-    const allUrls = [...new Set([...allLinks, ...textUrls])];
-
+  // Helper: scan search results for platform URLs
+  function scanSearchResults(searchResults: SearchResult[]) {
     for (const p of platforms) {
       if (results.get(p.source)?.found) continue;
-      for (const domain of p.domains) {
-        const matchUrl = allUrls.find(u => {
-          const lower = u.toLowerCase();
-          if (!lower.includes(domain)) return false;
-          if (lower.includes("duckduckgo")) return false;
-          if (p.exclude.some(ex => lower.includes(ex))) return false;
-          return true;
-        });
-        if (matchUrl) {
-          results.set(p.source, { ...results.get(p.source)!, found: true, url: matchUrl });
-          break;
-        }
-        // Fallback: domain mentioned in text near business name
-        if (htmlLower.includes(domain) && !results.get(p.source)?.found) {
-          const domainIdx = htmlLower.indexOf(domain);
-          const nearbyText = htmlLower.slice(Math.max(0, domainIdx - 200), domainIdx + 200);
-          if (nearbyText.includes(businessName.toLowerCase().split(" ")[0].toLowerCase())) {
-            results.set(p.source, { ...results.get(p.source)!, found: true });
-            break;
-          }
-        }
+      for (const sr of searchResults) {
+        const link = sr.link.toLowerCase();
+        const matchesDomain = p.domains.some(d => link.includes(d));
+        if (!matchesDomain) continue;
+        if (p.exclude.some(ex => link.includes(ex))) continue;
+        results.set(p.source, { ...results.get(p.source)!, found: true, url: sr.link, snippet: sr.snippet || null });
+        break;
       }
     }
   }
 
-  // ── SECONDARY SOURCE: Broad DuckDuckGo search (surfaces local listings) ──
-  // One well-crafted broad query surfaces Yelp, BBB, Facebook, YP, etc.
-  // naturally — just like typing "Business Name City State" in Google.
-  // We use 1-2 queries (sequential, rate-limited) instead of 3 parallel ones
-  // to avoid tripping DDG's bot detection.
+  // ── SECONDARY SOURCE: Web search (Google/Claude) ──
+  // Broad query surfaces Yelp, BBB, Facebook, YP, etc. — like typing in Google.
   const stillMissing = platforms.filter(p => !results.get(p.source)?.found).map(p => p.source);
   if (stillMissing.length > 0) {
     const locationPart = location || "";
 
     // Query 1: Business name + location (surfaces most listings)
-    const html1 = await duckDuckGoSearch(`"${businessName}" ${locationPart}`.trim());
-    if (html1) scanForPlatforms(html1);
+    const sr1 = await webSearch(`"${businessName}" ${locationPart}`.trim());
+    scanSearchResults(sr1);
 
-    // Query 2: Only if still missing social platforms — targeted search
+    // Query 2: Only if still missing social platforms
     const socialMissing = ["Facebook", "Instagram", "LinkedIn"].filter(p => !results.get(p)?.found);
     if (socialMissing.length > 0) {
-      const html2 = await duckDuckGoSearch(`"${businessName}" ${locationPart} ${socialMissing.join(" ").toLowerCase()}`.trim());
-      if (html2) scanForPlatforms(html2);
+      const sr2 = await webSearch(`"${businessName}" ${locationPart} ${socialMissing.join(" ").toLowerCase()}`.trim());
+      scanSearchResults(sr2);
     }
   }
 
@@ -786,31 +750,19 @@ async function fetchIpGeo(ipAddress: string): Promise<IpGeoInfo | null> {
   }
 }
 
-// ─── Web Search Mentions (DuckDuckGo Lite) ────────────────────────────────────
+// ─── Web Search Mentions (Google/Claude/DDG) ──────────────────────────────────
 
 async function fetchWebSearchMentions(businessName: string, domain: string): Promise<WebSearchMention[]> {
   const results: WebSearchMention[] = [];
 
-  const queries = [
-    `"${businessName}" reviews`,
-    `"${businessName}" news`,
-  ];
+  const queries = [`"${businessName}" reviews`, `"${businessName}" news`];
 
   for (const query of queries) {
     try {
-      // Use the rate-limited DDG search (avoids 202 botnet blocks)
-      const html = await duckDuckGoSearch(query);
-      if (!html) continue;
-
-      // Extract snippets from result-snippet cells
-      const snippetMatches = [...html.matchAll(/<td[^>]*class="[^"]*result-snippet[^"]*"[^>]*>([\s\S]*?)<\/td>/gi)];
-      const linkMatches = [...html.matchAll(/<a[^>]+class="[^"]*result-link[^"]*"[^>]+href="([^"]+)"/gi)];
-
-      for (let i = 0; i < Math.min(2, snippetMatches.length); i++) {
-        const snippet = snippetMatches[i][1].replace(/<[^>]+>/g, " ").replace(/\s{2,}/g, " ").trim();
-        const link = linkMatches[i]?.[1] ?? "";
-        if (snippet && snippet.length > 25 && !link.includes("duckduckgo")) {
-          results.push({ title: query, snippet: snippet.slice(0, 220), url: link });
+      const searchResults = await webSearch(query);
+      for (const sr of searchResults.slice(0, 3)) {
+        if (sr.snippet && sr.snippet.length > 25) {
+          results.push({ title: sr.title || query, snippet: sr.snippet.slice(0, 220), url: sr.link });
         }
       }
     } catch { /* ignore */ }
@@ -829,26 +781,10 @@ export async function discoverFacebookPage(businessName: string): Promise<Facebo
   };
 
   try {
-    // Step 1: DuckDuckGo site search for Facebook page (rate-limited)
-    const html = await duckDuckGoSearch(`site:facebook.com "${businessName}"`);
-    if (!html) return notFound;
-
-    // Extract first Facebook page link from results
-    const linkMatches = [...html.matchAll(/<a[^>]+class="[^"]*result-link[^"]*"[^>]+href="([^"]+)"/gi)];
-
-    let fbUrl: string | null = null;
-    for (const match of linkMatches) {
-      const href = match[1];
-      if (
-        /facebook\.com\/(?!sharer|login|help|groups|watch|events|marketplace|gaming|stories)[^/\s"]{3,}/i.test(href) &&
-        !href.includes("/posts/") &&
-        !href.includes("/photos/")
-      ) {
-        fbUrl = href;
-        break;
-      }
-    }
-
+    // Step 1: Web search for Facebook page (Google/Claude/DDG)
+    const searchResults = await webSearch(`site:facebook.com "${businessName}"`);
+    const fbExclude = ["sharer", "login", "help", "groups", "watch", "events", "marketplace", "gaming", "stories", "/posts/", "/photos/"];
+    const fbUrl = findResultUrl(searchResults, "facebook.com/", fbExclude);
     if (!fbUrl) return notFound;
 
     // Step 2: Fetch the Facebook page to extract info
@@ -1028,23 +964,16 @@ export async function runBusinessIntel(
   const cityState = extractCityState(google?.address ?? null);
   const phone = google?.phone ?? "";
 
-  // ── PHASE 2: Platform probes WITH location context ──
-  // IMPORTANT: Run sequentially, NOT in parallel!  DuckDuckGo rate-limits
-  // automated requests after 2-3 rapid calls (returns 202 botnet challenge).
-  // The DDG queue serialises individual requests with 2.5 s gaps, but running
-  // probes sequentially also avoids queueing 8+ requests that would take 20 s.
+  // ── PHASE 2: Platform probes WITH location context (parallel — no DDG rate limit) ──
+  const [yelpResult, bbbResult, mentionsResult] = await Promise.allSettled([
+    probeYelp(businessName, cityState, phone),
+    probeBBB(businessName, cityState),
+    probePlatformPresence(businessName, websiteHtml, cityState),
+  ]);
 
-  // 2a. Yelp probe (1-3 DDG requests)
-  let yelp: WebMention | null = null;
-  try { yelp = await probeYelp(businessName, cityState, phone); } catch { /* ignore */ }
-
-  // 2b. BBB probe (1-2 DDG requests)
-  let bbb: WebMention | null = null;
-  try { bbb = await probeBBB(businessName, cityState); } catch { /* ignore */ }
-
-  // 2c. Broad platform presence (1-2 DDG requests + website HTML scan)
-  let mentions: WebMention[] = [];
-  try { mentions = await probePlatformPresence(businessName, websiteHtml, cityState); } catch { /* ignore */ }
+  let yelp = yelpResult.status === "fulfilled" ? yelpResult.value : null;
+  let bbb = bbbResult.status === "fulfilled" ? bbbResult.value : null;
+  let mentions = mentionsResult.status === "fulfilled" ? mentionsResult.value : [];
 
   // If Google Places found the business, ensure Google Maps shows as found
   if (google?.found) {

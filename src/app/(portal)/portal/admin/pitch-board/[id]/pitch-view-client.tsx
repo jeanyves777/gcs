@@ -155,10 +155,25 @@ function b(t: string): string {
 }
 
 function parseSections(text: string): Section[] {
-  return text.split(/\n##\s+/).filter(Boolean).map((part) => {
+  const raw = text.split(/\n##\s+/).filter(Boolean).map((part) => {
     const nl = part.indexOf("\n");
     return nl === -1 ? { heading: part.trim(), content: "" } : { heading: part.slice(0, nl).trim(), content: part.slice(nl + 1).trim() };
   });
+
+  // The first segment (before the first ## heading) is often a preamble
+  // like "### Prepared by Global Computing Solutions — Confidential\n---"
+  // Merge its meaningful content into Business Overview; discard boilerplate.
+  if (raw.length > 1) {
+    const first = raw[0];
+    const isBoilerplate = /^#{1,4}\s+|^---\s*$|^Prepared by|^Confidential/im.test(first.heading) ||
+      (!first.content && first.heading.length < 80);
+    if (isBoilerplate) {
+      // Strip the preamble section entirely
+      raw.shift();
+    }
+  }
+
+  return raw;
 }
 
 // ─── Digital Health Helpers ───────────────────────────────────────────────────
@@ -312,10 +327,11 @@ function parseFootprintEntries(content: string): FootprintEntry[] {
         detail = dashIdx > 0 ? rest.slice(dashIdx).replace(/^[\s—–:]+/, "").trim() : "";
       }
 
+      const combined = title + " " + detail;
       const status: "found" | "missing" | "neutral" = statusStr
         ? (/FOUND|PRESENT/i.test(statusStr) ? "found" : "missing")
-        : (/missing|no |lack|absent|not found|poor|weak|without/i.test(title + " " + detail) ? "missing"
-          : /found|present|listed|active|strong|good|verified/i.test(title + " " + detail) ? "found" : "neutral");
+        : (/missing|not found|not detected|not listed|no listing|no .* found|no .* detected|lack|absent|poor|weak|without|not present|unavailable|not available|❌/i.test(combined) ? "missing"
+          : /found|present|listed|active|strong|good|verified|detected|available|established|confirmed|✅/i.test(combined) ? "found" : "neutral");
 
       current = { title: title.replace(/\*\*/g, ""), body: detail, status };
     } else if (current) {
@@ -387,17 +403,38 @@ function FootprintSection({ content, presenceScore }: { content: string; presenc
         </div>
       )}
 
-      {/* Neutral entries — general analysis topics */}
-      {neutralEntries.length > 0 && (
-        <div className="space-y-2">
-          {neutralEntries.map((e, i) => (
-            <div key={i} className="rounded-lg p-3" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
-              {e.title && <p className="text-xs font-bold mb-1" style={{ color: "var(--text-primary)" }}>{e.title}</p>}
-              {e.body && <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(e.body.replace(/\n/g, " ")) }} />}
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Neutral entries — compact pills for short items, cards for detailed ones */}
+      {neutralEntries.length > 0 && (() => {
+        // Short entries (title only or very short body) → compact pills in a grid
+        const shortEntries = neutralEntries.filter(e => !e.body || e.body.length < 60);
+        // Detailed entries → full-width cards
+        const detailedEntries = neutralEntries.filter(e => e.body && e.body.length >= 60);
+
+        return (
+          <>
+            {shortEntries.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {shortEntries.map((e, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium"
+                    style={{ background: "var(--bg-tertiary)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}>
+                    {e.title || e.body}
+                  </span>
+                ))}
+              </div>
+            )}
+            {detailedEntries.length > 0 && (
+              <div className="space-y-2">
+                {detailedEntries.map((e, i) => (
+                  <div key={i} className="rounded-lg p-3" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}>
+                    {e.title && <p className="text-xs font-bold mb-1" style={{ color: "var(--text-primary)" }}>{e.title}</p>}
+                    {e.body && <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }} dangerouslySetInnerHTML={{ __html: b(e.body.replace(/\n/g, " ")) }} />}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {/* Fallback for unparseable content */}
       {fallbackParas.map((p, i) => (
