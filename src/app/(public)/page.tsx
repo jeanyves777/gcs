@@ -8,6 +8,7 @@ import { FadeIn } from "@/components/shared/motion";
 import { HeroIllustration } from "@/components/shared/illustrations";
 import { VulnerabilityScanner } from "@/components/home/vulnerability-scanner";
 import { ScamChecker } from "@/components/home/scam-checker";
+import { GoogleReviews } from "@/components/home/google-reviews";
 
 export const metadata: Metadata = {
   title: "GCS — Managed IT Services & Custom Software",
@@ -197,6 +198,9 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Google Reviews */}
+      <GoogleReviews />
 
       {/* CTA */}
       <section

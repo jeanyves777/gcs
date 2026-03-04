@@ -506,3 +506,35 @@
   0%, 100% { filter: drop-shadow(0 0 4px rgba(211,47,47,0.2)); }
   50%      { filter: drop-shadow(0 0 16px rgba(211,47,47,0.5)); }
 }
+
+/* ── Google Reviews marquee ─────────────────────────────────── */
+@keyframes reviews-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.reviews-marquee-container {
+  overflow: hidden;
+  padding: 1rem 0;
+  -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+}
+
+.reviews-marquee {
+  display: flex;
+  gap: 1.5rem;
+  width: max-content;
+  animation: reviews-scroll 35s linear infinite;
+}
+
+.reviews-marquee-container:hover .reviews-marquee {
+  animation-play-state: paused;
+}
+
+.review-card {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.review-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.12) !important;
+}
