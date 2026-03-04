@@ -313,21 +313,22 @@ export async function probeYelp(businessName: string, location?: string, phone?:
     const yelpExclude = ["search", "writeareview", "signup", "login"];
 
     // 1 — Web search for Yelp listing WITH location
-    const results = await webSearch(`site:yelp.com "${businessName}" ${loc}`.trim());
+    // NOTE: Use "yelp.com" as keyword, NOT "site:yelp.com" — Claude web search ignores site: filter
+    const results = await webSearch(`yelp.com "${businessName}" ${loc}`.trim());
     console.log(`[yelp] Search returned ${results.length} URLs: ${results.slice(0, 3).map(r => r.link).join(", ")}`);
     const yelpUrl = findResultUrl(results, "yelp.com/biz/", yelpExclude) || findResultUrl(results, "yelp.com/", yelpExclude);
     if (yelpUrl) return { ...base, found: true, url: yelpUrl };
 
     // 2 — Search with core name variant
     if (coreName !== businessName) {
-      const results2 = await webSearch(`site:yelp.com "${coreName}" ${loc}`.trim());
+      const results2 = await webSearch(`yelp.com "${coreName}" ${loc}`.trim());
       const url2 = findResultUrl(results2, "yelp.com/biz/", yelpExclude) || findResultUrl(results2, "yelp.com/", yelpExclude);
       if (url2) return { ...base, found: true, url: url2 };
     }
 
     // 3 — Search WITHOUT location (catches businesses with wrong location data)
     if (loc) {
-      const results3 = await webSearch(`site:yelp.com "${businessName}"`);
+      const results3 = await webSearch(`yelp.com "${businessName}"`);
       const url3 = findResultUrl(results3, "yelp.com/biz/", yelpExclude) || findResultUrl(results3, "yelp.com/", yelpExclude);
       if (url3) return { ...base, found: true, url: url3 };
     }
@@ -352,7 +353,7 @@ export async function probeYelp(businessName: string, location?: string, phone?:
 
     // 5 — Search with phone number
     if (phone) {
-      const results4 = await webSearch(`site:yelp.com "${phone}"`);
+      const results4 = await webSearch(`yelp.com "${phone}"`);
       const url4 = findResultUrl(results4, "yelp.com/biz/", yelpExclude) || findResultUrl(results4, "yelp.com/", yelpExclude);
       if (url4) return { ...base, found: true, url: url4 };
     }
@@ -361,7 +362,7 @@ export async function probeYelp(businessName: string, location?: string, phone?:
     if (address) {
       const streetPart = address.split(",")[0].trim(); // "536 Tyler Street"
       if (streetPart) {
-        const results5 = await webSearch(`site:yelp.com "${streetPart}"`);
+        const results5 = await webSearch(`yelp.com "${streetPart}"`);
         const url5 = findResultUrl(results5, "yelp.com/biz/", yelpExclude) || findResultUrl(results5, "yelp.com/", yelpExclude);
         if (url5) return { ...base, found: true, url: url5 };
       }
@@ -523,23 +524,24 @@ export async function probeBBB(businessName: string, location?: string, phone?: 
     }
 
     // 4 — Web search fallback (Google/Claude/DDG)
+    // NOTE: Use "bbb.org" as keyword, NOT "site:bbb.org" — Claude web search ignores site: filter
     const loc = location || "";
     const bbbPattern = /bbb\.org\//;
-    const results = await webSearch(`site:bbb.org "${businessName}" ${loc}`.trim());
+    const results = await webSearch(`bbb.org "${businessName}" ${loc}`.trim());
     console.log(`[bbb] Search returned ${results.length} URLs: ${results.slice(0, 3).map(r => r.link).join(", ")}`);
     const bbbUrl = findResultUrl(results, bbbPattern, ["search", "/api/"]);
     if (bbbUrl) return { ...base, found: true, url: bbbUrl };
 
     // 5 — Search with core name
     if (coreName !== businessName) {
-      const results2 = await webSearch(`site:bbb.org "${coreName}" ${loc}`.trim());
+      const results2 = await webSearch(`bbb.org "${coreName}" ${loc}`.trim());
       const url2 = findResultUrl(results2, bbbPattern, ["search", "/api/"]);
       if (url2) return { ...base, found: true, url: url2 };
     }
 
     // 6 — Search WITHOUT location (catches wrong location data)
     if (loc) {
-      const results3 = await webSearch(`site:bbb.org "${businessName}"`);
+      const results3 = await webSearch(`bbb.org "${businessName}"`);
       console.log(`[bbb] No-location search returned ${results3.length} URLs: ${results3.slice(0, 3).map(r => r.link).join(", ")}`);
       const url3 = findResultUrl(results3, bbbPattern, ["search", "/api/"]);
       if (url3) return { ...base, found: true, url: url3 };
@@ -547,7 +549,7 @@ export async function probeBBB(businessName: string, location?: string, phone?: 
 
     // 7 — Search by phone number on web
     if (phone) {
-      const results4 = await webSearch(`site:bbb.org "${phone}"`);
+      const results4 = await webSearch(`bbb.org "${phone}"`);
       const url4 = findResultUrl(results4, bbbPattern, ["search", "/api/"]);
       if (url4) return { ...base, found: true, url: url4 };
     }
@@ -933,7 +935,7 @@ export async function discoverFacebookPage(businessName: string): Promise<Facebo
 
   try {
     // Step 1: Web search for Facebook page (Google/Claude/DDG)
-    const searchResults = await webSearch(`site:facebook.com "${businessName}"`);
+    const searchResults = await webSearch(`facebook.com "${businessName}"`);
     const fbExclude = ["sharer", "login", "help", "groups", "watch", "events", "marketplace", "gaming", "stories", "/posts/", "/photos/"];
     const fbUrl = findResultUrl(searchResults, "facebook.com/", fbExclude);
     if (!fbUrl) return notFound;

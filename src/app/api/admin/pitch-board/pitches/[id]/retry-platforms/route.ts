@@ -75,6 +75,20 @@ export async function POST(
       diagnostics["BBB"] = `Already found: ${biData.bbb.url || "linked"}`;
     }
 
+    // Sync dedicated probe results → otherMentions (so pill status matches)
+    if (biData.yelp?.found) {
+      const yelpIdx = (biData.otherMentions || []).findIndex((m: WebMention) => m.source === "Yelp");
+      if (yelpIdx !== -1 && !biData.otherMentions[yelpIdx].found) {
+        biData.otherMentions[yelpIdx] = { ...biData.otherMentions[yelpIdx], found: true, url: biData.yelp.url };
+      }
+    }
+    if (biData.bbb?.found) {
+      const bbbIdx = (biData.otherMentions || []).findIndex((m: WebMention) => m.source === "BBB");
+      if (bbbIdx !== -1 && !biData.otherMentions[bbbIdx].found) {
+        biData.otherMentions[bbbIdx] = { ...biData.otherMentions[bbbIdx], found: true, url: biData.bbb.url };
+      }
+    }
+
     // Re-run broad platform presence for ALL missing platforms
     if (missingPlatforms.length > 0) {
       try {
@@ -87,9 +101,15 @@ export async function POST(
             const current = biData.otherMentions[idx];
             if (!current.found && newM.found) {
               biData.otherMentions[idx] = newM;
-              diagnostics[newM.source] = `Found: ${newM.url || "detected via search"}`;
+              // Only set diagnostic if not already set by dedicated probe
+              if (!diagnostics[newM.source]) {
+                diagnostics[newM.source] = `Found: ${newM.url || "detected via search"}`;
+              }
             } else if (!current.found && !newM.found) {
-              diagnostics[newM.source] = "Not found — no listing detected via web search";
+              // Only set "not found" if not already set by dedicated probe
+              if (!diagnostics[newM.source]) {
+                diagnostics[newM.source] = "Not found — no listing detected via web search";
+              }
             }
             // If already found, don't overwrite
             if (current.found && !diagnostics[newM.source]) {
