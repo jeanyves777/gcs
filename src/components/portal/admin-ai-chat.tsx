@@ -848,39 +848,153 @@ function getResultSummary(tool: ToolExecution): string {
   return "";
 }
 
-/** Render basic markdown: bold, inline code, newlines */
+/** Render markdown: headers, tables, lists, bold, code, hr */
 function FormattedText({ text }: { text: string }) {
-  // Split by newlines, process bold and inline code
   const lines = text.split("\n");
-  return (
-    <div className="space-y-1">
-      {lines.map((line, i) => {
-        if (!line.trim()) return <div key={i} className="h-2" />;
+  const elements: React.ReactNode[] = [];
+  let i = 0;
 
-        // Process markdown
-        const parts = line.split(/(\*\*.*?\*\*|`.*?`)/g);
-        return (
-          <div key={i}>
-            {parts.map((part, j) => {
-              if (part.startsWith("**") && part.endsWith("**")) {
-                return <strong key={j}>{part.slice(2, -2)}</strong>;
-              }
-              if (part.startsWith("`") && part.endsWith("`")) {
-                return (
-                  <code
-                    key={j}
-                    className="px-1 py-0.5 rounded text-xs"
-                    style={{ background: "var(--bg-secondary)" }}
-                  >
-                    {part.slice(1, -1)}
-                  </code>
-                );
-              }
-              return <span key={j}>{part}</span>;
-            })}
-          </div>
-        );
-      })}
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Empty line
+    if (!trimmed) { elements.push(<div key={i} className="h-1.5" />); i++; continue; }
+
+    // Horizontal rule
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      elements.push(<hr key={i} className="my-2" style={{ borderColor: "var(--border)" }} />);
+      i++; continue;
+    }
+
+    // Headers
+    if (trimmed.startsWith("### ")) {
+      elements.push(<h4 key={i} className="text-sm font-bold mt-2 mb-1" style={{ color: "var(--text-primary)" }}>{renderInline(trimmed.slice(4))}</h4>);
+      i++; continue;
+    }
+    if (trimmed.startsWith("## ")) {
+      elements.push(<h3 key={i} className="text-sm font-bold mt-3 mb-1" style={{ color: "var(--text-primary)" }}>{renderInline(trimmed.slice(3))}</h3>);
+      i++; continue;
+    }
+    if (trimmed.startsWith("# ")) {
+      elements.push(<h2 key={i} className="text-base font-bold mt-3 mb-1" style={{ color: "var(--text-primary)" }}>{renderInline(trimmed.slice(2))}</h2>);
+      i++; continue;
+    }
+
+    // Table: collect all consecutive | lines
+    if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+      const tableLines: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
+        tableLines.push(lines[i].trim());
+        i++;
+      }
+      elements.push(<MarkdownTable key={`t${i}`} lines={tableLines} />);
+      continue;
+    }
+
+    // Unordered list item
+    if (/^[-*] /.test(trimmed)) {
+      const listItems: string[] = [];
+      while (i < lines.length && /^\s*[-*] /.test(lines[i])) {
+        listItems.push(lines[i].trim().replace(/^[-*] /, ""));
+        i++;
+      }
+      elements.push(
+        <ul key={`ul${i}`} className="space-y-0.5 my-1" style={{ paddingLeft: "1.25rem" }}>
+          {listItems.map((item, j) => (
+            <li key={j} className="list-disc" style={{ color: "var(--text-secondary)" }}>
+              <span style={{ color: "var(--text-primary)" }}>{renderInline(item)}</span>
+            </li>
+          ))}
+        </ul>
+      );
+      continue;
+    }
+
+    // Ordered list item
+    if (/^\d+\.\s/.test(trimmed)) {
+      const listItems: string[] = [];
+      while (i < lines.length && /^\s*\d+\.\s/.test(lines[i])) {
+        listItems.push(lines[i].trim().replace(/^\d+\.\s/, ""));
+        i++;
+      }
+      elements.push(
+        <ol key={`ol${i}`} className="space-y-0.5 my-1" style={{ paddingLeft: "1.25rem" }}>
+          {listItems.map((item, j) => (
+            <li key={j} className="list-decimal" style={{ color: "var(--text-secondary)" }}>
+              <span style={{ color: "var(--text-primary)" }}>{renderInline(item)}</span>
+            </li>
+          ))}
+        </ol>
+      );
+      continue;
+    }
+
+    // Regular paragraph
+    elements.push(<div key={i}>{renderInline(trimmed)}</div>);
+    i++;
+  }
+
+  return <div className="space-y-0.5">{elements}</div>;
+}
+
+/** Inline markdown: bold, inline code, italic */
+function renderInline(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*.*?\*\*|`.*?`|\*.*?\*)/g);
+  return parts.map((part, j) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={j}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return (
+        <code key={j} className="px-1 py-0.5 rounded text-xs font-mono" style={{ background: "var(--bg-secondary)" }}>
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    if (part.startsWith("*") && part.endsWith("*") && !part.startsWith("**")) {
+      return <em key={j}>{part.slice(1, -1)}</em>;
+    }
+    return <span key={j}>{part}</span>;
+  });
+}
+
+/** Markdown table renderer */
+function MarkdownTable({ lines }: { lines: string[] }) {
+  if (lines.length < 2) return null;
+
+  const parseRow = (line: string) =>
+    line.split("|").slice(1, -1).map((cell) => cell.trim());
+
+  const headers = parseRow(lines[0]);
+  // Skip separator row (|---|---|)
+  const startIdx = lines[1].includes("---") ? 2 : 1;
+  const rows = lines.slice(startIdx).map(parseRow);
+
+  return (
+    <div className="my-2 rounded-lg border overflow-hidden" style={{ borderColor: "var(--border)" }}>
+      <table className="w-full text-xs">
+        <thead>
+          <tr style={{ background: "var(--bg-secondary)" }}>
+            {headers.map((h, j) => (
+              <th key={j} className="text-left px-3 py-2 font-semibold" style={{ color: "var(--text-primary)", borderBottom: "1px solid var(--border)" }}>
+                {renderInline(h)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, ri) => (
+            <tr key={ri} style={ri % 2 === 1 ? { background: "var(--bg-secondary)" } : undefined}>
+              {row.map((cell, ci) => (
+                <td key={ci} className="px-3 py-1.5" style={{ color: "var(--text-primary)", borderBottom: ri < rows.length - 1 ? "1px solid var(--border)" : undefined }}>
+                  {renderInline(cell)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
