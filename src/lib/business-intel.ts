@@ -314,23 +314,23 @@ export async function probeYelp(businessName: string, location?: string, phone?:
 
     // 1 — Web search for Yelp listing WITH location
     // NOTE: Use "yelp.com" as keyword, NOT "site:yelp.com" — Claude web search ignores site: filter
-    // Pass city for verification so we don't accept wrong-city results (e.g. "Integrity Tax" in Riverside, CA when we want Las Vegas)
+    // Pass city + business name for verification (rejects wrong-city AND wrong-name results)
     const results = await webSearch(`yelp.com "${businessName}" ${loc}`.trim());
     console.log(`[yelp] Search returned ${results.length} URLs: ${results.slice(0, 3).map(r => r.link).join(", ")}`);
-    const yelpUrl = findResultUrl(results, "yelp.com/biz/", yelpExclude, loc) || findResultUrl(results, "yelp.com/", yelpExclude, loc);
+    const yelpUrl = findResultUrl(results, "yelp.com/biz/", yelpExclude, loc, businessName) || findResultUrl(results, "yelp.com/", yelpExclude, loc, businessName);
     if (yelpUrl) return { ...base, found: true, url: yelpUrl };
 
     // 2 — Search with core name variant
     if (coreName !== businessName) {
       const results2 = await webSearch(`yelp.com "${coreName}" ${loc}`.trim());
-      const url2 = findResultUrl(results2, "yelp.com/biz/", yelpExclude, loc) || findResultUrl(results2, "yelp.com/", yelpExclude, loc);
+      const url2 = findResultUrl(results2, "yelp.com/biz/", yelpExclude, loc, coreName) || findResultUrl(results2, "yelp.com/", yelpExclude, loc, coreName);
       if (url2) return { ...base, found: true, url: url2 };
     }
 
-    // 3 — Search WITHOUT location (no city verification here — we're explicitly searching broadly)
+    // 3 — Search WITHOUT location (no city verification, but still verify business name)
     if (loc) {
       const results3 = await webSearch(`yelp.com "${businessName}"`);
-      const url3 = findResultUrl(results3, "yelp.com/biz/", yelpExclude) || findResultUrl(results3, "yelp.com/", yelpExclude);
+      const url3 = findResultUrl(results3, "yelp.com/biz/", yelpExclude, undefined, businessName) || findResultUrl(results3, "yelp.com/", yelpExclude, undefined, businessName);
       if (url3) return { ...base, found: true, url: url3 };
     }
 
@@ -352,14 +352,14 @@ export async function probeYelp(businessName: string, location?: string, phone?:
       }
     }
 
-    // 5 — Search with phone number
+    // 5 — Search with phone number (still verify name — phone could match a different business at same number)
     if (phone) {
       const results4 = await webSearch(`yelp.com "${phone}"`);
-      const url4 = findResultUrl(results4, "yelp.com/biz/", yelpExclude) || findResultUrl(results4, "yelp.com/", yelpExclude);
+      const url4 = findResultUrl(results4, "yelp.com/biz/", yelpExclude, undefined, businessName) || findResultUrl(results4, "yelp.com/", yelpExclude, undefined, businessName);
       if (url4) return { ...base, found: true, url: url4 };
     }
 
-    // 6 — Search with street address (catches businesses registered under different names)
+    // 6 — Search with street address (may be registered under different name — skip name verification)
     if (address) {
       const streetPart = address.split(",")[0].trim(); // "536 Tyler Street"
       if (streetPart) {
@@ -480,7 +480,7 @@ export async function probeBBB(businessName: string, location?: string, phone?: 
       } catch (e) { console.log(`[bbb] API error: ${e instanceof Error ? e.message : e}`); }
     }
 
-    // 1b — BBB API without location (catches wrong location data — no city verification here)
+    // 1b — BBB API without location (wider net — still verify city on results if we know it)
     if (location) {
       try {
         const apiParams = new URLSearchParams({ find_text: businessName, find_loc: "", find_type: "Category", page: "1", size: "10" });
@@ -491,11 +491,17 @@ export async function probeBBB(businessName: string, location?: string, phone?: 
           console.log(`[bbb] API (no-loc) returned ${data.results?.length ?? 0} results`);
           if (data.results && data.results.length > 0) {
             allApiResults = [...allApiResults, ...data.results];
-            // No city verification — we're explicitly searching broadly
-            const best = data.results.find((r) => nameMatch(r))
-              || data.results.find((r) => fuzzyMatch(clean(r.businessName ?? ""), businessName));
+            // Still verify city — wider search doesn't mean accept any city
+            const best = data.results.find((r) => nameMatch(r) && cityVerify(r))
+              || data.results.find((r) => fuzzyMatch(clean(r.businessName ?? ""), businessName) && cityVerify(r));
 
-            if (best) return buildResult(best, "NAME (no-loc)");
+            if (best) return buildResult(best, "NAME (no-loc, city-verified)");
+
+            // Log rejected matches
+            const nameOnly = data.results.find((r) => nameMatch(r) || fuzzyMatch(clean(r.businessName ?? ""), businessName));
+            if (nameOnly) {
+              console.log(`[bbb] No-loc name matched "${clean(nameOnly.businessName ?? "")}" but WRONG CITY: ${nameOnly.city || "?"} (expected "${expectedCity}")`);
+            }
           }
         }
       } catch (e) { console.log(`[bbb] API (no-loc) error: ${e instanceof Error ? e.message : e}`); }
@@ -540,33 +546,33 @@ export async function probeBBB(businessName: string, location?: string, phone?: 
 
     // 4 — Web search fallback (Google/Claude/DDG)
     // NOTE: Use "bbb.org" as keyword, NOT "site:bbb.org" — Claude web search ignores site: filter
-    // Pass city for verification so we don't accept wrong-city results
+    // Pass city + business name for verification
     const loc = location || "";
     const bbbPattern = /bbb\.org\//;
     const results = await webSearch(`bbb.org "${businessName}" ${loc}`.trim());
     console.log(`[bbb] Search returned ${results.length} URLs: ${results.slice(0, 3).map(r => r.link).join(", ")}`);
-    const bbbUrl = findResultUrl(results, bbbPattern, ["search", "/api/"], loc);
+    const bbbUrl = findResultUrl(results, bbbPattern, ["search", "/api/"], loc, businessName);
     if (bbbUrl) return { ...base, found: true, url: bbbUrl };
 
     // 5 — Search with core name
     if (coreName !== businessName) {
       const results2 = await webSearch(`bbb.org "${coreName}" ${loc}`.trim());
-      const url2 = findResultUrl(results2, bbbPattern, ["search", "/api/"], loc);
+      const url2 = findResultUrl(results2, bbbPattern, ["search", "/api/"], loc, coreName);
       if (url2) return { ...base, found: true, url: url2 };
     }
 
-    // 6 — Search WITHOUT location (no city verification — explicitly searching broadly)
+    // 6 — Search WITHOUT location (still verify business name)
     if (loc) {
       const results3 = await webSearch(`bbb.org "${businessName}"`);
       console.log(`[bbb] No-location search returned ${results3.length} URLs: ${results3.slice(0, 3).map(r => r.link).join(", ")}`);
-      const url3 = findResultUrl(results3, bbbPattern, ["search", "/api/"]);
+      const url3 = findResultUrl(results3, bbbPattern, ["search", "/api/"], undefined, businessName);
       if (url3) return { ...base, found: true, url: url3 };
     }
 
-    // 7 — Search by phone number on web
+    // 7 — Search by phone number on web (still verify name)
     if (phone) {
       const results4 = await webSearch(`bbb.org "${phone}"`);
-      const url4 = findResultUrl(results4, bbbPattern, ["search", "/api/"]);
+      const url4 = findResultUrl(results4, bbbPattern, ["search", "/api/"], undefined, businessName);
       if (url4) return { ...base, found: true, url: url4 };
     }
   } catch { /* ignore */ }
@@ -691,14 +697,24 @@ async function webSearch(query: string): Promise<SearchResult[]> {
  *  When `verifyCity` is provided, prefer results whose title/snippet/URL contain that city.
  *  Falls back to first unverified match only if no city-matched result exists.
  */
+// Helper: extract significant words from a business name (for verification)
+// Filters out very short words and common suffixes
+const STOP_WORDS = new Set(["the", "and", "inc", "llc", "ltd", "corp", "co", "of", "for", "dba"]);
+function businessNameWords(name: string): string[] {
+  return name.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/)
+    .filter(w => w.length > 2 && !STOP_WORDS.has(w));
+}
+
 function findResultUrl(
   results: SearchResult[],
   domainPattern: string | RegExp,
   exclude: string[] = [],
   verifyCity?: string,
+  verifyName?: string,
 ): string | null {
   let unverifiedMatch: string | null = null;
   const cityLower = verifyCity?.split(",")[0].trim().toLowerCase(); // "Las Vegas, NV" → "las vegas"
+  const nameWords = verifyName ? businessNameWords(verifyName) : [];
 
   for (const r of results) {
     const link = r.link.toLowerCase();
@@ -706,24 +722,31 @@ function findResultUrl(
     if (!matches) continue;
     if (exclude.some(ex => link.includes(ex))) continue;
 
-    // If we have a city to verify, check title/snippet/URL for it
+    const text = `${r.title} ${r.snippet} ${r.link}`.toLowerCase();
+
+    // Business name verification: require at least 2 significant words (or all if name is short)
+    if (nameWords.length > 0) {
+      const matched = nameWords.filter(w => text.includes(w));
+      const threshold = Math.min(2, nameWords.length);
+      if (matched.length < threshold) {
+        console.log(`[verify] Skipping "${r.title}" — name words matched ${matched.length}/${nameWords.length} (need ${threshold}): [${matched.join(",")}] vs [${nameWords.join(",")}]`);
+        continue;
+      }
+    }
+
+    // City verification: check title/snippet/URL for expected city
     if (cityLower && cityLower.length > 2) {
-      const text = `${r.title} ${r.snippet} ${r.link}`.toLowerCase();
-      // Also check slug-form: "las-vegas" in URL
       const citySlug = cityLower.replace(/\s+/g, "-");
       if (text.includes(cityLower) || text.includes(citySlug)) {
-        return r.link; // City-verified match — accept immediately
+        return r.link; // City + name verified match
       }
-      // Save first domain match as fallback (may be wrong city)
       if (!unverifiedMatch) unverifiedMatch = r.link;
       continue;
     }
 
-    return r.link; // No city verification needed
+    return r.link; // No city verification needed (name already verified above)
   }
 
-  // If no city-verified match found, return null (don't accept wrong-city results)
-  // The caller can fall back to other search strategies
   if (unverifiedMatch) {
     console.log(`[verify] Skipping unverified match ${unverifiedMatch} — city "${cityLower}" not found in result`);
   }
@@ -772,10 +795,12 @@ export async function probePlatformPresence(businessName: string, websiteHtml?: 
   }
 
   // Helper: scan search results for platform URLs
-  // Platforms with many local listings (Yelp, BBB, YP, etc.) need city verification to avoid wrong-city matches
+  // Directory platforms need city + name verification to avoid wrong-business matches
   const cityLower = (location || "").split(",")[0].trim().toLowerCase();
   const citySlug = cityLower.replace(/\s+/g, "-");
   const needsCityVerify = new Set(["Yelp", "BBB", "Yellow Pages", "Angi", "Thumbtack", "Manta", "MapQuest", "TripAdvisor", "Foursquare"]);
+  const needsNameVerify = new Set(["Yelp", "BBB", "Yellow Pages", "Angi", "Thumbtack", "Manta", "MapQuest", "TripAdvisor", "Foursquare", "Nextdoor"]);
+  const bizNameWords = businessNameWords(businessName);
 
   function scanSearchResults(searchResults: SearchResult[]) {
     for (const p of platforms) {
@@ -786,9 +811,17 @@ export async function probePlatformPresence(businessName: string, websiteHtml?: 
         if (!matchesDomain) continue;
         if (p.exclude.some(ex => link.includes(ex))) continue;
 
+        const text = `${sr.title} ${sr.snippet} ${sr.link}`.toLowerCase();
+
+        // Business name verification for directory platforms (avoids matching wrong-name business)
+        if (needsNameVerify.has(p.source) && bizNameWords.length > 0) {
+          const matched = bizNameWords.filter(w => text.includes(w));
+          const threshold = Math.min(2, bizNameWords.length);
+          if (matched.length < threshold) continue; // Wrong business name — skip
+        }
+
         // City verification for directory platforms (avoids matching wrong city's business)
         if (needsCityVerify.has(p.source) && cityLower.length > 2) {
-          const text = `${sr.title} ${sr.snippet} ${sr.link}`.toLowerCase();
           if (!text.includes(cityLower) && !text.includes(citySlug)) {
             continue; // Wrong city — skip this result
           }
