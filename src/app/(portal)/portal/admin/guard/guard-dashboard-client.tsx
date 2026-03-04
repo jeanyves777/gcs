@@ -17,7 +17,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { GuardNav } from "@/components/guard/guard-nav";
+
 
 interface Agent {
   id: string;
@@ -105,8 +105,6 @@ export function GuardDashboardClient({ agents, alertCounts, recentAlerts, patchS
 
   return (
     <div className="space-y-6">
-      <GuardNav />
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Globe, Activity, Server } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { GuardNav } from "@/components/guard/guard-nav";
+
 
 interface UrlMonitor {
   id: string;
@@ -56,8 +56,6 @@ export function MonitoringClient({ urlMonitors, services }: Props) {
 
   return (
     <div className="space-y-6">
-      <GuardNav />
-
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2" style={{ color: "var(--text-primary)" }}>

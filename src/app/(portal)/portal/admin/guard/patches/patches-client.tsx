@@ -6,7 +6,7 @@ import { Package, Shield, Server, RefreshCw, AlertTriangle, ChevronRight } from 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { GuardNav } from "@/components/guard/guard-nav";
+
 import { toast } from "sonner";
 
 interface AgentPatch {
@@ -48,8 +48,6 @@ export function PatchesClient({ agents, totalPending, totalSecurity }: Props) {
 
   return (
     <div className="space-y-6">
-      <GuardNav />
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

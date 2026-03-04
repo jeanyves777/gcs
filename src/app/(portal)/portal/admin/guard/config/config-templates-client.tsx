@@ -6,7 +6,7 @@ import { Settings, Plus, FileText, Trash2, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { GuardNav } from "@/components/guard/guard-nav";
+
 import { toast } from "sonner";
 
 interface Template {
@@ -83,8 +83,6 @@ export function ConfigTemplatesClient({ templates: initialTemplates }: { templat
 
   return (
     <div className="space-y-6">
-      <GuardNav />
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

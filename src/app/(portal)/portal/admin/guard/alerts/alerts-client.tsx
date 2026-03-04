@@ -6,7 +6,7 @@ import { AlertTriangle, ChevronRight, Filter } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { GuardNav } from "@/components/guard/guard-nav";
+
 import { toast } from "sonner";
 
 interface Alert {
@@ -80,7 +80,6 @@ export function AlertsClient({ alerts: initialAlerts }: { alerts: Alert[] }) {
 
   return (
     <div className="space-y-6">
-      <GuardNav />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" style={{ color: "var(--text-primary)" }}>

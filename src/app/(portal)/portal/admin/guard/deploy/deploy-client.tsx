@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Rocket, Copy, CheckCircle, AlertTriangle, Terminal, Server } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { GuardNav } from "@/components/guard/guard-nav";
+
 import { toast } from "sonner";
 
 interface Props {
@@ -60,7 +60,6 @@ export function DeployClient({ organizations }: Props) {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <GuardNav />
       {/* Header */}
       <div className="flex items-center gap-3">
         <Link href="/portal/admin/guard">
