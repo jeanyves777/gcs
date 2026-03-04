@@ -25,6 +25,7 @@ import {
   Activity,
   Rocket,
   FileText,
+  Building2,
 } from "lucide-react";
 import { Logo } from "@/components/layout/logo";
 import { cn } from "@/lib/utils";
@@ -46,6 +47,7 @@ const adminNavItems = [
   { href: "/portal/admin/tickets", label: "Tickets", icon: MessageCircle },
   { href: "/portal/admin/invoices", label: "Invoices", icon: Receipt },
   { href: "/portal/admin/users", label: "Users", icon: Users },
+  { href: "/portal/admin/organizations", label: "Organizations", icon: Building2 },
 ];
 
 const guardNavItems = [

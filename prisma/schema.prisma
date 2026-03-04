@@ -67,9 +67,21 @@ model Organization {
   logo             String?
   website          String?
   phone            String?
+  email            String?
   address          String?
+  city             String?
+  state            String?
+  zipCode          String?
+  country          String?   @default("US")
+  industry         String?
+  description      String?
   subscriptionTier String    @default("BASIC") // BASIC | PROFESSIONAL | ENTERPRISE
   isActive         Boolean   @default(true)
+  googleRating     Float?
+  yelpUrl          String?
+  bbbUrl           String?
+  socialLinks      String?   // JSON: {facebook, linkedin, instagram, ...}
+  notes            String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
