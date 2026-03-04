@@ -328,28 +328,18 @@ export function AdminAIChat() {
         </button>
       )}
 
-      {/* Modal Overlay */}
+      {/* Side Panel — no backdrop, site stays interactive */}
       {state !== "closed" && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 backdrop-blur-sm animate-in fade-in duration-200"
-            style={{ background: "rgba(0,0,0,0.5)" }}
-            onClick={() => { if (!isStreaming) setState("closed"); }}
-          />
-
-          {/* Modal */}
-          <div
-            className="relative w-full max-w-3xl flex flex-col rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
-            style={{
-              background: "var(--bg-primary)",
-              borderColor: "var(--border)",
-              height: "min(85vh, 800px)",
-            }}
-          >
+        <div
+          className="fixed top-0 right-0 bottom-0 z-50 w-full max-w-2xl flex flex-col border-l shadow-2xl"
+          style={{
+            background: "var(--bg-primary)",
+            borderColor: "var(--border)",
+          }}
+        >
             {/* Header */}
             <div
-              className="flex items-center justify-between px-5 py-3.5 border-b flex-shrink-0"
+              className="sticky top-0 z-10 flex items-center justify-between px-5 py-3.5 border-b flex-shrink-0"
               style={{
                 borderColor: "var(--border)",
                 background: "linear-gradient(135deg, var(--brand-primary), #7C3AED)",
@@ -408,7 +398,6 @@ export function AdminAIChat() {
                 onClear={clearChat}
               />
             )}
-          </div>
         </div>
       )}
     </>
