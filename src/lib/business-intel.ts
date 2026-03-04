@@ -310,19 +310,29 @@ export async function probeYelp(businessName: string, location?: string, phone?:
     const loc = location || "";
     const coreName = extractCoreName(businessName);
 
-    // 1 — Web search for Yelp listing (Google/Claude/DDG)
+    const yelpExclude = ["search", "writeareview", "signup", "login"];
+
+    // 1 — Web search for Yelp listing WITH location
     const results = await webSearch(`site:yelp.com "${businessName}" ${loc}`.trim());
-    const yelpUrl = findResultUrl(results, "yelp.com/biz/", ["search", "writeareview", "signup", "login"]);
+    console.log(`[yelp] Search returned ${results.length} URLs: ${results.slice(0, 3).map(r => r.link).join(", ")}`);
+    const yelpUrl = findResultUrl(results, "yelp.com/biz/", yelpExclude) || findResultUrl(results, "yelp.com/", yelpExclude);
     if (yelpUrl) return { ...base, found: true, url: yelpUrl };
 
     // 2 — Search with core name variant
     if (coreName !== businessName) {
       const results2 = await webSearch(`site:yelp.com "${coreName}" ${loc}`.trim());
-      const url2 = findResultUrl(results2, "yelp.com/biz/", ["search", "writeareview"]);
+      const url2 = findResultUrl(results2, "yelp.com/biz/", yelpExclude) || findResultUrl(results2, "yelp.com/", yelpExclude);
       if (url2) return { ...base, found: true, url: url2 };
     }
 
-    // 3 — Direct URL slug probing (constructs likely Yelp URLs and checks if they exist)
+    // 3 — Search WITHOUT location (catches businesses with wrong location data)
+    if (loc) {
+      const results3 = await webSearch(`site:yelp.com "${businessName}"`);
+      const url3 = findResultUrl(results3, "yelp.com/biz/", yelpExclude) || findResultUrl(results3, "yelp.com/", yelpExclude);
+      if (url3) return { ...base, found: true, url: url3 };
+    }
+
+    // 4 — Direct URL slug probing
     if (location) {
       const city = location.split(",")[0].trim();
       const slugVariants = [...new Set([makeYelpSlug(businessName, city), makeYelpSlug(coreName, city)])];
@@ -340,11 +350,11 @@ export async function probeYelp(businessName: string, location?: string, phone?:
       }
     }
 
-    // 4 — Search with phone number
+    // 5 — Search with phone number
     if (phone) {
-      const results3 = await webSearch(`site:yelp.com "${phone}"`);
-      const url3 = findResultUrl(results3, "yelp.com/biz/", ["search", "writeareview"]);
-      if (url3) return { ...base, found: true, url: url3 };
+      const results4 = await webSearch(`site:yelp.com "${phone}"`);
+      const url4 = findResultUrl(results4, "yelp.com/biz/", yelpExclude) || findResultUrl(results4, "yelp.com/", yelpExclude);
+      if (url4) return { ...base, found: true, url: url4 };
     }
   } catch { /* ignore */ }
 
@@ -407,15 +417,25 @@ export async function probeBBB(businessName: string, location?: string): Promise
 
     // 2 — Web search fallback (Google/Claude/DDG)
     const loc = location || "";
+    const bbbPattern = /bbb\.org\//;
     const results = await webSearch(`site:bbb.org "${businessName}" ${loc}`.trim());
-    const bbbUrl = findResultUrl(results, /bbb\.org\/us\//, ["search"]);
+    console.log(`[bbb] Search returned ${results.length} URLs: ${results.slice(0, 3).map(r => r.link).join(", ")}`);
+    const bbbUrl = findResultUrl(results, bbbPattern, ["search", "/api/"]);
     if (bbbUrl) return { ...base, found: true, url: bbbUrl };
 
     // 3 — Search with core name
     if (coreName !== businessName) {
       const results2 = await webSearch(`site:bbb.org "${coreName}" ${loc}`.trim());
-      const url2 = findResultUrl(results2, /bbb\.org\/us\//, ["search"]);
+      const url2 = findResultUrl(results2, bbbPattern, ["search", "/api/"]);
       if (url2) return { ...base, found: true, url: url2 };
+    }
+
+    // 4 — Search WITHOUT location (catches wrong location data)
+    if (loc) {
+      const results3 = await webSearch(`site:bbb.org "${businessName}"`);
+      console.log(`[bbb] No-location search returned ${results3.length} URLs: ${results3.slice(0, 3).map(r => r.link).join(", ")}`);
+      const url3 = findResultUrl(results3, bbbPattern, ["search", "/api/"]);
+      if (url3) return { ...base, found: true, url: url3 };
     }
   } catch { /* ignore */ }
 

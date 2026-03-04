@@ -52,7 +52,7 @@ export async function POST(
         biData.yelp = result;
         diagnostics["Yelp"] = result.found
           ? `Found: ${result.url}`
-          : "Not found — no Yelp listing matched via DuckDuckGo search or direct URL probing";
+          : "Not found — no Yelp listing matched via web search or direct URL probing";
       } catch (e) {
         diagnostics["Yelp"] = `Error: ${e instanceof Error ? e.message : "unknown"}`;
       }
@@ -89,7 +89,7 @@ export async function POST(
               biData.otherMentions[idx] = newM;
               diagnostics[newM.source] = `Found: ${newM.url || "detected via search"}`;
             } else if (!current.found && !newM.found) {
-              diagnostics[newM.source] = "Not found — no listing detected via DuckDuckGo search";
+              diagnostics[newM.source] = "Not found — no listing detected via web search";
             }
             // If already found, don't overwrite
             if (current.found && !diagnostics[newM.source]) {

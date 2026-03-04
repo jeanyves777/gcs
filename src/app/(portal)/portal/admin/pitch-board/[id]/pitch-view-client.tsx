@@ -165,10 +165,11 @@ function parseSections(text: string): Section[] {
   // Merge its meaningful content into Business Overview; discard boilerplate.
   if (raw.length > 1) {
     const first = raw[0];
-    const isBoilerplate = /^#{1,4}\s+|^---\s*$|^Prepared by|^Confidential/im.test(first.heading) ||
+    const combined = first.heading + "\n" + first.content;
+    const isBoilerplate = /Prepared by|Confidential|^---\s*$/im.test(combined) ||
+      /^#{1,4}\s+/.test(first.heading) ||
       (!first.content && first.heading.length < 80);
     if (isBoilerplate) {
-      // Strip the preamble section entirely
       raw.shift();
     }
   }
