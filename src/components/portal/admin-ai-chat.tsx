@@ -16,7 +16,13 @@ import {
   Wrench,
   Sparkles,
   Trash2,
-  RotateCcw,
+  MessageSquare,
+  Plus,
+  Clock,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Globe,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -35,7 +41,16 @@ interface ToolExecution {
   input: Record<string, unknown>;
   result?: Record<string, unknown> | null;
   success?: boolean;
+  dangerous?: boolean;
   status: "running" | "done" | "error";
+}
+
+interface Conversation {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { messages: number };
 }
 
 type ModalState = "closed" | "pin" | "chat";
@@ -62,6 +77,12 @@ export function AdminAIChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Conversation state
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [loadingConversations, setLoadingConversations] = useState(false);
+
   // Check PIN status on mount
   useEffect(() => {
     fetch("/api/admin/ai/pin", {
@@ -86,6 +107,88 @@ export function AdminAIChat() {
     }
   }, [state]);
 
+  // Load conversations when entering chat
+  useEffect(() => {
+    if (state === "chat" && sessionToken) {
+      loadConversations();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, sessionToken]);
+
+  const loadConversations = async () => {
+    if (!sessionToken) return;
+    setLoadingConversations(true);
+    try {
+      const res = await fetch("/api/admin/ai/conversations", {
+        headers: { "X-AI-Session": sessionToken },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setConversations(data);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setLoadingConversations(false);
+    }
+  };
+
+  const loadConversation = async (id: string) => {
+    if (!sessionToken) return;
+    try {
+      const res = await fetch(`/api/admin/ai/conversations/${id}`, {
+        headers: { "X-AI-Session": sessionToken },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const loadedMessages: ChatMessage[] = data.messages.map((m: { id: string; role: string; content: string; toolCalls?: string }) => ({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          toolCalls: m.toolCalls ? JSON.parse(m.toolCalls).map((tc: { tool: string; input: Record<string, unknown>; result: Record<string, unknown> }) => ({
+            id: crypto.randomUUID(),
+            tool: tc.tool,
+            input: tc.input || {},
+            result: tc.result || null,
+            success: true,
+            status: "done" as const,
+          })) : undefined,
+        }));
+        setMessages(loadedMessages);
+        setActiveConversationId(id);
+        setSidebarOpen(false);
+      }
+    } catch {
+      // silently fail
+    }
+  };
+
+  const deleteConversation = async (id: string) => {
+    if (!sessionToken) return;
+    try {
+      const res = await fetch(`/api/admin/ai/conversations/${id}`, {
+        method: "DELETE",
+        headers: { "X-AI-Session": sessionToken },
+      });
+      if (res.ok) {
+        setConversations((prev) => prev.filter((c) => c.id !== id));
+        if (activeConversationId === id) {
+          setActiveConversationId(null);
+          setMessages([]);
+        }
+      }
+    } catch {
+      // silently fail
+    }
+  };
+
+  const startNewChat = () => {
+    setActiveConversationId(null);
+    setMessages([]);
+    setSidebarOpen(false);
+    setTimeout(() => inputRef.current?.focus(), 100);
+  };
+
   const openModal = () => {
     if (sessionToken) {
       setState("chat");
@@ -102,7 +205,6 @@ export function AdminAIChat() {
 
     try {
       if (!hasPin) {
-        // Setting new PIN
         if (pin.length < 4 || pin.length > 6) {
           setPinError("PIN must be 4-6 digits");
           setPinLoading(false);
@@ -130,7 +232,6 @@ export function AdminAIChat() {
         setHasPin(true);
         setState("chat");
       } else {
-        // Verifying existing PIN
         const res = await fetch("/api/admin/ai/pin", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -195,7 +296,11 @@ export function AdminAIChat() {
           "Content-Type": "application/json",
           "X-AI-Session": sessionToken,
         },
-        body: JSON.stringify({ messages: allMessages, currentPath: pathname }),
+        body: JSON.stringify({
+          messages: allMessages,
+          currentPath: pathname,
+          conversationId: activeConversationId,
+        }),
       });
 
       if (res.status === 401) {
@@ -224,8 +329,12 @@ export function AdminAIChat() {
           if (line.startsWith("event: ")) {
             currentEvent = line.slice(7);
           } else if (line.startsWith("data: ")) {
-            const data = JSON.parse(line.slice(6));
-            processSSE(currentEvent, data, assistantMsg.id);
+            try {
+              const data = JSON.parse(line.slice(6));
+              processSSE(currentEvent, data, assistantMsg.id);
+            } catch {
+              // skip malformed JSON
+            }
           }
         }
       }
@@ -239,46 +348,60 @@ export function AdminAIChat() {
       );
     } finally {
       setIsStreaming(false);
+      // Refresh conversation list
+      loadConversations();
     }
-  }, [input, isStreaming, sessionToken, messages, pathname]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input, isStreaming, sessionToken, messages, pathname, activeConversationId]);
 
   const processSSE = (event: string, data: Record<string, unknown>, assistantId: string) => {
-    setMessages((prev) =>
-      prev.map((m) => {
-        if (m.id !== assistantId) return m;
+    switch (event) {
+      case "conversation":
+        setActiveConversationId(data.id as string);
+        break;
 
-        switch (event) {
-          case "text":
-            return { ...m, content: m.content + (data.content as string) };
+      default:
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== assistantId) return m;
 
-          case "tool_start": {
-            const newTool: ToolExecution = {
-              id: data.id as string,
-              tool: data.tool as string,
-              input: data.input as Record<string, unknown>,
-              status: "running",
-            };
-            return { ...m, toolCalls: [...(m.toolCalls || []), newTool] };
-          }
+            switch (event) {
+              case "text":
+                return { ...m, content: m.content + (data.content as string) };
 
-          case "tool_result":
-            return {
-              ...m,
-              toolCalls: (m.toolCalls || []).map((tc) =>
-                tc.id === data.id
-                  ? { ...tc, result: data.result as Record<string, unknown> | null, success: data.success as boolean, status: "done" as const }
-                  : tc
-              ),
-            };
+              case "tool_start": {
+                const newTool: ToolExecution = {
+                  id: data.id as string,
+                  tool: data.tool as string,
+                  input: data.input as Record<string, unknown>,
+                  dangerous: data.dangerous as boolean | undefined,
+                  status: "running",
+                };
+                return { ...m, toolCalls: [...(m.toolCalls || []), newTool] };
+              }
 
-          case "error":
-            return { ...m, content: m.content + `\n\n**Error:** ${data.message}` };
+              case "tool_result":
+                return {
+                  ...m,
+                  toolCalls: (m.toolCalls || []).map((tc) =>
+                    tc.id === data.id
+                      ? { ...tc, result: data.result as Record<string, unknown> | null, success: data.success as boolean, status: "done" as const }
+                      : tc
+                  ),
+                };
 
-          default:
-            return m;
-        }
-      })
-    );
+              case "web_search":
+                return { ...m, content: m.content + "\n*Searching the web...*\n" };
+
+              case "error":
+                return { ...m, content: m.content + `\n\n**Error:** ${data.message}` };
+
+              default:
+                return m;
+            }
+          })
+        );
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -286,10 +409,14 @@ export function AdminAIChat() {
       e.preventDefault();
       sendMessage();
     }
+    if (e.key === "Escape") {
+      if (!isStreaming) setState("closed");
+    }
   };
 
   const clearChat = () => {
     setMessages([]);
+    setActiveConversationId(null);
   };
 
   // ─── Render ─────────────────────────────────────────────────────────────
@@ -304,23 +431,16 @@ export function AdminAIChat() {
           title="GcsGuard AI"
         >
           <div className="relative">
-            {/* Animated glow ring */}
             <div
               className="absolute -inset-1.5 rounded-full opacity-60 group-hover:opacity-100 transition-opacity animate-pulse"
-              style={{
-                background: "var(--brand-primary)",
-                filter: "blur(6px)",
-              }}
+              style={{ background: "var(--brand-primary)", filter: "blur(6px)" }}
             />
             <div
               className="relative flex items-center justify-center w-14 h-14 rounded-full shadow-2xl transition-transform group-hover:scale-110"
-              style={{
-                background: "var(--brand-primary)",
-              }}
+              style={{ background: "var(--brand-primary)" }}
             >
               <Brain className="w-6 h-6 text-white" />
             </div>
-            {/* Status dot */}
             <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white bg-emerald-500">
               <div className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-75" />
             </div>
@@ -328,36 +448,109 @@ export function AdminAIChat() {
         </button>
       )}
 
-      {/* Side Panel — no backdrop, site stays interactive */}
+      {/* Side Panel */}
       {state !== "closed" && (
         <div
-          className="fixed top-0 right-0 bottom-0 z-50 w-full max-w-2xl flex flex-col border-l shadow-2xl"
-          style={{
-            background: "var(--bg-primary)",
-            borderColor: "var(--border)",
-          }}
+          className="fixed top-0 right-0 bottom-0 z-50 w-full max-w-2xl flex border-l shadow-2xl"
+          style={{ background: "var(--bg-primary)", borderColor: "var(--border)" }}
         >
+          {/* Conversation Sidebar */}
+          {state === "chat" && sidebarOpen && (
+            <div
+              className="w-64 flex-shrink-0 border-r flex flex-col"
+              style={{ background: "var(--bg-secondary)", borderColor: "var(--border)" }}
+            >
+              <div className="flex items-center justify-between px-3 py-3 border-b" style={{ borderColor: "var(--border)" }}>
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                  History
+                </span>
+                <button
+                  onClick={startNewChat}
+                  className="p-1.5 rounded-lg transition-colors hover:bg-[var(--bg-primary)]"
+                  title="New chat"
+                >
+                  <Plus className="w-4 h-4" style={{ color: "var(--text-secondary)" }} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {loadingConversations ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-4 h-4 animate-spin" style={{ color: "var(--text-muted)" }} />
+                  </div>
+                ) : conversations.length === 0 ? (
+                  <div className="py-8 text-center">
+                    <MessageSquare className="w-5 h-5 mx-auto mb-2 opacity-20" />
+                    <p className="text-xs" style={{ color: "var(--text-muted)" }}>No conversations yet</p>
+                  </div>
+                ) : (
+                  <div className="py-1">
+                    {conversations.map((conv) => (
+                      <div
+                        key={conv.id}
+                        className={cn(
+                          "group flex items-center gap-2 px-3 py-2.5 cursor-pointer transition-colors",
+                          activeConversationId === conv.id
+                            ? "bg-[var(--bg-primary)]"
+                            : "hover:bg-[var(--bg-primary)]"
+                        )}
+                        onClick={() => loadConversation(conv.id)}
+                      >
+                        <MessageSquare className="w-3.5 h-3.5 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate" style={{ color: "var(--text-primary)" }}>
+                            {conv.title}
+                          </p>
+                          <p className="text-[10px] flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
+                            <Clock className="w-2.5 h-2.5" />
+                            {formatRelativeTime(conv.updatedAt)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all hover:bg-red-500/10"
+                          title="Delete conversation"
+                        >
+                          <Trash2 className="w-3 h-3 text-red-400" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Main Panel */}
+          <div className="flex-1 flex flex-col min-w-0">
             {/* Header */}
             <div
-              className="sticky top-0 z-10 flex items-center justify-between px-5 py-3.5 border-b flex-shrink-0"
-              style={{
-                borderColor: "var(--border)",
-                background: "var(--brand-primary)",
-              }}
+              className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b flex-shrink-0"
+              style={{ borderColor: "var(--border)", background: "var(--brand-primary)" }}
             >
-              <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/20">
-                  <Brain className="w-5 h-5 text-white" />
+              <div className="flex items-center gap-2.5">
+                {state === "chat" && (
+                  <button
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                    className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/15 transition-colors"
+                    title={sidebarOpen ? "Close history" : "Open history"}
+                  >
+                    {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
+                  </button>
+                )}
+                <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-white/20">
+                  <Brain className="w-4 h-4 text-white" />
                 </div>
                 <div>
                   <h2 className="text-white font-semibold text-sm">GcsGuard AI</h2>
-                  <p className="text-white/70 text-xs">{state === "pin" ? "Authentication Required" : "Admin Command Center"}</p>
+                  <p className="text-white/70 text-[11px]">
+                    {state === "pin" ? "Authentication Required" : "Admin Command Center & Software Engineer"}
+                  </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 {state === "chat" && (
                   <span
-                    className="text-xs px-2.5 py-1 rounded-full bg-white/15 text-white/80 max-w-[200px] truncate"
+                    className="text-[11px] px-2 py-0.5 rounded-full bg-white/15 text-white/80 max-w-[140px] truncate"
                     title={pathname}
                   >
                     {pathname.replace("/portal/admin", "").replace(/^\//, "") || "Overview"}
@@ -398,6 +591,7 @@ export function AdminAIChat() {
                 onClear={clearChat}
               />
             )}
+          </div>
         </div>
       )}
     </>
@@ -407,15 +601,7 @@ export function AdminAIChat() {
 // ─── PIN Gate ─────────────────────────────────────────────────────────────────
 
 function PinGate({
-  hasPin,
-  pin,
-  setPin,
-  confirmPin,
-  setConfirmPin,
-  pinError,
-  pinLoading,
-  pinShake,
-  onSubmit,
+  hasPin, pin, setPin, confirmPin, setConfirmPin, pinError, pinLoading, pinShake, onSubmit,
 }: {
   hasPin: boolean | null;
   pin: string;
@@ -431,94 +617,48 @@ function PinGate({
 
   return (
     <div className="flex-1 flex items-center justify-center p-8">
-      <div
-        className={cn("w-full max-w-xs space-y-6 text-center", pinShake && "animate-shake")}
-      >
-        {/* Lock icon */}
+      <div className={cn("w-full max-w-xs space-y-6 text-center", pinShake && "animate-shake")}>
         <div className="flex justify-center">
-          <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center"
-            style={{
-              background: "var(--brand-primary)",
-            }}
-          >
-            {pinLoading ? (
-              <Loader2 className="w-7 h-7 text-white animate-spin" />
-            ) : (
-              <Lock className="w-7 h-7 text-white" />
-            )}
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: "var(--brand-primary)" }}>
+            {pinLoading ? <Loader2 className="w-7 h-7 text-white animate-spin" /> : <Lock className="w-7 h-7 text-white" />}
           </div>
         </div>
-
         <div>
           <h3 className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
             {isSetup ? "Set Your AI PIN" : "Enter PIN to Unlock"}
           </h3>
           <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
-            {isSetup
-              ? "Create a 4-6 digit PIN to secure GcsGuard AI"
-              : "Enter your PIN to access admin commands"}
+            {isSetup ? "Create a 4-6 digit PIN to secure GcsGuard AI" : "Enter your PIN to access admin commands"}
           </p>
         </div>
-
         <div className="space-y-3">
           <input
-            type="password"
-            inputMode="numeric"
-            maxLength={6}
+            type="password" inputMode="numeric" maxLength={6}
             placeholder={isSetup ? "Create PIN" : "Enter PIN"}
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                if (isSetup && !confirmPin) return;
-                onSubmit();
-              }
-            }}
+            onKeyDown={(e) => { if (e.key === "Enter") { if (isSetup && !confirmPin) return; onSubmit(); } }}
             className="w-full text-center text-2xl tracking-[0.5em] py-3 rounded-xl border-2 outline-none transition-all focus:border-[var(--brand-primary)]"
-            style={{
-              background: "var(--bg-secondary)",
-              borderColor: pinError ? "#EF4444" : "var(--border)",
-              color: "var(--text-primary)",
-            }}
+            style={{ background: "var(--bg-secondary)", borderColor: pinError ? "#EF4444" : "var(--border)", color: "var(--text-primary)" }}
             autoFocus
           />
-
           {isSetup && (
             <input
-              type="password"
-              inputMode="numeric"
-              maxLength={6}
-              placeholder="Confirm PIN"
+              type="password" inputMode="numeric" maxLength={6} placeholder="Confirm PIN"
               value={confirmPin}
               onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ""))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onSubmit();
-              }}
+              onKeyDown={(e) => { if (e.key === "Enter") onSubmit(); }}
               className="w-full text-center text-2xl tracking-[0.5em] py-3 rounded-xl border-2 outline-none transition-all focus:border-[var(--brand-primary)]"
-              style={{
-                background: "var(--bg-secondary)",
-                borderColor: pinError ? "#EF4444" : "var(--border)",
-                color: "var(--text-primary)",
-              }}
+              style={{ background: "var(--bg-secondary)", borderColor: pinError ? "#EF4444" : "var(--border)", color: "var(--text-primary)" }}
             />
           )}
-
-          {pinError && (
-            <p className="text-sm text-red-500 font-medium">{pinError}</p>
-          )}
-
+          {pinError && <p className="text-sm text-red-500 font-medium">{pinError}</p>}
           <button
-            onClick={onSubmit}
-            disabled={pinLoading || pin.length < 4}
+            onClick={onSubmit} disabled={pinLoading || pin.length < 4}
             className="w-full py-3 rounded-xl text-white font-medium transition-all disabled:opacity-50"
-            style={{
-              background: "var(--brand-primary)",
-            }}
+            style={{ background: "var(--brand-primary)" }}
           >
-            {pinLoading ? (
-              <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-            ) : (
+            {pinLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : (
               <span className="flex items-center justify-center gap-2">
                 <Unlock className="w-4 h-4" />
                 {isSetup ? "Set PIN & Enter" : "Unlock"}
@@ -534,15 +674,7 @@ function PinGate({
 // ─── Chat View ────────────────────────────────────────────────────────────────
 
 function ChatView({
-  messages,
-  input,
-  setInput,
-  isStreaming,
-  messagesEndRef,
-  inputRef,
-  onSend,
-  onKeyDown,
-  onClear,
+  messages, input, setInput, isStreaming, messagesEndRef, inputRef, onSend, onKeyDown, onClear,
 }: {
   messages: ChatMessage[];
   input: string;
@@ -561,7 +693,7 @@ function ChatView({
         {messages.length === 0 && <EmptyState onQuickAction={onSend} />}
 
         {messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
+          <MessageBubble key={msg.id} message={msg} onQuickReply={onSend} />
         ))}
 
         {isStreaming && (
@@ -588,7 +720,7 @@ function ChatView({
               style={{ color: "var(--text-muted)" }}
             >
               <Trash2 className="w-3 h-3" />
-              Clear chat
+              New chat
             </button>
           </div>
         )}
@@ -604,11 +736,7 @@ function ChatView({
             placeholder="Ask GcsGuard AI anything..."
             rows={1}
             className="flex-1 resize-none bg-transparent outline-none text-sm"
-            style={{
-              color: "var(--text-primary)",
-              maxHeight: "120px",
-              minHeight: "24px",
-            }}
+            style={{ color: "var(--text-primary)", maxHeight: "120px", minHeight: "24px" }}
             onInput={(e) => {
               const t = e.target as HTMLTextAreaElement;
               t.style.height = "auto";
@@ -620,18 +748,12 @@ function ChatView({
             onClick={() => onSend()}
             disabled={!input.trim() || isStreaming}
             className="flex items-center justify-center w-8 h-8 rounded-lg text-white transition-all disabled:opacity-30"
-            style={{
-              background: "var(--brand-primary)",
-            }}
+            style={{ background: "var(--brand-primary)" }}
           >
-            {isStreaming ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
+            {isStreaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </button>
         </div>
-        <p className="text-xs mt-1.5 text-center" style={{ color: "var(--text-muted)" }}>
+        <p className="text-[11px] mt-1.5 text-center" style={{ color: "var(--text-muted)" }}>
           Shift+Enter for newline · ESC to close
         </p>
       </div>
@@ -645,18 +767,13 @@ function EmptyState({ onQuickAction }: { onQuickAction: (text: string) => void }
   const suggestions = [
     { label: "System Overview", prompt: "Give me a system overview with key stats" },
     { label: "Open Alerts", prompt: "Show me all open security alerts" },
-    { label: "Pending Invoices", prompt: "List all pending invoices" },
-    { label: "Active Projects", prompt: "What projects are currently in progress?" },
+    { label: "List Files on Server", prompt: "List the main directories in /var/www/gcs/src" },
+    { label: "Git Status", prompt: "What's the current git status on the production server?" },
   ];
 
   return (
     <div className="flex flex-col items-center justify-center h-full py-8 space-y-6">
-      <div
-        className="w-16 h-16 rounded-2xl flex items-center justify-center"
-        style={{
-          background: "var(--brand-primary)",
-        }}
-      >
+      <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: "var(--brand-primary)" }}>
         <Sparkles className="w-7 h-7 text-white" />
       </div>
       <div className="text-center space-y-2">
@@ -664,8 +781,7 @@ function EmptyState({ onQuickAction }: { onQuickAction: (text: string) => void }
           GcsGuard AI Ready
         </h3>
         <p className="text-sm max-w-md" style={{ color: "var(--text-secondary)" }}>
-          I can manage organizations, users, projects, invoices, tickets, and security alerts.
-          Ask me anything or try a quick action below.
+          Full admin control + software engineering. I can manage the system, edit code on the server, install packages, deploy, and search the web.
         </p>
       </div>
       <div className="grid grid-cols-2 gap-2 w-full max-w-sm">
@@ -674,11 +790,7 @@ function EmptyState({ onQuickAction }: { onQuickAction: (text: string) => void }
             key={s.label}
             onClick={() => onQuickAction(s.prompt)}
             className="text-left px-3 py-2.5 rounded-xl border text-sm transition-all hover:scale-[1.02]"
-            style={{
-              background: "var(--bg-secondary)",
-              borderColor: "var(--border)",
-              color: "var(--text-primary)",
-            }}
+            style={{ background: "var(--bg-secondary)", borderColor: "var(--border)", color: "var(--text-primary)" }}
           >
             <span className="font-medium">{s.label}</span>
           </button>
@@ -690,12 +802,16 @@ function EmptyState({ onQuickAction }: { onQuickAction: (text: string) => void }
 
 // ─── Message Bubble ───────────────────────────────────────────────────────────
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({ message, onQuickReply }: { message: ChatMessage; onQuickReply: (text: string) => void }) {
   const isUser = message.role === "user";
+
+  // Detect if the assistant is asking for confirmation
+  const isAskingConfirmation = !isUser && message.content &&
+    /\b(proceed|confirm|go ahead|shall I|should I|want me to)\b.*\?/i.test(message.content);
 
   return (
     <div className={cn("flex flex-col gap-2", isUser ? "items-end" : "items-start")}>
-      {/* Tool executions (before text for assistant) */}
+      {/* Tool executions */}
       {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
         <div className="w-full space-y-2">
           {message.toolCalls.map((tc) => (
@@ -713,17 +829,33 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           )}
           style={
             isUser
-              ? {
-                  background: "var(--brand-primary)",
-                  color: "white",
-                }
-              : {
-                  background: "var(--bg-secondary)",
-                  color: "var(--text-primary)",
-                }
+              ? { background: "var(--brand-primary)", color: "white" }
+              : { background: "var(--bg-secondary)", color: "var(--text-primary)" }
           }
         >
           <FormattedText text={message.content} />
+        </div>
+      )}
+
+      {/* Quick confirmation buttons */}
+      {isAskingConfirmation && (
+        <div className="flex gap-2">
+          <button
+            onClick={() => onQuickReply("Yes, proceed.")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:opacity-90"
+            style={{ background: "#16a34a" }}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Yes, proceed
+          </button>
+          <button
+            onClick={() => onQuickReply("No, cancel.")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:opacity-90"
+            style={{ background: "#dc2626" }}
+          >
+            <XCircle className="w-3.5 h-3.5" />
+            No, cancel
+          </button>
         </div>
       )}
     </div>
@@ -735,32 +867,26 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 function ToolCard({ tool }: { tool: ToolExecution }) {
   const [expanded, setExpanded] = useState(false);
 
-  const toolLabel = tool.tool
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-
+  const toolLabel = tool.tool.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   const resultSummary = getResultSummary(tool);
+  const isSSHTool = ["list_files", "read_file", "write_file", "edit_file", "create_directory", "delete_file", "search_code", "run_command", "install_package", "git_status", "git_commit_and_push", "server_rebuild"].includes(tool.tool);
 
   return (
     <div
       className="w-full rounded-xl border overflow-hidden transition-all"
-      style={{ borderColor: "var(--border)", background: "var(--bg-primary)" }}
+      style={{ borderColor: tool.dangerous ? "rgba(234,179,8,0.3)" : "var(--border)", background: "var(--bg-primary)" }}
     >
-      {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-[var(--bg-secondary)]"
       >
         <div
-          className={cn(
-            "flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0",
-            tool.status === "running" ? "animate-pulse" : ""
-          )}
+          className={cn("flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0", tool.status === "running" ? "animate-pulse" : "")}
           style={{
-            background: tool.status === "error"
+            background: tool.status === "error" || tool.success === false
               ? "rgba(239,68,68,0.15)"
-              : tool.success === false
-              ? "rgba(239,68,68,0.15)"
+              : tool.dangerous
+              ? "rgba(234,179,8,0.15)"
               : "var(--bg-secondary)",
           }}
         >
@@ -768,19 +894,19 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
             <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: "var(--brand-primary)" }} />
           ) : tool.success === false ? (
             <XCircle className="w-3.5 h-3.5 text-red-500" />
+          ) : tool.dangerous ? (
+            <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />
+          ) : isSSHTool ? (
+            <Globe className="w-3.5 h-3.5" style={{ color: "var(--brand-primary)" }} />
           ) : (
             <Wrench className="w-3.5 h-3.5" style={{ color: "var(--brand-primary)" }} />
           )}
         </div>
 
         <div className="flex-1 min-w-0">
-          <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>
-            {toolLabel}
-          </span>
+          <span className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>{toolLabel}</span>
           {resultSummary && (
-            <span className="text-xs ml-2" style={{ color: "var(--text-secondary)" }}>
-              {resultSummary}
-            </span>
+            <span className="text-xs ml-2" style={{ color: "var(--text-secondary)" }}>{resultSummary}</span>
           )}
         </div>
 
@@ -796,34 +922,20 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
         </div>
       </button>
 
-      {/* Expanded content */}
       {expanded && (
         <div className="border-t px-3.5 py-2.5 space-y-2" style={{ borderColor: "var(--border)" }}>
-          {/* Input */}
           {tool.input && Object.keys(tool.input).length > 0 && (
             <div>
-              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                Input
-              </span>
-              <pre
-                className="text-xs mt-0.5 p-2 rounded-lg overflow-x-auto"
-                style={{ background: "var(--bg-secondary)", color: "var(--text-secondary)" }}
-              >
+              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Input</span>
+              <pre className="text-xs mt-0.5 p-2 rounded-lg overflow-x-auto" style={{ background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
                 {JSON.stringify(tool.input, null, 2)}
               </pre>
             </div>
           )}
-
-          {/* Result */}
           {tool.result && (
             <div>
-              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                Result
-              </span>
-              <pre
-                className="text-xs mt-0.5 p-2 rounded-lg overflow-x-auto max-h-60"
-                style={{ background: "var(--bg-secondary)", color: "var(--text-secondary)" }}
-              >
+              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Result</span>
+              <pre className="text-xs mt-0.5 p-2 rounded-lg overflow-x-auto max-h-60" style={{ background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
                 {JSON.stringify(tool.result, null, 2)}
               </pre>
             </div>
@@ -841,14 +953,29 @@ function getResultSummary(tool: ToolExecution): string {
   if (!tool.result || typeof tool.result !== "object") return "";
 
   const r = tool.result as Record<string, unknown>;
-  if (r.error) return `Error: ${r.error}`;
+  if (r.error) return `Error: ${String(r.error).substring(0, 60)}`;
   if (typeof r.count === "number") return `${r.count} results`;
   if (r.success) return "Success";
   if (r.name) return String(r.name);
+  if (r.exitCode !== undefined) return `Exit ${r.exitCode}`;
   return "";
 }
 
-/** Render markdown: headers, tables, lists, bold, code, hr */
+function formatRelativeTime(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diff = now - then;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** Render markdown: headers, tables, lists, bold, code, hr, code blocks */
 function FormattedText({ text }: { text: string }) {
   const lines = text.split("\n");
   const elements: React.ReactNode[] = [];
@@ -858,16 +985,38 @@ function FormattedText({ text }: { text: string }) {
     const line = lines[i];
     const trimmed = line.trim();
 
-    // Empty line
     if (!trimmed) { elements.push(<div key={i} className="h-1.5" />); i++; continue; }
 
-    // Horizontal rule
+    // Code block
+    if (trimmed.startsWith("```")) {
+      const lang = trimmed.slice(3).trim();
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++; // skip closing ```
+      elements.push(
+        <div key={`code${i}`} className="my-2 rounded-lg overflow-hidden border" style={{ borderColor: "var(--border)" }}>
+          {lang && (
+            <div className="px-3 py-1 text-[10px] font-mono uppercase" style={{ background: "var(--bg-secondary)", color: "var(--text-muted)" }}>
+              {lang}
+            </div>
+          )}
+          <pre className="p-3 text-xs font-mono overflow-x-auto" style={{ background: "var(--bg-secondary)", color: "var(--text-primary)" }}>
+            {codeLines.join("\n")}
+          </pre>
+        </div>
+      );
+      continue;
+    }
+
     if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
       elements.push(<hr key={i} className="my-2" style={{ borderColor: "var(--border)" }} />);
       i++; continue;
     }
 
-    // Headers
     if (trimmed.startsWith("### ")) {
       elements.push(<h4 key={i} className="text-sm font-bold mt-2 mb-1" style={{ color: "var(--text-primary)" }}>{renderInline(trimmed.slice(4))}</h4>);
       i++; continue;
@@ -881,7 +1030,6 @@ function FormattedText({ text }: { text: string }) {
       i++; continue;
     }
 
-    // Table: collect all consecutive | lines
     if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
       const tableLines: string[] = [];
       while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
@@ -892,7 +1040,6 @@ function FormattedText({ text }: { text: string }) {
       continue;
     }
 
-    // Unordered list item
     if (/^[-*] /.test(trimmed)) {
       const listItems: string[] = [];
       while (i < lines.length && /^\s*[-*] /.test(lines[i])) {
@@ -911,7 +1058,6 @@ function FormattedText({ text }: { text: string }) {
       continue;
     }
 
-    // Ordered list item
     if (/^\d+\.\s/.test(trimmed)) {
       const listItems: string[] = [];
       while (i < lines.length && /^\s*\d+\.\s/.test(lines[i])) {
@@ -930,7 +1076,6 @@ function FormattedText({ text }: { text: string }) {
       continue;
     }
 
-    // Regular paragraph
     elements.push(<div key={i}>{renderInline(trimmed)}</div>);
     i++;
   }
@@ -938,7 +1083,6 @@ function FormattedText({ text }: { text: string }) {
   return <div className="space-y-0.5">{elements}</div>;
 }
 
-/** Inline markdown: bold, inline code, italic */
 function renderInline(text: string): React.ReactNode {
   const parts = text.split(/(\*\*.*?\*\*|`.*?`|\*.*?\*)/g);
   return parts.map((part, j) => {
@@ -959,15 +1103,10 @@ function renderInline(text: string): React.ReactNode {
   });
 }
 
-/** Markdown table renderer */
 function MarkdownTable({ lines }: { lines: string[] }) {
   if (lines.length < 2) return null;
-
-  const parseRow = (line: string) =>
-    line.split("|").slice(1, -1).map((cell) => cell.trim());
-
+  const parseRow = (line: string) => line.split("|").slice(1, -1).map((cell) => cell.trim());
   const headers = parseRow(lines[0]);
-  // Skip separator row (|---|---|)
   const startIdx = lines[1].includes("---") ? 2 : 1;
   const rows = lines.slice(startIdx).map(parseRow);
 

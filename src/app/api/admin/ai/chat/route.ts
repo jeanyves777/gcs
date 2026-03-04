@@ -2,10 +2,11 @@ import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { isGCSStaff } from "@/lib/auth-utils";
 import { verifyToken } from "../pin/route";
+import { db } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
-import { adminTools, executeTool } from "@/lib/admin-ai-tools";
+import { adminTools, executeTool, isDangerousTool } from "@/lib/admin-ai-tools";
 
-export const maxDuration = 120;
+export const maxDuration = 300; // 5 min for server operations
 
 const client = new Anthropic();
 
@@ -36,11 +37,13 @@ function getPageContext(path: string): string {
 
 function buildSystemPrompt(currentPath: string): string {
   const ctx = getPageContext(currentPath);
-  return `You are GcsGuard AI, the intelligent admin command center for General Computing Solutions (GCS). You are an elite system administrator AI assistant with full access to all admin operations.
+  return `You are GcsGuard AI, the intelligent admin command center and full-stack software engineer for General Computing Solutions (GCS). You are an elite system administrator and developer AI with full access to all admin operations AND the production server.
 
 CURRENT CONTEXT: The admin is currently on "${currentPath}" — ${ctx}
 
 YOUR CAPABILITIES:
+
+**Admin & Cybersecurity:**
 - View system stats and dashboards
 - List, create, update, and delete organizations
 - List and update users (roles, active status)
@@ -51,18 +54,45 @@ YOUR CAPABILITIES:
 - List and manage security alerts
 - Search across all entities
 
+**Software Engineering (via SSH to production server):**
+- List, read, write, and edit any file on the server
+- Create directories, delete files
+- Search/grep through the codebase
+- Execute any shell command (npm, apt, systemctl, nginx, psql, etc.)
+- Install npm packages
+- Check git status, commit, and push changes to GitHub
+- Rebuild and restart the application (deploy.sh → PM2)
+- You can build entire features: create new pages, API routes, components, modify existing code
+- You can manage the server: nginx config, database, services, firewall, SSL
+
+**Web Search:**
+- You can search the internet to find documentation, solutions, and current information
+
+**PROJECT ARCHITECTURE:**
+- Next.js 16 App Router, TypeScript, Tailwind CSS v4, shadcn/ui, Prisma v5
+- App directory: /var/www/gcs
+- Pages: src/app/(public)/, src/app/(portal)/, src/app/(auth)/
+- API: src/app/api/
+- Components: src/components/
+- Utils: src/lib/
+- Database: SQLite locally, PostgreSQL on server
+- GitHub: https://github.com/jeanyves777/gcs (branch: main)
+
 BEHAVIOR RULES:
 1. Be concise and direct. Show results clearly.
 2. When asked about the current page, use the context above to give relevant info.
-3. For destructive actions (delete, deactivate), confirm what you're about to do BEFORE executing.
+3. **CRITICAL: For ALL dangerous operations (write_file, edit_file, create_directory, delete_file, run_command, install_package, git_commit_and_push, server_rebuild, delete_organization), you MUST describe EXACTLY what you plan to do and ask the admin to confirm BEFORE executing.** Show the file path, content preview, or command. Wait for their explicit "yes" or approval.
 4. When listing data, format it clearly with key details.
 5. If a request is ambiguous, ask for clarification.
 6. Always execute the appropriate tool — don't guess at data.
 7. When multiple tools are needed, call them sequentially and summarize.
 8. Use markdown formatting for readability (bold, lists, code blocks).
 9. If an error occurs, explain it clearly and suggest fixes.
+10. After server_rebuild, check PM2 status to verify the build succeeded.
+11. server_rebuild causes ~30-60s downtime. Warn the admin.
+12. You can add new capabilities to yourself by editing files on the server and rebuilding.
 
-IMPORTANT: You have real admin powers. Every tool call modifies the actual database. Be careful with updates and deletes.`;
+IMPORTANT: You have real admin powers. Every tool call modifies the actual database or server. Be careful with destructive operations.`;
 }
 
 export async function POST(req: NextRequest) {
@@ -81,7 +111,7 @@ export async function POST(req: NextRequest) {
     return new Response("Invalid or expired session", { status: 401 });
   }
 
-  const { messages, currentPath } = await req.json();
+  const { messages, currentPath, conversationId } = await req.json();
   if (!messages || !Array.isArray(messages)) {
     return new Response("Invalid messages", { status: 400 });
   }
@@ -94,6 +124,42 @@ export async function POST(req: NextRequest) {
       }
 
       try {
+        // ── Conversation persistence ──────────────────────────────
+        let convId = conversationId;
+
+        // Create conversation if new
+        if (!convId) {
+          const lastUserMsg = messages.filter((m: { role: string }) => m.role === "user").pop();
+          const title = lastUserMsg
+            ? (lastUserMsg as { content: string }).content.substring(0, 60).trim()
+            : "New conversation";
+          const conv = await db.aiConversation.create({
+            data: { title, userId: session.user.id },
+          });
+          convId = conv.id;
+        } else {
+          // Touch updatedAt
+          await db.aiConversation.updateMany({
+            where: { id: convId, userId: session.user.id },
+            data: { updatedAt: new Date() },
+          });
+        }
+
+        // Send conversationId to frontend
+        send("conversation", { id: convId });
+
+        // Save the latest user message
+        const lastUserMsg = messages[messages.length - 1];
+        if (lastUserMsg && lastUserMsg.role === "user") {
+          await db.aiMessage.create({
+            data: {
+              conversationId: convId,
+              role: "user",
+              content: lastUserMsg.content,
+            },
+          });
+        }
+
         // Convert messages to Anthropic format
         const anthropicMessages: Anthropic.MessageParam[] = messages.map((m: { role: string; content: string }) => ({
           role: m.role as "user" | "assistant",
@@ -101,30 +167,47 @@ export async function POST(req: NextRequest) {
         }));
 
         let toolCallCount = 0;
-        const MAX_TOOL_CALLS = 10;
+        const MAX_TOOL_CALLS = 20;
+
+        // Build tools array with web_search
+        const tools: (Anthropic.Tool | Anthropic.WebSearchTool20250305)[] = [
+          ...adminTools,
+          { type: "web_search_20250305" as const, name: "web_search", max_uses: 5 },
+        ];
 
         // Agentic loop
         let currentMessages: Anthropic.MessageParam[] = [...anthropicMessages];
+        let fullAssistantText = "";
+        const allToolCalls: { tool: string; input: unknown; result: unknown }[] = [];
 
         while (true) {
           const response = await client.messages.create({
             model: "claude-sonnet-4-6",
-            max_tokens: 4096,
+            max_tokens: 8192,
             system: buildSystemPrompt(currentPath || "/portal/admin"),
             messages: currentMessages,
-            tools: adminTools,
+            tools,
           });
 
           // Process response blocks
           let hasToolUse = false;
-          const toolResults: Anthropic.MessageParam[] = [];
+          const toolResults: Anthropic.ToolResultBlockParam[] = [];
           const assistantContent: Anthropic.ContentBlock[] = [];
 
           for (const block of response.content) {
             assistantContent.push(block);
 
             if (block.type === "text") {
+              fullAssistantText += block.text;
               send("text", { content: block.text });
+            } else if (block.type === "web_search_tool_result") {
+              // Handle web search results from Anthropic's built-in search
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const searchBlock = block as any;
+              send("web_search", {
+                id: searchBlock.id || crypto.randomUUID(),
+                results: searchBlock.content || [],
+              });
             } else if (block.type === "tool_use") {
               hasToolUse = true;
               toolCallCount++;
@@ -133,26 +216,27 @@ export async function POST(req: NextRequest) {
                 id: block.id,
                 tool: block.name,
                 input: block.input,
+                dangerous: isDangerousTool(block.name),
               });
 
               // Execute the tool
               const result = await executeTool(block.name, block.input as Record<string, unknown>);
 
+              const parsedResult = JSON.parse(result);
               send("tool_result", {
                 id: block.id,
                 tool: block.name,
-                result: JSON.parse(result),
+                result: parsedResult,
                 success: !result.includes('"error"'),
               });
 
+              allToolCalls.push({ tool: block.name, input: block.input, result: parsedResult });
+
               // Collect tool results for next iteration
               toolResults.push({
-                role: "user" as const,
-                content: [{
-                  type: "tool_result" as const,
-                  tool_use_id: block.id,
-                  content: result,
-                }],
+                type: "tool_result" as const,
+                tool_use_id: block.id,
+                content: result,
               });
             }
           }
@@ -166,11 +250,23 @@ export async function POST(req: NextRequest) {
           currentMessages = [
             ...currentMessages,
             { role: "assistant" as const, content: assistantContent },
-            ...toolResults,
+            { role: "user" as const, content: toolResults },
           ];
         }
 
-        send("done", {});
+        // ── Save assistant response to DB ─────────────────────────
+        if (convId && (fullAssistantText || allToolCalls.length > 0)) {
+          await db.aiMessage.create({
+            data: {
+              conversationId: convId,
+              role: "assistant",
+              content: fullAssistantText || "(tool execution only)",
+              toolCalls: allToolCalls.length > 0 ? JSON.stringify(allToolCalls) : null,
+            },
+          });
+        }
+
+        send("done", { conversationId: convId });
       } catch (err) {
         send("error", { message: String(err) });
       } finally {

@@ -6,8 +6,25 @@
 
 import { db } from "@/lib/db";
 import type Anthropic from "@anthropic-ai/sdk";
+import {
+  sshListFiles, sshReadFile, sshWriteFile, sshEditFile,
+  sshCreateDirectory, sshDeleteFile, sshSearchCode,
+  sshRunCommand, sshInstallPackage, sshGitStatus,
+  sshGitCommitAndPush, sshServerRebuild,
+} from "./admin-ai-ssh-tools";
 
 type ToolDef = Anthropic.Tool;
+
+// Tools that require admin confirmation before execution
+export const DANGEROUS_TOOLS = new Set([
+  "write_file", "edit_file", "create_directory", "delete_file",
+  "run_command", "install_package", "git_commit_and_push", "server_rebuild",
+  "delete_organization",
+]);
+
+export function isDangerousTool(name: string): boolean {
+  return DANGEROUS_TOOLS.has(name);
+}
 
 // ─── Tool Definitions (for Claude) ──────────────────────────────────────────
 
@@ -230,6 +247,148 @@ export const adminTools: ToolDef[] = [
       required: ["query"],
     },
   },
+  // ─── SSH / Server Tools ──────────────────────────────────────────────────
+  {
+    name: "list_files",
+    description: "List files and directories on the GCS production server. Can list any path on the server.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        path: { type: "string", description: "Directory path to list (default: /var/www/gcs)" },
+        pattern: { type: "string", description: "Optional glob pattern to filter files (e.g. '*.ts')" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "read_file",
+    description: "Read the contents of any file on the GCS production server.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        path: { type: "string", description: "Absolute path to the file" },
+        lines: { type: "number", description: "Optional: only read first N lines" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "write_file",
+    description: "Write or create a file on the GCS production server. Creates parent directories automatically. DANGEROUS: requires admin confirmation.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        path: { type: "string", description: "Absolute path for the file" },
+        content: { type: "string", description: "File content to write" },
+      },
+      required: ["path", "content"],
+    },
+  },
+  {
+    name: "edit_file",
+    description: "Edit a file on the GCS production server by replacing a string. DANGEROUS: requires admin confirmation.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        path: { type: "string", description: "Absolute path to the file" },
+        old_string: { type: "string", description: "The exact string to find and replace" },
+        new_string: { type: "string", description: "The replacement string" },
+        replace_all: { type: "boolean", description: "Replace all occurrences (default: false)" },
+      },
+      required: ["path", "old_string", "new_string"],
+    },
+  },
+  {
+    name: "create_directory",
+    description: "Create a directory on the GCS production server (supports nested creation like mkdir -p). DANGEROUS: requires admin confirmation.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        path: { type: "string", description: "Absolute path for the directory" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "delete_file",
+    description: "Delete a file or directory on the GCS production server. DANGEROUS: requires admin confirmation.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        path: { type: "string", description: "Absolute path to delete" },
+        recursive: { type: "boolean", description: "Delete recursively if directory (default: false)" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "search_code",
+    description: "Search/grep through the GCS codebase on the production server.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        pattern: { type: "string", description: "Search pattern (regex supported)" },
+        path: { type: "string", description: "Directory to search in (default: /var/www/gcs/src)" },
+        file_pattern: { type: "string", description: "File glob pattern (e.g. '*.tsx')" },
+      },
+      required: ["pattern"],
+    },
+  },
+  {
+    name: "run_command",
+    description: "Execute any shell command on the GCS production server. Full root access. DANGEROUS: requires admin confirmation.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        command: { type: "string", description: "The shell command to execute" },
+        cwd: { type: "string", description: "Working directory (default: /var/www/gcs)" },
+        timeout: { type: "number", description: "Timeout in ms (default: 120000)" },
+      },
+      required: ["command"],
+    },
+  },
+  {
+    name: "install_package",
+    description: "Install npm packages in the GCS app directory on the production server. DANGEROUS: requires admin confirmation.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        packages: { type: "string", description: "Package name(s) to install (e.g. 'lodash' or 'axios zod')" },
+        dev: { type: "boolean", description: "Install as devDependency (default: false)" },
+      },
+      required: ["packages"],
+    },
+  },
+  {
+    name: "git_status",
+    description: "Check git status, diff, and recent commits on the GCS production server.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "git_commit_and_push",
+    description: "Stage, commit, and push changes to GitHub from the GCS production server. DANGEROUS: requires admin confirmation.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        message: { type: "string", description: "Commit message" },
+        files: { type: "array", items: { type: "string" }, description: "Specific files to stage (default: all changes)" },
+      },
+      required: ["message"],
+    },
+  },
+  {
+    name: "server_rebuild",
+    description: "Run deploy.sh on the GCS production server to rebuild and restart the application. This will cause ~30-60s of downtime. DANGEROUS: requires admin confirmation.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 // ─── Tool Executors ─────────────────────────────────────────────────────────
@@ -260,6 +419,19 @@ export async function executeTool(name: string, input: ToolInput): Promise<strin
       case "list_guard_alerts": return JSON.stringify(await listGuardAlerts(input));
       case "update_alert_status": return JSON.stringify(await updateAlertStatus(input));
       case "search_everything": return JSON.stringify(await searchEverything(input));
+      // SSH / Server tools
+      case "list_files": return await sshListFiles(input);
+      case "read_file": return await sshReadFile(input);
+      case "write_file": return await sshWriteFile(input);
+      case "edit_file": return await sshEditFile(input);
+      case "create_directory": return await sshCreateDirectory(input);
+      case "delete_file": return await sshDeleteFile(input);
+      case "search_code": return await sshSearchCode(input);
+      case "run_command": return await sshRunCommand(input);
+      case "install_package": return await sshInstallPackage(input);
+      case "git_status": return await sshGitStatus();
+      case "git_commit_and_push": return await sshGitCommitAndPush(input);
+      case "server_rebuild": return await sshServerRebuild();
       default: return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
   } catch (err) {

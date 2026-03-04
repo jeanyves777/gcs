@@ -50,6 +50,7 @@ model User {
   assignedTickets       Ticket[]        @relation("TicketAssignee")
   pitches               Pitch[]
   leadSearches          LeadSearch[]
+  aiConversations       AiConversation[]
   resolvedAlerts        GuardAlert[]    @relation("AlertResolver")
   assignedIncidents     GuardIncident[] @relation("IncidentAssignee")
   createdCommands       GuardCommand[]  @relation("CommandCreator")
@@ -439,6 +440,36 @@ model Pitch {
 
   @@index([createdById])
   @@index([createdAt])
+}
+
+// ============================================================
+// GCSGUARD AI — Conversations & Messages
+// ============================================================
+
+model AiConversation {
+  id        String   @id @default(cuid())
+  title     String   @default("New conversation")
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messages  AiMessage[]
+
+  @@index([userId])
+  @@index([updatedAt])
+}
+
+model AiMessage {
+  id             String         @id @default(cuid())
+  conversationId String
+  conversation   AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String         // "user" | "assistant"
+  content        String
+  toolCalls      String?        // JSON string of tool executions
+  createdAt      DateTime       @default(now())
+
+  @@index([conversationId])
 }
 
 // ============================================================

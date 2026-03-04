@@ -392,10 +392,10 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
                           <p className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>
                             {org.name}
                           </p>
-                          <div className="flex items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                            {org.domain && <span>{org.domain}</span>}
-                            {org.industry && <><span>·</span><span>{org.industry}</span></>}
-                            {org.city && org.state && <><span>·</span><span>{org.city}, {org.state}</span></>}
+                          <div className="flex items-center gap-2 text-[11px] truncate" style={{ color: "var(--text-muted)" }}>
+                            {org.domain && <span className="truncate max-w-[120px]" title={org.domain}>{org.domain}</span>}
+                            {org.industry && <><span>·</span><span className="truncate max-w-[100px]" title={org.industry}>{org.industry}</span></>}
+                            {org.city && org.state && <><span>·</span><span className="whitespace-nowrap">{org.city}, {org.state}</span></>}
                           </div>
                         </div>
                       </div>
