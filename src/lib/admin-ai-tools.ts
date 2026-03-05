@@ -468,8 +468,26 @@ export async function executeTool(name: string, input: ToolInput): Promise<strin
       case "delegate_task": return JSON.stringify({ error: "delegate_task must be handled by the chat route, not executeTool" });
       default: return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
-  } catch (err) {
-    return JSON.stringify({ error: String(err) });
+  } catch (err: unknown) {
+    const errObj = err as { code?: string; meta?: Record<string, unknown>; message?: string };
+    // Prisma known request errors — give AI actionable info
+    if (errObj.code) {
+      const hints: Record<string, string> = {
+        P2002: "Unique constraint violation — a record with that value already exists. Try a different value or check for duplicates first.",
+        P2025: "Record not found — the ID may be wrong. List records first to find the correct ID.",
+        P2003: "Foreign key constraint failed — the referenced record doesn't exist. Verify the related ID.",
+        P2000: "Value too long for the column. Use a shorter value.",
+        P2006: "Invalid value for the field type. Check the data type (string vs number vs boolean).",
+      };
+      const hint = hints[errObj.code] || "Check the field names and values match the schema.";
+      return JSON.stringify({
+        error: `${errObj.code}: ${errObj.meta?.cause || errObj.meta?.target || errObj.message || "Database error"}`,
+        hint,
+        tool: name,
+        input_received: input,
+      });
+    }
+    return JSON.stringify({ error: String(err), tool: name, hint: "Unexpected error — check the input parameters and try again." });
   }
 }
 
