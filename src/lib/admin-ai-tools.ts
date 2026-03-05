@@ -508,13 +508,26 @@ async function getOrganization(input: ToolInput) {
   });
 }
 
+const ORG_FIELDS = ["name", "domain", "website", "phone", "email", "address", "city", "state", "zipCode", "country", "industry", "description", "subscriptionTier", "notes"];
+
+function pickOrgFields(input: ToolInput) {
+  const data: Record<string, unknown> = {};
+  for (const key of ORG_FIELDS) {
+    if (input[key] !== undefined) data[key] = input[key];
+  }
+  return data;
+}
+
 async function createOrganization(input: ToolInput) {
-  const { name, ...rest } = input;
-  return db.organization.create({ data: { name, ...rest } });
+  const data = pickOrgFields(input);
+  if (!data.name) return { error: "name is required" };
+  return db.organization.create({ data: data as { name: string } });
 }
 
 async function updateOrganization(input: ToolInput) {
-  const { id, ...data } = input;
+  const { id } = input;
+  if (!id) return { error: "id is required" };
+  const data = pickOrgFields(input);
   return db.organization.update({ where: { id }, data });
 }
 
@@ -542,8 +555,15 @@ async function listUsers(input: ToolInput) {
   return { count: users.length, users };
 }
 
+const USER_FIELDS = ["name", "email", "phone", "jobTitle", "role", "isActive", "organizationId"];
+
 async function updateUser(input: ToolInput) {
-  const { id, ...data } = input;
+  const { id } = input;
+  if (!id) return { error: "id is required" };
+  const data: Record<string, unknown> = {};
+  for (const key of USER_FIELDS) {
+    if (input[key] !== undefined) data[key] = input[key];
+  }
   return db.user.update({ where: { id }, data, select: { id: true, name: true, email: true, role: true, isActive: true } });
 }
 
@@ -571,8 +591,15 @@ async function createProject(input: ToolInput) {
   });
 }
 
+const PROJECT_FIELDS = ["name", "description", "status", "progress", "startDate", "targetDate", "isArchived"];
+
 async function updateProject(input: ToolInput) {
-  const { id, ...data } = input;
+  const { id } = input;
+  if (!id) return { error: "id is required" };
+  const data: Record<string, unknown> = {};
+  for (const key of PROJECT_FIELDS) {
+    if (input[key] !== undefined) data[key] = input[key];
+  }
   return db.project.update({ where: { id }, data });
 }
 
@@ -587,8 +614,15 @@ async function listInvoices(input: ToolInput) {
   return { count: invoices.length, invoices };
 }
 
+const INVOICE_FIELDS = ["amount", "tax", "currency", "status", "dueDate", "paidAt", "notes", "lineItems"];
+
 async function updateInvoice(input: ToolInput) {
-  const { id, ...data } = input;
+  const { id } = input;
+  if (!id) return { error: "id is required" };
+  const data: Record<string, unknown> = {};
+  for (const key of INVOICE_FIELDS) {
+    if (input[key] !== undefined) data[key] = input[key];
+  }
   return db.invoice.update({ where: { id }, data });
 }
 
@@ -605,8 +639,15 @@ async function listTickets(input: ToolInput) {
   return { count: tickets.length, tickets };
 }
 
+const TICKET_FIELDS = ["subject", "description", "status", "priority", "category", "assignedTo"];
+
 async function updateTicket(input: ToolInput) {
-  const { id, ...data } = input;
+  const { id } = input;
+  if (!id) return { error: "id is required" };
+  const data: Record<string, unknown> = {};
+  for (const key of TICKET_FIELDS) {
+    if (input[key] !== undefined) data[key] = input[key];
+  }
   return db.ticket.update({ where: { id }, data });
 }
 
