@@ -97,6 +97,7 @@ export function AdminAIChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingStatus, setStreamingStatus] = useState("Connecting...");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -306,6 +307,7 @@ export function AdminAIChat() {
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setInput("");
+    setStreamingStatus("Connecting...");
     setIsStreaming(true);
 
     try {
@@ -387,6 +389,36 @@ export function AdminAIChat() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input, isStreaming, sessionToken, messages, pathname, activeConversationId]);
 
+  // Human-readable status for tool names
+  const toolStatusLabel = (tool: string): string => {
+    const labels: Record<string, string> = {
+      browser_open: "Opening browser...",
+      browser_action: "Performing browser actions...",
+      browser_close: "Closing browser...",
+      browser_sessions: "Checking browser sessions...",
+      list_files: "Listing files...",
+      read_file: "Reading file...",
+      write_file: "Writing file...",
+      edit_file: "Editing file...",
+      search_code: "Searching code...",
+      run_command: "Running command...",
+      server_rebuild: "Rebuilding server...",
+      git_status: "Checking git status...",
+      git_commit_and_push: "Committing & pushing...",
+      install_package: "Installing packages...",
+      get_vault_entry: "Retrieving credentials...",
+      list_vault_entries: "Listing vault...",
+      search_vault: "Searching vault...",
+      create_vault_entry: "Creating vault entry...",
+      update_vault_entry: "Updating vault entry...",
+      delegate_task: "Delegating to sub-agent...",
+      search_everything: "Searching...",
+      get_system_stats: "Fetching system stats...",
+      web_search: "Searching the web...",
+    };
+    return labels[tool] || `Running ${tool.replace(/_/g, " ")}...`;
+  };
+
   const processSSE = (event: string, data: Record<string, unknown>, assistantId: string) => {
     switch (event) {
       case "conversation":
@@ -401,6 +433,7 @@ export function AdminAIChat() {
             switch (event) {
               case "text": {
                 const newText = data.content as string;
+                setStreamingStatus("Thinking...");
                 const blocks = [...(m.contentBlocks || [])];
                 const lastBlock = blocks[blocks.length - 1];
                 if (lastBlock && lastBlock.type === "text") {
@@ -412,6 +445,7 @@ export function AdminAIChat() {
               }
 
               case "tool_start": {
+                setStreamingStatus(toolStatusLabel(data.tool as string));
                 const newTool: ToolExecution = {
                   id: data.id as string,
                   tool: data.tool as string,
@@ -429,17 +463,22 @@ export function AdminAIChat() {
                 return { ...m, toolCalls: [...(m.toolCalls || []), newTool], contentBlocks: blocks };
               }
 
-              case "tool_result":
+              case "tool_result": {
+                const toolName = (m.toolCalls || []).find((tc) => tc.id === data.id)?.tool || "";
+                const success = data.success as boolean;
+                setStreamingStatus(success ? `Completed ${toolName.replace(/_/g, " ")}` : `Failed: ${toolName.replace(/_/g, " ")}`);
                 return {
                   ...m,
                   toolCalls: (m.toolCalls || []).map((tc) =>
                     tc.id === data.id
-                      ? { ...tc, result: data.result as Record<string, unknown> | null, success: data.success as boolean, status: "done" as const }
+                      ? { ...tc, result: data.result as Record<string, unknown> | null, success, status: "done" as const }
                       : tc
                   ),
                 };
+              }
 
               case "sub_agent": {
+                setStreamingStatus(`Sub-agent: ${(data.agentName as string) || "working"}...`);
                 const parentId = data.parentToolId as string;
                 const agentName = data.agentName as string;
                 const agentEvent = data.event as string;
@@ -503,6 +542,7 @@ export function AdminAIChat() {
               }
 
               case "web_search": {
+                setStreamingStatus("Searching the web...");
                 const wsText = "\n*Searching the web...*\n";
                 const wsBlocks = [...(m.contentBlocks || [])];
                 const wsLast = wsBlocks[wsBlocks.length - 1];
@@ -833,7 +873,7 @@ function ChatView({
               <div className="w-1.5 h-1.5 rounded-full bg-current animate-bounce" style={{ animationDelay: "150ms" }} />
               <div className="w-1.5 h-1.5 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} />
             </div>
-            <span className="text-xs">Processing...</span>
+            <span className="text-xs">{streamingStatus}</span>
           </div>
         )}
 
