@@ -420,6 +420,20 @@ export function AdminAIChat() {
   };
 
   const processSSE = (event: string, data: Record<string, unknown>, assistantId: string) => {
+    // Update streaming status OUTSIDE setMessages to avoid React state issues
+    switch (event) {
+      case "text": setStreamingStatus("Thinking..."); break;
+      case "tool_start": setStreamingStatus(toolStatusLabel(data.tool as string)); break;
+      case "tool_result": {
+        const success = data.success as boolean;
+        const toolName = String(data.tool || "").replace(/_/g, " ");
+        setStreamingStatus(success ? `Completed ${toolName}` : `Failed: ${toolName}`);
+        break;
+      }
+      case "sub_agent": setStreamingStatus(`Sub-agent: ${(data.agentName as string) || "working"}...`); break;
+      case "web_search": setStreamingStatus("Searching the web..."); break;
+    }
+
     switch (event) {
       case "conversation":
         setActiveConversationId(data.id as string);
@@ -433,7 +447,6 @@ export function AdminAIChat() {
             switch (event) {
               case "text": {
                 const newText = data.content as string;
-                setStreamingStatus("Thinking...");
                 const blocks = [...(m.contentBlocks || [])];
                 const lastBlock = blocks[blocks.length - 1];
                 if (lastBlock && lastBlock.type === "text") {
@@ -445,7 +458,6 @@ export function AdminAIChat() {
               }
 
               case "tool_start": {
-                setStreamingStatus(toolStatusLabel(data.tool as string));
                 const newTool: ToolExecution = {
                   id: data.id as string,
                   tool: data.tool as string,
@@ -464,9 +476,7 @@ export function AdminAIChat() {
               }
 
               case "tool_result": {
-                const toolName = (m.toolCalls || []).find((tc) => tc.id === data.id)?.tool || "";
                 const success = data.success as boolean;
-                setStreamingStatus(success ? `Completed ${toolName.replace(/_/g, " ")}` : `Failed: ${toolName.replace(/_/g, " ")}`);
                 return {
                   ...m,
                   toolCalls: (m.toolCalls || []).map((tc) =>
@@ -478,7 +488,6 @@ export function AdminAIChat() {
               }
 
               case "sub_agent": {
-                setStreamingStatus(`Sub-agent: ${(data.agentName as string) || "working"}...`);
                 const parentId = data.parentToolId as string;
                 const agentName = data.agentName as string;
                 const agentEvent = data.event as string;
@@ -542,7 +551,6 @@ export function AdminAIChat() {
               }
 
               case "web_search": {
-                setStreamingStatus("Searching the web...");
                 const wsText = "\n*Searching the web...*\n";
                 const wsBlocks = [...(m.contentBlocks || [])];
                 const wsLast = wsBlocks[wsBlocks.length - 1];
