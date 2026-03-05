@@ -160,11 +160,20 @@ export async function POST(req: NextRequest) {
           });
         }
 
-        // Convert messages to Anthropic format
+        // Smart context: send ALL messages (full memory) but trim oversized individual
+        // messages to control token usage. User messages stay intact, only long
+        // assistant responses (tool dumps, code output) get trimmed.
+        const MAX_ASSISTANT_CHARS = 3000; // trim long assistant responses
         const anthropicMessages: Anthropic.MessageParam[] = messages.map((m: { role: string; content: string }) => ({
           role: m.role as "user" | "assistant",
-          content: m.content,
+          content: m.role === "assistant" && m.content.length > MAX_ASSISTANT_CHARS
+            ? m.content.substring(0, MAX_ASSISTANT_CHARS) + "\n...(response trimmed for context)"
+            : m.content,
         }));
+        // Ensure first message is from the user (Anthropic requirement)
+        if (anthropicMessages.length > 0 && anthropicMessages[0].role !== "user") {
+          anthropicMessages.shift();
+        }
 
         let toolCallCount = 0;
         const MAX_TOOL_CALLS = 20;
@@ -175,13 +184,34 @@ export async function POST(req: NextRequest) {
           { type: "web_search_20250305" as const, name: "web_search", max_uses: 5 },
         ];
 
+        // Retry helper for rate limits
+        async function callWithRetry(params: Anthropic.MessageCreateParamsNonStreaming, retries = 3): Promise<Anthropic.Message> {
+          for (let attempt = 0; attempt < retries; attempt++) {
+            try {
+              return await client.messages.create(params);
+            } catch (err: unknown) {
+              const isRateLimit = err instanceof Error && (
+                err.message.includes("429") || err.message.includes("rate_limit")
+              );
+              if (isRateLimit && attempt < retries - 1) {
+                const delay = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s
+                send("text", { content: `\n\n*Rate limited — retrying in ${delay / 1000}s...*\n\n` });
+                await new Promise((r) => setTimeout(r, delay));
+                continue;
+              }
+              throw err;
+            }
+          }
+          throw new Error("Max retries exceeded");
+        }
+
         // Agentic loop
         let currentMessages: Anthropic.MessageParam[] = [...anthropicMessages];
         let fullAssistantText = "";
         const allToolCalls: { tool: string; input: unknown; result: unknown }[] = [];
 
         while (true) {
-          const response = await client.messages.create({
+          const response = await callWithRetry({
             model: "claude-sonnet-4-6",
             max_tokens: 8192,
             system: buildSystemPrompt(currentPath || "/portal/admin"),
@@ -232,11 +262,15 @@ export async function POST(req: NextRequest) {
 
               allToolCalls.push({ tool: block.name, input: block.input, result: parsedResult });
 
-              // Collect tool results for next iteration
+              // Collect tool results for next iteration (truncate large results to save tokens)
+              const MAX_RESULT_LEN = 4000;
+              const truncatedResult = result.length > MAX_RESULT_LEN
+                ? result.substring(0, MAX_RESULT_LEN) + "\n...(truncated)"
+                : result;
               toolResults.push({
                 type: "tool_result" as const,
                 tool_use_id: block.id,
-                content: result,
+                content: truncatedResult,
               });
             }
           }
