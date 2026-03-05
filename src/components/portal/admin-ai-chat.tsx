@@ -23,6 +23,7 @@ import {
   PanelLeftOpen,
   Globe,
   AlertTriangle,
+  Monitor,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -1015,6 +1016,7 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
   const toolLabel = tool.tool.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   const resultSummary = getResultSummary(tool);
   const isSSHTool = ["list_files", "read_file", "write_file", "edit_file", "create_directory", "delete_file", "search_code", "run_command", "install_package", "git_status", "git_commit_and_push", "server_rebuild"].includes(tool.tool);
+  const isBrowserTool = tool.tool.startsWith("browser_");
 
   return (
     <div
@@ -1041,6 +1043,8 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
             <XCircle className="w-3.5 h-3.5 text-red-500" />
           ) : tool.dangerous ? (
             <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />
+          ) : isBrowserTool ? (
+            <Monitor className="w-3.5 h-3.5" style={{ color: "var(--brand-primary)" }} />
           ) : isSSHTool ? (
             <Globe className="w-3.5 h-3.5" style={{ color: "var(--brand-primary)" }} />
           ) : (
@@ -1126,6 +1130,22 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
               </pre>
             </div>
           )}
+          {/* Inline screenshots from browser_action results */}
+          {tool.result && getScreenshotUrls(tool.result).length > 0 && (
+            <div className="space-y-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>Screenshots</span>
+              {getScreenshotUrls(tool.result).map((url, i) => (
+                <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block">
+                  <img
+                    src={url}
+                    alt={`Screenshot ${i + 1}`}
+                    className="w-full rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+                    style={{ borderColor: "var(--border)" }}
+                  />
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1133,6 +1153,13 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function getScreenshotUrls(result: Record<string, unknown> | null): string[] {
+  if (!result) return [];
+  const json = JSON.stringify(result);
+  const matches = json.match(/\/uploads\/screenshots\/[^"]+\.png/g);
+  return matches ? [...new Set(matches)] : [];
+}
 
 function getResultSummary(tool: ToolExecution): string {
   if (tool.status === "running") return "Executing...";
@@ -1144,6 +1171,9 @@ function getResultSummary(tool: ToolExecution): string {
   if (r.success) return "Success";
   if (r.name) return String(r.name);
   if (r.exitCode !== undefined) return `Exit ${r.exitCode}`;
+  if (r.sessionId && r.url) return `${r.url}`;
+  if (r.actionsCompleted !== undefined) return `${r.actionsCompleted}/${r.actionsTotal} actions`;
+  if (r.closed) return "Session closed";
   return "";
 }
 

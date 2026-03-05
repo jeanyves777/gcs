@@ -13,6 +13,9 @@ import {
   sshRunCommand, sshInstallPackage, sshGitStatus,
   sshGitCommitAndPush, sshServerRebuild,
 } from "./admin-ai-ssh-tools";
+import {
+  browserOpen, browserAction, browserClose, browserSessions,
+} from "./admin-ai-browser";
 
 type ToolDef = Anthropic.Tool;
 
@@ -22,6 +25,7 @@ export const DANGEROUS_TOOLS = new Set([
   "run_command", "install_package", "git_commit_and_push", "server_rebuild",
   "delete_organization",
   "create_vault_entry", "update_vault_entry",
+  "browser_open", "browser_action", "browser_close",
 ]);
 
 export function isDangerousTool(name: string): boolean {
@@ -455,6 +459,96 @@ export const adminTools: ToolDef[] = [
       required: ["query"],
     },
   },
+  // ─── Browser Automation ──────────────────────────────────────────────────
+  {
+    name: "browser_open",
+    description: "Open a new headless browser session on the production server. Uses stealth mode with anti-bot-detection. Optionally navigate to a URL. Returns a session_id for subsequent actions. Max 3 concurrent sessions, auto-closes after 10 min idle. DANGEROUS: requires admin confirmation.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        url: { type: "string", description: "Initial URL to navigate to (optional)" },
+        viewport: {
+          type: "object",
+          properties: {
+            width: { type: "number", description: "Viewport width (default: 1920)" },
+            height: { type: "number", description: "Viewport height (default: 1080)" },
+          },
+          description: "Custom viewport size (optional)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "browser_action",
+    description: `Execute one or more sequential actions in an existing browser session. Actions execute at human speed with realistic typing delays and mouse movements (this is by design to avoid bot detection). If one action fails, remaining actions are skipped.
+
+Available actions:
+- navigate: Go to a URL — { action: "navigate", url: "https://..." }
+- click: Click an element — { action: "click", selector: "#btn" }
+- type: Type into a field at human speed — { action: "type", selector: "input[name=email]", text: "user@example.com", clear: true }
+- screenshot: Take a screenshot — { action: "screenshot", fullPage: false } → returns URL
+- extract: Extract text from elements — { action: "extract", selector: "h1" } → returns text content
+- wait: Wait for element or fixed time — { action: "wait", selector: ".loaded", timeout: 5000 }
+- scroll: Scroll the page — { action: "scroll", direction: "down", amount: 500 }
+- select: Select dropdown option — { action: "select", selector: "select#role", value: "admin" }
+- evaluate: Run JavaScript in page — { action: "evaluate", script: "document.title" }
+
+To log into a service using vault credentials: first retrieve credentials with get_vault_entry, then use type actions for username/password fields.
+DANGEROUS: requires admin confirmation.`,
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        session_id: { type: "string", description: "Session ID from browser_open" },
+        actions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              action: {
+                type: "string",
+                enum: ["navigate", "click", "type", "screenshot", "extract", "wait", "scroll", "select", "evaluate"],
+              },
+              url: { type: "string" },
+              selector: { type: "string" },
+              text: { type: "string" },
+              clear: { type: "boolean" },
+              fullPage: { type: "boolean" },
+              direction: { type: "string", enum: ["up", "down"] },
+              amount: { type: "number" },
+              value: { type: "string" },
+              script: { type: "string" },
+              timeout: { type: "number" },
+              attribute: { type: "string" },
+            },
+            required: ["action"],
+          },
+          description: "Array of actions to execute sequentially at human speed",
+        },
+      },
+      required: ["session_id", "actions"],
+    },
+  },
+  {
+    name: "browser_close",
+    description: "Close a browser session and clean up resources on the server. Always close sessions when done. DANGEROUS: requires admin confirmation.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        session_id: { type: "string", description: "Session ID to close" },
+      },
+      required: ["session_id"],
+    },
+  },
+  {
+    name: "browser_sessions",
+    description: "List all active browser sessions with their URLs, titles, and idle times. Read-only.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
   // ─── Sub-Agent Delegation ───────────────────────────────────────────────
   {
     name: "delegate_task",
@@ -537,6 +631,11 @@ export async function executeTool(name: string, input: ToolInput): Promise<strin
       case "git_status": return await sshGitStatus();
       case "git_commit_and_push": return await sshGitCommitAndPush(input);
       case "server_rebuild": return await sshServerRebuild();
+      // Browser automation
+      case "browser_open": return await browserOpen(input);
+      case "browser_action": return await browserAction(input);
+      case "browser_close": return await browserClose(input);
+      case "browser_sessions": return await browserSessions();
       case "delegate_task": return JSON.stringify({ error: "delegate_task must be handled by the chat route, not executeTool" });
       default: return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
