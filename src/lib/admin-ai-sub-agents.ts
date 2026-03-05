@@ -52,6 +52,7 @@ const SUB_AGENTS: Record<string, SubAgentConfig> = {
       "get_system_stats", "list_organizations", "get_organization",
       "list_users", "list_projects", "list_invoices", "list_tickets",
       "list_guard_agents", "list_guard_alerts", "search_everything",
+      "list_vault_entries", "search_vault",
     ],
     maxTokens: 4096,
     maxToolCalls: 8,

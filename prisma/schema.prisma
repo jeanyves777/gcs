@@ -57,6 +57,8 @@ model User {
   approvedPatches       GuardPatchHistory[]      @relation("PatchApprover")
   configTemplates       GuardConfigTemplate[]    @relation("ConfigTemplateCreator")
   configDeployments     GuardConfigDeployment[]  @relation("ConfigDeployer")
+  vaultEntries          VaultEntry[]             @relation("VaultEntryCreator")
+  vaultAccessLogs       VaultAccessLog[]         @relation("VaultAccessLogs")
 
   @@index([email])
   @@index([organizationId])
@@ -766,4 +768,46 @@ model GuardServiceStatus {
 
   @@unique([agentId, serviceName])
   @@index([agentId])
+}
+
+// ─── Encrypted Credential Vault ──────────────────────────────────────────────
+
+model VaultEntry {
+  id          String    @id @default(cuid())
+  label       String
+  category    String    @default("OTHER") // CLOUD|HOSTING|EMAIL|DOMAIN|DATABASE|API|SOCIAL|PAYMENT|VPN|OTHER
+  url         String?
+  description String?
+  encUsername String? // AES-256-GCM encrypted
+  encPassword String? // AES-256-GCM encrypted
+  encApiKey   String? // AES-256-GCM encrypted
+  encNotes    String? // AES-256-GCM encrypted
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  createdById String
+  createdBy   User @relation("VaultEntryCreator", fields: [createdById], references: [id])
+
+  accessLogs VaultAccessLog[]
+
+  @@index([category])
+  @@index([createdById])
+}
+
+model VaultAccessLog {
+  id        String      @id @default(cuid())
+  action    String // CREATE|UPDATE|DELETE|REVEAL|AI_REVEAL
+  metadata  String? // JSON
+  createdAt DateTime    @default(now())
+
+  entryId String?
+  entry   VaultEntry? @relation(fields: [entryId], references: [id])
+  userId  String
+  user    User @relation("VaultAccessLogs", fields: [userId], references: [id])
+
+  @@index([entryId])
+  @@index([userId])
+  @@index([createdAt])
 }

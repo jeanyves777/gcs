@@ -26,6 +26,7 @@ const PAGE_CONTEXT: Record<string, string> = {
   "/portal/admin/guard/config": "GcsGuard config — system configuration",
   "/portal/admin/guard/monitoring": "GcsGuard monitoring — live system monitoring",
   "/portal/admin/guard/deploy": "GcsGuard deploy — deployment management",
+  "/portal/admin/vault": "Credential Vault — encrypted password and API key storage",
 };
 
 function getPageContext(path: string): string {
@@ -65,6 +66,13 @@ YOUR CAPABILITIES:
 - Rebuild and restart the application (deploy.sh → PM2)
 - You can build entire features: create new pages, API routes, components, modify existing code
 - You can manage the server: nginx config, database, services, firewall, SSL
+
+**Credential Vault:**
+- List and search encrypted vault entries (passwords, API keys, account credentials)
+- Retrieve decrypted credentials when needed (you are already PIN-authenticated)
+- Create new vault entries with automatic AES-256-GCM encryption
+- Update existing vault entries
+- All vault access is logged for audit — always tell the admin what you accessed
 
 **Web Search:**
 - You can search the internet to find documentation, solutions, and current information
@@ -289,7 +297,12 @@ export async function POST(req: NextRequest) {
                     }),
                   };
                 } else {
-                  const result = await executeTool(block.name, block.input as Record<string, unknown>);
+                  const toolInput = block.input as Record<string, unknown>;
+                  // Inject userId for vault audit logging
+                  if (block.name.includes("vault")) {
+                    toolInput._userId = session.user.id;
+                  }
+                  const result = await executeTool(block.name, toolInput);
                   return { block, result };
                 }
               })

@@ -5,6 +5,7 @@
  */
 
 import { db } from "@/lib/db";
+import { encryptIfPresent, decryptIfPresent } from "@/lib/vault-crypto";
 import type Anthropic from "@anthropic-ai/sdk";
 import {
   sshListFiles, sshReadFile, sshWriteFile, sshEditFile,
@@ -20,6 +21,7 @@ export const DANGEROUS_TOOLS = new Set([
   "write_file", "edit_file", "create_directory", "delete_file",
   "run_command", "install_package", "git_commit_and_push", "server_rebuild",
   "delete_organization",
+  "create_vault_entry", "update_vault_entry",
 ]);
 
 export function isDangerousTool(name: string): boolean {
@@ -389,6 +391,70 @@ export const adminTools: ToolDef[] = [
       required: [],
     },
   },
+  // ─── Credential Vault ──────────────────────────────────────────────────
+  {
+    name: "list_vault_entries",
+    description: "List credential vault entries. Returns labels, categories, and URLs — NO secrets. Use this first to find entries before revealing credentials.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        search: { type: "string", description: "Search by label or description" },
+        category: { type: "string", enum: ["CLOUD", "HOSTING", "EMAIL", "DOMAIN", "DATABASE", "API", "SOCIAL", "PAYMENT", "VPN", "OTHER"] },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_vault_entry",
+    description: "Get a vault entry WITH decrypted secrets (username, password, apiKey, notes). Use when the admin needs a specific credential. Always tell the admin which credential you retrieved.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        id: { type: "string", description: "Vault entry ID" },
+        fields: { type: "array", items: { type: "string", enum: ["username", "password", "apiKey", "notes"] }, description: "Which secret fields to decrypt (default: all)" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "create_vault_entry",
+    description: "Create a new credential vault entry. Encrypts sensitive fields automatically. DANGEROUS: requires admin confirmation.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        label: { type: "string", description: "Display name (e.g. AWS Console, GitHub)" },
+        category: { type: "string", enum: ["CLOUD", "HOSTING", "EMAIL", "DOMAIN", "DATABASE", "API", "SOCIAL", "PAYMENT", "VPN", "OTHER"] },
+        url: { type: "string", description: "Login URL or service URL" },
+        description: { type: "string", description: "What this credential is for" },
+        username: { type: "string" }, password: { type: "string" },
+        apiKey: { type: "string" }, notes: { type: "string" },
+      },
+      required: ["label", "category"],
+    },
+  },
+  {
+    name: "update_vault_entry",
+    description: "Update an existing vault entry. Can update both plaintext and encrypted fields. DANGEROUS: requires admin confirmation.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        id: { type: "string" }, label: { type: "string" }, category: { type: "string" },
+        url: { type: "string" }, description: { type: "string" },
+        username: { type: "string" }, password: { type: "string" },
+        apiKey: { type: "string" }, notes: { type: "string" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "search_vault",
+    description: "Search vault entries by label, category, or description. Returns matching entries without secrets.",
+    input_schema: {
+      type: "object" as const,
+      properties: { query: { type: "string", description: "Search term" } },
+      required: ["query"],
+    },
+  },
   // ─── Sub-Agent Delegation ───────────────────────────────────────────────
   {
     name: "delegate_task",
@@ -452,6 +518,12 @@ export async function executeTool(name: string, input: ToolInput): Promise<strin
       case "list_guard_alerts": return JSON.stringify(await listGuardAlerts(input));
       case "update_alert_status": return JSON.stringify(await updateAlertStatus(input));
       case "search_everything": return JSON.stringify(await searchEverything(input));
+      // Vault
+      case "list_vault_entries": return JSON.stringify(await listVaultEntries(input));
+      case "get_vault_entry": return JSON.stringify(await getVaultEntry(input));
+      case "create_vault_entry": return JSON.stringify(await createVaultEntry(input));
+      case "update_vault_entry": return JSON.stringify(await updateVaultEntry(input));
+      case "search_vault": return JSON.stringify(await searchVault(input));
       // SSH / Server tools
       case "list_files": return await sshListFiles(input);
       case "read_file": return await sshReadFile(input);
@@ -710,4 +782,120 @@ async function searchEverything(input: ToolInput) {
     db.ticket.findMany({ where: { subject: { contains: q } }, take: 5, select: { id: true, ticketNumber: true, subject: true, status: true } }),
   ]);
   return { organizations: orgs, users, projects, tickets };
+}
+
+// ─── Vault Tool Implementations ──────────────────────────────────────────────
+
+async function listVaultEntries(input: ToolInput) {
+  const where: ToolInput = { isActive: true, deletedAt: null };
+  if (input.category) where.category = input.category;
+  if (input.search) {
+    where.OR = [{ label: { contains: input.search } }, { description: { contains: input.search } }];
+  }
+  const entries = await db.vaultEntry.findMany({
+    where, orderBy: { updatedAt: "desc" }, take: 50,
+    select: {
+      id: true, label: true, category: true, url: true, description: true,
+      encUsername: true, encPassword: true, encApiKey: true, encNotes: true, updatedAt: true,
+    },
+  });
+  return {
+    count: entries.length,
+    entries: entries.map((e) => ({
+      id: e.id, label: e.label, category: e.category, url: e.url, description: e.description,
+      hasUsername: !!e.encUsername, hasPassword: !!e.encPassword, hasApiKey: !!e.encApiKey, hasNotes: !!e.encNotes,
+      updatedAt: e.updatedAt,
+    })),
+  };
+}
+
+async function getVaultEntry(input: ToolInput) {
+  const entry = await db.vaultEntry.findUnique({ where: { id: input.id } });
+  if (!entry || !entry.isActive) return { error: "Vault entry not found" };
+
+  const fields = (input.fields as string[] | undefined) || ["username", "password", "apiKey", "notes"];
+  const result: Record<string, unknown> = {
+    id: entry.id, label: entry.label, category: entry.category, url: entry.url, description: entry.description,
+  };
+
+  if (fields.includes("username")) result.username = decryptIfPresent(entry.encUsername);
+  if (fields.includes("password")) result.password = decryptIfPresent(entry.encPassword);
+  if (fields.includes("apiKey")) result.apiKey = decryptIfPresent(entry.encApiKey);
+  if (fields.includes("notes")) result.notes = decryptIfPresent(entry.encNotes);
+
+  // Audit log
+  if (input._userId) {
+    await db.vaultAccessLog.create({
+      data: { action: "AI_REVEAL", entryId: entry.id, userId: input._userId, metadata: JSON.stringify({ fields }) },
+    });
+  }
+
+  return result;
+}
+
+async function createVaultEntry(input: ToolInput) {
+  if (!input.label) return { error: "label is required" };
+  const entry = await db.vaultEntry.create({
+    data: {
+      label: input.label,
+      category: input.category || "OTHER",
+      url: input.url || null,
+      description: input.description || null,
+      encUsername: encryptIfPresent(input.username),
+      encPassword: encryptIfPresent(input.password),
+      encApiKey: encryptIfPresent(input.apiKey),
+      encNotes: encryptIfPresent(input.notes),
+      createdById: input._userId || "system",
+    },
+  });
+
+  if (input._userId) {
+    await db.vaultAccessLog.create({
+      data: { action: "CREATE", entryId: entry.id, userId: input._userId, metadata: JSON.stringify({ label: entry.label }) },
+    });
+  }
+
+  return { success: true, id: entry.id, label: entry.label };
+}
+
+async function updateVaultEntry(input: ToolInput) {
+  if (!input.id) return { error: "id is required" };
+  const data: Record<string, unknown> = {};
+  if (input.label !== undefined) data.label = input.label;
+  if (input.category !== undefined) data.category = input.category;
+  if (input.url !== undefined) data.url = input.url || null;
+  if (input.description !== undefined) data.description = input.description || null;
+  if (input.username !== undefined) data.encUsername = encryptIfPresent(input.username);
+  if (input.password !== undefined) data.encPassword = encryptIfPresent(input.password);
+  if (input.apiKey !== undefined) data.encApiKey = encryptIfPresent(input.apiKey);
+  if (input.notes !== undefined) data.encNotes = encryptIfPresent(input.notes);
+
+  const entry = await db.vaultEntry.update({ where: { id: input.id }, data });
+
+  if (input._userId) {
+    await db.vaultAccessLog.create({
+      data: { action: "UPDATE", entryId: input.id, userId: input._userId, metadata: JSON.stringify({ updatedFields: Object.keys(data) }) },
+    });
+  }
+
+  return { success: true, id: entry.id, label: entry.label };
+}
+
+async function searchVault(input: ToolInput) {
+  const q = input.query;
+  const entries = await db.vaultEntry.findMany({
+    where: {
+      isActive: true, deletedAt: null,
+      OR: [{ label: { contains: q } }, { description: { contains: q } }, { url: { contains: q } }, { category: { contains: q } }],
+    },
+    take: 20,
+    select: { id: true, label: true, category: true, url: true, description: true, encUsername: true, encPassword: true, encApiKey: true },
+  });
+  return {
+    count: entries.length,
+    entries: entries.map((e) => ({
+      id: e.id, label: e.label, category: e.category, url: e.url, description: e.description,
+      hasUsername: !!e.encUsername, hasPassword: !!e.encPassword, hasApiKey: !!e.encApiKey,
+    })),
+  };
 }
