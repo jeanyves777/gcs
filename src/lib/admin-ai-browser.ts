@@ -136,7 +136,7 @@ export async function browserOpen(input: ToolInput): Promise<string> {
       url: input.url,
       viewport: input.viewport,
     },
-    45000 // 45s — includes Chromium launch time
+    90000 // 90s — includes Chromium cold start time
   );
 }
 

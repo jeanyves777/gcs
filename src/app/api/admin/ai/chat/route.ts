@@ -7,7 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { adminTools, executeTool, isDangerousTool } from "@/lib/admin-ai-tools";
 import { executeSubAgent } from "@/lib/admin-ai-sub-agents";
 
-export const maxDuration = 600; // 10 min — AI needs time for multi-step operations + browser automation
+export const maxDuration = 3600; // 1 hour — complex browser automation + multi-step tasks
 
 const client = new Anthropic();
 
@@ -79,11 +79,20 @@ YOUR CAPABILITIES:
 - Navigate to websites, fill forms, click buttons, take screenshots, extract page data
 - Actions execute at realistic human speed (typing, clicking, pauses) — this prevents bot detection
 - Use vault credentials for automated logins: get_vault_entry first → then browser_action with type actions
-- Workflow: browser_open → browser_action (chain multiple steps) → browser_close
-- Always take a screenshot after important steps so the admin can see what happened
-- Sessions auto-close after 10 min idle, max 3 concurrent sessions
 - ALWAYS close sessions with browser_close when you're done
-- Use stable selectors (id, name, data-testid) over fragile CSS paths when possible
+- Max 3 concurrent sessions — if you hit the limit, close existing sessions first
+
+**CRITICAL — Browser Workflow (ALWAYS follow this order):**
+1. **Clean up first:** Call browser_sessions to check for existing sessions. Close ALL open sessions with browser_close before starting new work. This prevents confusion and session limit errors.
+2. **Open browser:** browser_open with the target URL
+3. **Analyze the page DEEPLY before acting:** After opening, ALWAYS use browser_action with an "extract" action first to extract ALL form fields, their IDs, names, types, labels, placeholders, checkboxes, dropdowns, and submit buttons. Use a comprehensive selector like "input, select, textarea, button[type=submit], [type=checkbox], [role=button]". Study the extracted data carefully to understand the form structure BEFORE typing anything.
+4. **Fill methodically:** Based on the extracted form analysis, fill each field using its exact ID or name attribute. Verify values with extract after filling.
+5. **Screenshot before submit:** Always take a screenshot to verify all fields are correct before submitting.
+6. **Submit and verify:** Click the submit button, wait for navigation, take a screenshot to confirm success or identify errors.
+7. **Close session:** browser_close when done.
+
+- Use stable selectors (id, name, data-testid) over fragile CSS paths — get these from the extract step
+- If a field fails to fill, try using "evaluate" action with JavaScript (document.querySelector('#id').value = '...')
 
 **Web Search:**
 - You can search the internet to find documentation, solutions, and current information
@@ -222,7 +231,7 @@ export async function POST(req: NextRequest) {
         }
 
         let toolCallCount = 0;
-        const MAX_TOOL_CALLS = 20;
+        const MAX_TOOL_CALLS = 50;
 
         // Build tools array with web_search
         const tools: (Anthropic.Tool | Anthropic.WebSearchTool20250305)[] = [
