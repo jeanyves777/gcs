@@ -7,7 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { adminTools, executeTool, isDangerousTool } from "@/lib/admin-ai-tools";
 import { executeSubAgent } from "@/lib/admin-ai-sub-agents";
 
-export const maxDuration = 300; // 5 min for server operations
+export const maxDuration = 600; // 10 min — AI needs time for multi-step operations + browser automation
 
 const client = new Anthropic();
 
@@ -152,6 +152,16 @@ export async function POST(req: NextRequest) {
       function send(event: string, data: unknown) {
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
       }
+
+      // ── SSE heartbeat — keeps connection alive during long operations ──
+      const heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(`: heartbeat\n\n`));
+        } catch {
+          // Stream already closed, stop heartbeat
+          clearInterval(heartbeat);
+        }
+      }, 15000); // every 15 seconds
 
       try {
         // ── Conversation persistence ──────────────────────────────
@@ -391,8 +401,19 @@ export async function POST(req: NextRequest) {
 
         send("done", { conversationId: convId });
       } catch (err) {
-        send("error", { message: String(err) });
+        const errMsg = String(err);
+        // Don't send generic "network error" — give the admin actionable info
+        if (errMsg.includes("429") || errMsg.includes("rate_limit")) {
+          send("error", { message: "Rate limited by Claude API. Please wait a moment and try again." });
+        } else if (errMsg.includes("timeout") || errMsg.includes("ETIMEDOUT")) {
+          send("error", { message: "Operation timed out. The server may be busy — try again." });
+        } else if (errMsg.includes("SSH") || errMsg.includes("ssh")) {
+          send("error", { message: `SSH error: ${errMsg}. Check server connectivity.` });
+        } else {
+          send("error", { message: errMsg });
+        }
       } finally {
+        clearInterval(heartbeat);
         controller.close();
       }
     },

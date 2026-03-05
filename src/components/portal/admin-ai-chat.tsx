@@ -363,10 +363,19 @@ export function AdminAIChat() {
         }
       }
     } catch (err) {
+      const errMsg = String(err);
+      let displayError: string;
+      if (errMsg.includes("network") || errMsg.includes("Failed to fetch") || errMsg.includes("NetworkError")) {
+        displayError = "Connection lost — the server may be rebuilding. Wait a few seconds and try again.";
+      } else if (errMsg.includes("aborted") || errMsg.includes("AbortError")) {
+        displayError = "Request was cancelled.";
+      } else {
+        displayError = `Error: ${errMsg}`;
+      }
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantMsg.id
-            ? { ...m, content: m.content || `Error: ${err}` }
+            ? { ...m, content: m.content ? m.content + `\n\n⚠️ ${displayError}` : displayError }
             : m
         )
       );

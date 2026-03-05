@@ -283,19 +283,43 @@ export async function sshGitCommitAndPush(input: ToolInput): Promise<string> {
 
 export async function sshServerRebuild(): Promise<string> {
   return withSSH(async (conn) => {
-    // Run deploy.sh with timeout (5 min for build)
-    const result = await execCommand(
-      conn,
-      `cd ${APP_DIR} && bash deploy.sh 2>&1`,
-      300000
-    );
-    // Check PM2 status after
-    const pm2 = await execCommand(conn, "pm2 status 2>&1");
+    // Run build steps WITHOUT pm2 restart (to avoid killing our own process).
+    // Steps: git pull → patch schema → npm ci → prisma generate → prisma db push → next build
+    // Then schedule a delayed PM2 restart (3s later) so the AI has time to send the response.
+    const buildCmd = `
+      source /root/.nvm/nvm.sh
+      cd ${APP_DIR}
+      echo "==> Pulling latest..."
+      git stash 2>/dev/null
+      git pull origin main 2>&1
+      sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma
+      echo "==> Installing deps..."
+      npm ci --legacy-peer-deps 2>&1
+      echo "==> Prisma generate..."
+      npx prisma generate 2>&1
+      echo "==> DB push..."
+      npx prisma db push 2>&1
+      echo "==> Building..."
+      npm run build 2>&1
+      BUILD_EXIT=$?
+      if [ $BUILD_EXIT -eq 0 ]; then
+        echo "==> Build succeeded! Scheduling PM2 restart in 3s..."
+        nohup bash -c 'sleep 3 && source /root/.nvm/nvm.sh && pm2 restart gcs --update-env' > /dev/null 2>&1 &
+        echo "✅ Build complete — PM2 will restart in ~3 seconds"
+      else
+        echo "❌ Build FAILED — PM2 NOT restarted"
+      fi
+      exit $BUILD_EXIT
+    `.trim();
+
+    const result = await execCommand(conn, buildCmd, 300000);
     return JSON.stringify({
       output: result.stdout.substring(0, 8000),
       exitCode: result.code,
-      pm2Status: pm2.stdout.trim(),
       success: result.code === 0,
+      note: result.code === 0
+        ? "Build succeeded. PM2 will restart in ~3 seconds. The site may be briefly unavailable."
+        : "Build failed. PM2 was NOT restarted — the current version is still running.",
     });
   });
 }
