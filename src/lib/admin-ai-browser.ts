@@ -130,6 +130,24 @@ async function runBrowserAgent(
 type ToolInput = Record<string, any>;
 
 export async function browserOpen(input: ToolInput): Promise<string> {
+  // Auto-cleanup: close ALL existing sessions before opening a new one.
+  // This prevents orphaned sessions from blocking new launches.
+  try {
+    const listResult = await runBrowserAgent({ command: "list" }, 15000);
+    const parsed = JSON.parse(listResult);
+    if (parsed.sessions && Array.isArray(parsed.sessions)) {
+      for (const session of parsed.sessions) {
+        try {
+          await runBrowserAgent({ command: "close", sessionId: session.sessionId }, 15000);
+        } catch {
+          // Best-effort cleanup — continue even if one close fails
+        }
+      }
+    }
+  } catch {
+    // If listing fails, proceed with open anyway — the agent will handle it
+  }
+
   return runBrowserAgent(
     {
       command: "open",
