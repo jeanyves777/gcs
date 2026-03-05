@@ -28,11 +28,18 @@ import { cn } from "@/lib/utils";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
+interface ContentBlock {
+  type: "text" | "tool_group";
+  text?: string;
+  toolIds?: string[];
+}
+
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   toolCalls?: ToolExecution[];
+  contentBlocks?: ContentBlock[];
 }
 
 interface SubAgentTool {
@@ -293,6 +300,7 @@ export function AdminAIChat() {
       role: "assistant",
       content: "",
       toolCalls: [],
+      contentBlocks: [],
     };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
@@ -381,8 +389,17 @@ export function AdminAIChat() {
             if (m.id !== assistantId) return m;
 
             switch (event) {
-              case "text":
-                return { ...m, content: m.content + (data.content as string) };
+              case "text": {
+                const newText = data.content as string;
+                const blocks = [...(m.contentBlocks || [])];
+                const lastBlock = blocks[blocks.length - 1];
+                if (lastBlock && lastBlock.type === "text") {
+                  blocks[blocks.length - 1] = { ...lastBlock, text: (lastBlock.text || "") + newText };
+                } else {
+                  blocks.push({ type: "text", text: newText });
+                }
+                return { ...m, content: m.content + newText, contentBlocks: blocks };
+              }
 
               case "tool_start": {
                 const newTool: ToolExecution = {
@@ -392,7 +409,14 @@ export function AdminAIChat() {
                   dangerous: data.dangerous as boolean | undefined,
                   status: "running",
                 };
-                return { ...m, toolCalls: [...(m.toolCalls || []), newTool] };
+                const blocks = [...(m.contentBlocks || [])];
+                const lastBlock = blocks[blocks.length - 1];
+                if (lastBlock && lastBlock.type === "tool_group") {
+                  blocks[blocks.length - 1] = { ...lastBlock, toolIds: [...(lastBlock.toolIds || []), newTool.id] };
+                } else {
+                  blocks.push({ type: "tool_group", toolIds: [newTool.id] });
+                }
+                return { ...m, toolCalls: [...(m.toolCalls || []), newTool], contentBlocks: blocks };
               }
 
               case "tool_result":
@@ -468,11 +492,29 @@ export function AdminAIChat() {
                 };
               }
 
-              case "web_search":
-                return { ...m, content: m.content + "\n*Searching the web...*\n" };
+              case "web_search": {
+                const wsText = "\n*Searching the web...*\n";
+                const wsBlocks = [...(m.contentBlocks || [])];
+                const wsLast = wsBlocks[wsBlocks.length - 1];
+                if (wsLast && wsLast.type === "text") {
+                  wsBlocks[wsBlocks.length - 1] = { ...wsLast, text: (wsLast.text || "") + wsText };
+                } else {
+                  wsBlocks.push({ type: "text", text: wsText });
+                }
+                return { ...m, content: m.content + wsText, contentBlocks: wsBlocks };
+              }
 
-              case "error":
-                return { ...m, content: m.content + `\n\n**Error:** ${data.message}` };
+              case "error": {
+                const errText = `\n\n**Error:** ${data.message}`;
+                const errBlocks = [...(m.contentBlocks || [])];
+                const errLast = errBlocks[errBlocks.length - 1];
+                if (errLast && errLast.type === "text") {
+                  errBlocks[errBlocks.length - 1] = { ...errLast, text: (errLast.text || "") + errText };
+                } else {
+                  errBlocks.push({ type: "text", text: errText });
+                }
+                return { ...m, content: m.content + errText, contentBlocks: errBlocks };
+              }
 
               default:
                 return m;
@@ -887,32 +929,57 @@ function MessageBubble({ message, onQuickReply }: { message: ChatMessage; onQuic
   const isAskingConfirmation = !isUser && message.content &&
     /\b(proceed|confirm|go ahead|shall I|should I|want me to)\b.*\?/i.test(message.content);
 
+  const hasContentBlocks = !isUser && message.contentBlocks && message.contentBlocks.length > 0;
+
+  const renderTextBubble = (text: string, key?: string | number) => (
+    <div
+      key={key}
+      className={cn(
+        "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
+        isUser ? "rounded-br-md" : "rounded-bl-md"
+      )}
+      style={
+        isUser
+          ? { background: "var(--brand-primary)", color: "white" }
+          : { background: "var(--bg-secondary)", color: "var(--text-primary)" }
+      }
+    >
+      <FormattedText text={text} />
+    </div>
+  );
+
   return (
     <div className={cn("flex flex-col gap-2", isUser ? "items-end" : "items-start")}>
-      {/* Tool executions */}
-      {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
-        <div className="w-full space-y-2">
-          {message.toolCalls.map((tc) => (
-            <ToolCard key={tc.id} tool={tc} />
-          ))}
-        </div>
-      )}
-
-      {/* Text content */}
-      {message.content && (
-        <div
-          className={cn(
-            "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
-            isUser ? "rounded-br-md" : "rounded-bl-md"
-          )}
-          style={
-            isUser
-              ? { background: "var(--brand-primary)", color: "white" }
-              : { background: "var(--bg-secondary)", color: "var(--text-primary)" }
+      {hasContentBlocks ? (
+        // Interleaved rendering: text → tools → text in order
+        message.contentBlocks!.map((block, i) => {
+          if (block.type === "text" && block.text) {
+            return renderTextBubble(block.text, `block-${i}`);
           }
-        >
-          <FormattedText text={message.content} />
-        </div>
+          if (block.type === "tool_group" && block.toolIds) {
+            return (
+              <div key={`block-${i}`} className="w-full space-y-2">
+                {block.toolIds.map((id) => {
+                  const tc = message.toolCalls?.find((t) => t.id === id);
+                  return tc ? <ToolCard key={tc.id} tool={tc} /> : null;
+                })}
+              </div>
+            );
+          }
+          return null;
+        })
+      ) : (
+        // Fallback for loaded conversations / user messages
+        <>
+          {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
+            <div className="w-full space-y-2">
+              {message.toolCalls.map((tc) => (
+                <ToolCard key={tc.id} tool={tc} />
+              ))}
+            </div>
+          )}
+          {message.content && renderTextBubble(message.content)}
+        </>
       )}
 
       {/* Quick confirmation buttons */}
