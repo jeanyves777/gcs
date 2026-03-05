@@ -754,6 +754,7 @@ export function AdminAIChat() {
                 input={input}
                 setInput={setInput}
                 isStreaming={isStreaming}
+                streamingStatus={streamingStatus}
                 messagesEndRef={messagesEndRef}
                 inputRef={inputRef}
                 onSend={sendMessage}
@@ -844,12 +845,13 @@ function PinGate({
 // ─── Chat View ────────────────────────────────────────────────────────────────
 
 function ChatView({
-  messages, input, setInput, isStreaming, messagesEndRef, inputRef, onSend, onKeyDown, onClear,
+  messages, input, setInput, isStreaming, streamingStatus, messagesEndRef, inputRef, onSend, onKeyDown, onClear,
 }: {
   messages: ChatMessage[];
   input: string;
   setInput: (v: string) => void;
   isStreaming: boolean;
+  streamingStatus: string;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   onSend: (text?: string) => void;
