@@ -111,21 +111,22 @@ YOUR CAPABILITIES:
 BEHAVIOR RULES:
 1. Be concise and direct. Show results clearly.
 2. When asked about the current page, use the context above to give relevant info.
-3. **CRITICAL: For ALL dangerous operations (write_file, edit_file, create_directory, delete_file, run_command, install_package, git_commit_and_push, server_rebuild, delete_organization), you MUST describe EXACTLY what you plan to do and ask the admin to confirm BEFORE executing.** Show the file path, content preview, or command. Wait for their explicit "yes" or approval.
-4. When listing data, format it clearly with key details.
-5. If a request is ambiguous, ask for clarification.
-6. Always execute the appropriate tool — don't guess at data.
-7. When multiple tools are needed, call them in parallel (multiple tool_use blocks in one response) or delegate to sub-agents.
-8. Use markdown formatting for readability (bold, lists, code blocks).
-9. **ERROR RECOVERY: When a tool returns an error, DO NOT stop or give up.** Read the error message and "hint" field carefully, diagnose what went wrong, fix the issue (adjust parameters, query for correct IDs, etc.), and retry. For example: if create fails due to a unique constraint, check existing records first; if an ID is not found, list records to find the right one. Always attempt at least one recovery before reporting failure to the admin.
-10. **MANDATORY BUILD PERMISSION:** You must NEVER run server_rebuild without asking the admin first. Before ANY build or rebuild, you MUST:
+3. **CONFIRM BEFORE ACTING:** Before executing ANY task (not just dangerous ones), first explain what you plan to do, the specific steps, and what will be affected. Ask the admin to confirm before proceeding. For example: "I'll update the footer text in src/components/footer.tsx — shall I proceed?" Only skip confirmation for simple read-only queries (listing data, checking status, searching).
+4. **CRITICAL: For ALL dangerous operations (write_file, edit_file, create_directory, delete_file, run_command, install_package, git_commit_and_push, server_rebuild, delete_organization), you MUST describe EXACTLY what you plan to do and ask the admin to confirm BEFORE executing.** Show the file path, content preview, or command. Wait for their explicit "yes" or approval.
+5. When listing data, format it clearly with key details.
+6. If a request is ambiguous, ask for clarification.
+7. Always execute the appropriate tool — don't guess at data.
+8. When multiple tools are needed, call them in parallel (multiple tool_use blocks in one response) or delegate to sub-agents.
+9. Use markdown formatting for readability (bold, lists, code blocks).
+10. **ERROR RECOVERY: When a tool returns an error, DO NOT stop or give up.** Read the error message and "hint" field carefully, diagnose what went wrong, fix the issue (adjust parameters, query for correct IDs, etc.), and retry. For example: if create fails due to a unique constraint, check existing records first; if an ID is not found, list records to find the right one. Always attempt at least one recovery before reporting failure to the admin.
+11. **MANDATORY BUILD PERMISSION:** You must NEVER run server_rebuild without asking the admin first. Before ANY build or rebuild, you MUST:
     a) Tell the admin what changes you made and why a rebuild is needed.
     b) Ask: "Would you like me to run the build, or would you prefer to run it manually?"
     c) Only call server_rebuild if the admin explicitly says YES to you running it.
     d) If the admin wants to run it manually, provide the command: \`ssh gcs "bash /var/www/gcs/deploy.sh"\`
-11. After server_rebuild, check PM2 status to verify the build succeeded.
-12. server_rebuild causes ~30-60s downtime. Warn the admin.
-13. You can add new capabilities to yourself by editing files on the server and rebuilding.
+12. After server_rebuild, check PM2 status to verify the build succeeded.
+13. server_rebuild causes ~30-60s downtime. Warn the admin.
+14. You can add new capabilities to yourself by editing files on the server and rebuilding.
 
 IMPORTANT: You have real admin powers. Every tool call modifies the actual database or server. Be careful with destructive operations.`;
 }
@@ -229,17 +230,42 @@ export async function POST(req: NextRequest) {
           { type: "web_search_20250305" as const, name: "web_search", max_uses: 5 },
         ];
 
-        // Retry helper for rate limits
-        async function callWithRetry(params: Anthropic.MessageCreateParamsNonStreaming, retries = 3): Promise<Anthropic.Message> {
-          for (let attempt = 0; attempt < retries; attempt++) {
+        // Agentic loop
+        let currentMessages: Anthropic.MessageParam[] = [...anthropicMessages];
+        let fullAssistantText = "";
+        const allToolCalls: { tool: string; input: unknown; result: unknown }[] = [];
+
+        while (true) {
+          // ── Stream response — text appears instantly as Claude generates it ──
+          let hasToolUse = false;
+          const toolResults: Anthropic.ToolResultBlockParam[] = [];
+          const toolUseBlocks: Anthropic.ToolUseBlock[] = [];
+          let response: Anthropic.Message | undefined;
+
+          for (let attempt = 0; attempt < 3; attempt++) {
             try {
-              return await client.messages.create(params);
+              const messageStream = client.messages.stream({
+                model: "claude-sonnet-4-6",
+                max_tokens: 8192,
+                system: buildSystemPrompt(currentPath || "/portal/admin"),
+                messages: currentMessages,
+                tools: tools as Anthropic.Tool[],
+              });
+
+              // Stream text to frontend immediately — no waiting for full response
+              messageStream.on("text", (text) => {
+                fullAssistantText += text;
+                send("text", { content: text });
+              });
+
+              response = await messageStream.finalMessage();
+              break;
             } catch (err: unknown) {
               const isRateLimit = err instanceof Error && (
                 err.message.includes("429") || err.message.includes("rate_limit")
               );
-              if (isRateLimit && attempt < retries - 1) {
-                const delay = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s
+              if (isRateLimit && attempt < 2) {
+                const delay = Math.pow(2, attempt + 1) * 1000;
                 send("text", { content: `\n\n*Rate limited — retrying in ${delay / 1000}s...*\n\n` });
                 await new Promise((r) => setTimeout(r, delay));
                 continue;
@@ -247,36 +273,14 @@ export async function POST(req: NextRequest) {
               throw err;
             }
           }
-          throw new Error("Max retries exceeded");
-        }
 
-        // Agentic loop
-        let currentMessages: Anthropic.MessageParam[] = [...anthropicMessages];
-        let fullAssistantText = "";
-        const allToolCalls: { tool: string; input: unknown; result: unknown }[] = [];
+          if (!response) throw new Error("Max retries exceeded");
 
-        while (true) {
-          const response = await callWithRetry({
-            model: "claude-sonnet-4-6",
-            max_tokens: 8192,
-            system: buildSystemPrompt(currentPath || "/portal/admin"),
-            messages: currentMessages,
-            tools,
-          });
+          // ── Process non-text blocks (tool calls, web search) ──
+          const assistantContent = response.content;
 
-          // ── Pass 1: Collect blocks, emit text/search immediately, gather tool_use blocks ──
-          let hasToolUse = false;
-          const toolResults: Anthropic.ToolResultBlockParam[] = [];
-          const assistantContent: Anthropic.ContentBlock[] = [];
-          const toolUseBlocks: Anthropic.ToolUseBlock[] = [];
-
-          for (const block of response.content) {
-            assistantContent.push(block);
-
-            if (block.type === "text") {
-              fullAssistantText += block.text;
-              send("text", { content: block.text });
-            } else if (block.type === "web_search_tool_result") {
+          for (const block of assistantContent) {
+            if (block.type === "web_search_tool_result") {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const searchBlock = block as any;
               send("web_search", {
@@ -288,7 +292,6 @@ export async function POST(req: NextRequest) {
               toolCallCount++;
               toolUseBlocks.push(block);
 
-              // Emit tool_start for ALL tools upfront (UI shows them all spinning)
               send("tool_start", {
                 id: block.id,
                 tool: block.name,
@@ -296,6 +299,7 @@ export async function POST(req: NextRequest) {
                 dangerous: isDangerousTool(block.name),
               });
             }
+            // text blocks already streamed live via messageStream.on("text")
           }
 
           // ── Pass 2: Execute all tool_use blocks in parallel ──
