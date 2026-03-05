@@ -184,9 +184,14 @@ export async function POST(req: NextRequest) {
         }
       }, 15000); // every 15 seconds
 
+      // Declare outside try so catch block can save partial results on error
+      let convId = conversationId;
+      let fullAssistantText = "";
+      const allToolCalls: { tool: string; input: unknown; result: unknown }[] = [];
+      const allContentBlocks: { type: string; text?: string; toolIds?: string[] }[] = [];
+
       try {
         // ── Conversation persistence ──────────────────────────────
-        let convId = conversationId;
 
         // Create conversation if new
         if (!convId) {
@@ -247,9 +252,6 @@ export async function POST(req: NextRequest) {
 
         // Agentic loop
         let currentMessages: Anthropic.MessageParam[] = [...anthropicMessages];
-        let fullAssistantText = "";
-        const allToolCalls: { tool: string; input: unknown; result: unknown }[] = [];
-        const allContentBlocks: { type: string; text?: string; toolIds?: string[] }[] = [];
 
         while (true) {
           // ── Stream response — text appears instantly as Claude generates it ──
@@ -440,6 +442,27 @@ export async function POST(req: NextRequest) {
         send("done", { conversationId: convId });
       } catch (err) {
         const errMsg = String(err);
+
+        // ── CRITICAL: Save partial assistant response even on error ──
+        // Without this, the entire AI response (text + tool calls) is lost
+        // when errors occur (timeouts, SSH failures, API errors, etc.)
+        try {
+          if (convId && (fullAssistantText || allToolCalls.length > 0)) {
+            const errorNote = `\n\n⚠️ _Error occurred: ${errMsg.substring(0, 200)}_`;
+            await db.aiMessage.create({
+              data: {
+                conversationId: convId,
+                role: "assistant",
+                content: (fullAssistantText || "(tool execution only)") + errorNote,
+                toolCalls: allToolCalls.length > 0 ? JSON.stringify(allToolCalls) : null,
+                contentBlocks: allContentBlocks.length > 0 ? JSON.stringify(allContentBlocks) : null,
+              },
+            });
+          }
+        } catch {
+          // DB save failed too — nothing we can do
+        }
+
         // Don't send generic "network error" — give the admin actionable info
         if (errMsg.includes("429") || errMsg.includes("rate_limit")) {
           send("error", { message: "Rate limited by Claude API. Please wait a moment and try again." });
