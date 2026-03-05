@@ -388,7 +388,7 @@ export const adminTools: ToolDef[] = [
   },
   {
     name: "server_rebuild",
-    description: "Run deploy.sh on the GCS production server to rebuild and restart the application. This will cause ~30-60s of downtime. DANGEROUS: requires admin confirmation.",
+    description: "Run deploy.sh on the GCS production server to rebuild and restart the application. This will cause ~30-60s of downtime. IMPORTANT: NEVER call this tool directly. You MUST first ask the admin for explicit permission AND offer the option to run the build manually instead. Only call this tool after the admin confirms they want YOU to run it.",
     input_schema: {
       type: "object" as const,
       properties: {},
