@@ -5,6 +5,7 @@ import { verifyToken } from "../pin/route";
 import { db } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
 import { adminTools, executeTool, isDangerousTool } from "@/lib/admin-ai-tools";
+import { executeSubAgent } from "@/lib/admin-ai-sub-agents";
 
 export const maxDuration = 300; // 5 min for server operations
 
@@ -78,6 +79,16 @@ YOUR CAPABILITIES:
 - Database: SQLite locally, PostgreSQL on server
 - GitHub: https://github.com/jeanyves777/gcs (branch: main)
 
+**Task Delegation (Sub-Agents):**
+- Use delegate_task to spawn specialized sub-agents for parallel work
+- "research": Web search agent (Haiku) — fast web lookups, documentation
+- "database": DB query agent (Haiku) — read-only data queries and analysis
+- "server": Server inspection agent (Haiku) — file listing, reading, code search
+- "code": Code analysis agent (Sonnet) — deep code reading and pattern analysis
+- Sub-agents have NO dangerous tool access — only you can execute writes/deletes/commands
+- You can call delegate_task multiple times in one response — they all run concurrently
+- Review sub-agent results before presenting to the admin
+
 BEHAVIOR RULES:
 1. Be concise and direct. Show results clearly.
 2. When asked about the current page, use the context above to give relevant info.
@@ -85,7 +96,7 @@ BEHAVIOR RULES:
 4. When listing data, format it clearly with key details.
 5. If a request is ambiguous, ask for clarification.
 6. Always execute the appropriate tool — don't guess at data.
-7. When multiple tools are needed, call them sequentially and summarize.
+7. When multiple tools are needed, call them in parallel (multiple tool_use blocks in one response) or delegate to sub-agents.
 8. Use markdown formatting for readability (bold, lists, code blocks).
 9. If an error occurs, explain it clearly and suggest fixes.
 10. After server_rebuild, check PM2 status to verify the build succeeded.
@@ -219,10 +230,11 @@ export async function POST(req: NextRequest) {
             tools,
           });
 
-          // Process response blocks
+          // ── Pass 1: Collect blocks, emit text/search immediately, gather tool_use blocks ──
           let hasToolUse = false;
           const toolResults: Anthropic.ToolResultBlockParam[] = [];
           const assistantContent: Anthropic.ContentBlock[] = [];
+          const toolUseBlocks: Anthropic.ToolUseBlock[] = [];
 
           for (const block of response.content) {
             assistantContent.push(block);
@@ -231,7 +243,6 @@ export async function POST(req: NextRequest) {
               fullAssistantText += block.text;
               send("text", { content: block.text });
             } else if (block.type === "web_search_tool_result") {
-              // Handle web search results from Anthropic's built-in search
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const searchBlock = block as any;
               send("web_search", {
@@ -241,37 +252,91 @@ export async function POST(req: NextRequest) {
             } else if (block.type === "tool_use") {
               hasToolUse = true;
               toolCallCount++;
+              toolUseBlocks.push(block);
 
+              // Emit tool_start for ALL tools upfront (UI shows them all spinning)
               send("tool_start", {
                 id: block.id,
                 tool: block.name,
                 input: block.input,
                 dangerous: isDangerousTool(block.name),
               });
+            }
+          }
 
-              // Execute the tool
-              const result = await executeTool(block.name, block.input as Record<string, unknown>);
+          // ── Pass 2: Execute all tool_use blocks in parallel ──
+          if (toolUseBlocks.length > 0) {
+            const executions = await Promise.allSettled(
+              toolUseBlocks.map(async (block) => {
+                if (block.name === "delegate_task") {
+                  // Sub-agent delegation: stream progress via SSE
+                  const input = block.input as { agent_type: string; task: string; context?: string };
+                  const subResult = await executeSubAgent(
+                    input.agent_type,
+                    input.task,
+                    input.context || "",
+                    (progressEvent) => {
+                      send("sub_agent", { parentToolId: block.id, ...progressEvent });
+                    },
+                  );
+                  return {
+                    block,
+                    result: JSON.stringify({
+                      agent: subResult.agent,
+                      summary: subResult.summary,
+                      toolCallsCount: subResult.toolCalls.length,
+                      error: subResult.error || undefined,
+                    }),
+                  };
+                } else {
+                  const result = await executeTool(block.name, block.input as Record<string, unknown>);
+                  return { block, result };
+                }
+              })
+            );
 
-              const parsedResult = JSON.parse(result);
-              send("tool_result", {
-                id: block.id,
-                tool: block.name,
-                result: parsedResult,
-                success: !result.includes('"error"'),
-              });
+            // Process results in original order
+            for (let i = 0; i < executions.length; i++) {
+              const settlement = executions[i];
+              const block = toolUseBlocks[i];
 
-              allToolCalls.push({ tool: block.name, input: block.input, result: parsedResult });
+              if (settlement.status === "fulfilled") {
+                const { result } = settlement.value;
+                const parsedResult = JSON.parse(result);
 
-              // Collect tool results for next iteration (truncate large results to save tokens)
-              const MAX_RESULT_LEN = 4000;
-              const truncatedResult = result.length > MAX_RESULT_LEN
-                ? result.substring(0, MAX_RESULT_LEN) + "\n...(truncated)"
-                : result;
-              toolResults.push({
-                type: "tool_result" as const,
-                tool_use_id: block.id,
-                content: truncatedResult,
-              });
+                send("tool_result", {
+                  id: block.id,
+                  tool: block.name,
+                  result: parsedResult,
+                  success: !result.includes('"error"'),
+                });
+
+                allToolCalls.push({ tool: block.name, input: block.input, result: parsedResult });
+
+                const MAX_RESULT_LEN = 4000;
+                const truncatedResult = result.length > MAX_RESULT_LEN
+                  ? result.substring(0, MAX_RESULT_LEN) + "\n...(truncated)"
+                  : result;
+                toolResults.push({
+                  type: "tool_result" as const,
+                  tool_use_id: block.id,
+                  content: truncatedResult,
+                });
+              } else {
+                // Handle rejected promise
+                const errorResult = JSON.stringify({ error: String(settlement.reason) });
+                send("tool_result", {
+                  id: block.id,
+                  tool: block.name,
+                  result: { error: String(settlement.reason) },
+                  success: false,
+                });
+                toolResults.push({
+                  type: "tool_result" as const,
+                  tool_use_id: block.id,
+                  content: errorResult,
+                });
+              }
             }
           }
 

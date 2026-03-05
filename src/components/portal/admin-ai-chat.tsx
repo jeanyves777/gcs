@@ -35,6 +35,20 @@ interface ChatMessage {
   toolCalls?: ToolExecution[];
 }
 
+interface SubAgentTool {
+  id: string;
+  tool: string;
+  status: "running" | "done";
+  success?: boolean;
+}
+
+interface SubAgentActivity {
+  name: string;
+  status: "running" | "done" | "error";
+  toolCalls: SubAgentTool[];
+  text: string;
+}
+
 interface ToolExecution {
   id: string;
   tool: string;
@@ -43,6 +57,7 @@ interface ToolExecution {
   success?: boolean;
   dangerous?: boolean;
   status: "running" | "done" | "error";
+  subAgentActivity?: SubAgentActivity[];
 }
 
 interface Conversation {
@@ -389,6 +404,54 @@ export function AdminAIChat() {
                       : tc
                   ),
                 };
+
+              case "sub_agent": {
+                const parentId = data.parentToolId as string;
+                const agentName = data.agentName as string;
+                const agentEvent = data.event as string;
+                const agentData = data.data as Record<string, unknown>;
+
+                return {
+                  ...m,
+                  toolCalls: (m.toolCalls || []).map((tc) => {
+                    if (tc.id !== parentId) return tc;
+                    const subs = [...(tc.subAgentActivity || [])];
+
+                    switch (agentEvent) {
+                      case "agent_start":
+                        subs.push({ name: agentName, status: "running", toolCalls: [], text: "" });
+                        break;
+                      case "agent_tool_start":
+                        if (subs.length > 0) {
+                          subs[subs.length - 1].toolCalls.push({
+                            id: agentData.id as string,
+                            tool: agentData.tool as string,
+                            status: "running",
+                          });
+                        }
+                        break;
+                      case "agent_tool_result":
+                        if (subs.length > 0) {
+                          const last = subs[subs.length - 1];
+                          const st = last.toolCalls.find((t) => t.id === agentData.id);
+                          if (st) { st.status = "done"; st.success = agentData.success as boolean; }
+                        }
+                        break;
+                      case "agent_text":
+                        if (subs.length > 0) subs[subs.length - 1].text += agentData.content as string;
+                        break;
+                      case "agent_done":
+                        if (subs.length > 0) subs[subs.length - 1].status = "done";
+                        break;
+                      case "agent_error":
+                        if (subs.length > 0) subs[subs.length - 1].status = "error";
+                        break;
+                    }
+
+                    return { ...tc, subAgentActivity: subs };
+                  }),
+                };
+              }
 
               case "web_search":
                 return { ...m, content: m.content + "\n*Searching the web...*\n" };
@@ -921,6 +984,47 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
           )}
         </div>
       </button>
+
+      {/* Sub-agent activity (for delegate_task) */}
+      {tool.tool === "delegate_task" && tool.subAgentActivity && tool.subAgentActivity.length > 0 && (
+        <div className="border-t px-3.5 py-2 space-y-1.5" style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
+          {tool.subAgentActivity.map((agent, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                {agent.status === "running" ? (
+                  <Loader2 className="w-3 h-3 animate-spin" style={{ color: "var(--brand-primary)" }} />
+                ) : agent.status === "error" ? (
+                  <XCircle className="w-3 h-3 text-red-500" />
+                ) : (
+                  <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                )}
+                <span className="text-[11px] font-medium" style={{ color: "var(--text-primary)" }}>
+                  {agent.name}
+                </span>
+              </div>
+              <div className="flex gap-1 ml-1">
+                {agent.toolCalls.map((tc, j) => (
+                  <div
+                    key={j}
+                    className="w-2 h-2 rounded-full"
+                    title={tc.tool}
+                    style={{
+                      background: tc.status === "running"
+                        ? "var(--brand-primary)"
+                        : tc.success !== false
+                        ? "#10b981"
+                        : "#ef4444",
+                    }}
+                  />
+                ))}
+              </div>
+              {agent.status === "running" && (
+                <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>working...</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {expanded && (
         <div className="border-t px-3.5 py-2.5 space-y-2" style={{ borderColor: "var(--border)" }}>

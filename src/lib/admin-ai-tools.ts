@@ -389,6 +389,39 @@ export const adminTools: ToolDef[] = [
       required: [],
     },
   },
+  // ─── Sub-Agent Delegation ───────────────────────────────────────────────
+  {
+    name: "delegate_task",
+    description: `Delegate a task to a specialized sub-agent that works independently. Sub-agents run concurrently if you call multiple. Use this to parallelize work or offload focused tasks.
+
+Available agents:
+- "research": Web search agent (fast) — documentation, current info, web lookups
+- "database": Database query agent (fast) — read-only queries across orgs, users, projects, tickets, alerts
+- "server": Server inspection agent (fast) — list/read files, search code, git status
+- "code": Code analysis agent (thorough) — deep code reading and pattern analysis
+
+Sub-agents have NO access to dangerous operations (no writes, deletes, commands). Only you can execute those.
+You can call delegate_task multiple times in one response — they all run in parallel.`,
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        agent_type: {
+          type: "string",
+          enum: ["research", "database", "server", "code"],
+          description: "Which specialized sub-agent to use",
+        },
+        task: {
+          type: "string",
+          description: "Clear description of what the sub-agent should accomplish",
+        },
+        context: {
+          type: "string",
+          description: "Relevant context from the conversation to help the sub-agent",
+        },
+      },
+      required: ["agent_type", "task"],
+    },
+  },
 ];
 
 // ─── Tool Executors ─────────────────────────────────────────────────────────
@@ -432,6 +465,7 @@ export async function executeTool(name: string, input: ToolInput): Promise<strin
       case "git_status": return await sshGitStatus();
       case "git_commit_and_push": return await sshGitCommitAndPush(input);
       case "server_rebuild": return await sshServerRebuild();
+      case "delegate_task": return JSON.stringify({ error: "delegate_task must be handled by the chat route, not executeTool" });
       default: return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
   } catch (err) {
