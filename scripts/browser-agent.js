@@ -274,6 +274,130 @@ async function humanSelect(page, selector, value) {
   await randomDelay(300, 700);
 }
 
+// ─── React-Compatible Value Setting ─────────────────────────────────────────
+
+/**
+ * Set value on a React controlled input using the native value setter.
+ * This bypasses React's synthetic event system and properly triggers
+ * onChange handlers by dispatching native input/change events.
+ */
+async function reactSetValue(page, selector, value) {
+  await page.waitForSelector(selector, { timeout: ACTION_TIMEOUT_MS });
+
+  const success = await page.evaluate((sel, val) => {
+    const el = document.querySelector(sel);
+    if (!el) return { error: `Element not found: ${sel}` };
+
+    // Get the native value setter (bypasses React's getter/setter override)
+    const descriptor = Object.getOwnPropertyDescriptor(
+      el.tagName === 'TEXTAREA'
+        ? window.HTMLTextAreaElement.prototype
+        : window.HTMLInputElement.prototype,
+      'value'
+    );
+
+    if (!descriptor || !descriptor.set) {
+      // Fallback: direct assignment
+      el.value = val;
+    } else {
+      // Use native setter to bypass React's value tracking
+      descriptor.set.call(el, val);
+    }
+
+    // Dispatch events that React listens for (bubbling to document root)
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+
+    // Return the current value to confirm
+    return { value: el.value };
+  }, selector, value);
+
+  return success;
+}
+
+/**
+ * Fill multiple form fields atomically in a single page.evaluate() call.
+ * This prevents React re-renders between fields from clearing values.
+ *
+ * fields: [{ selector, value }, ...]
+ */
+async function reactFillForm(page, fields) {
+  // Wait for all selectors to be present
+  for (const field of fields) {
+    await page.waitForSelector(field.selector, { timeout: ACTION_TIMEOUT_MS });
+  }
+
+  const results = await page.evaluate((fieldsList) => {
+    const output = [];
+
+    for (const { selector, value } of fieldsList) {
+      const el = document.querySelector(selector);
+      if (!el) {
+        output.push({ selector, success: false, error: `Element not found: ${selector}` });
+        continue;
+      }
+
+      // Determine the correct prototype for the native setter
+      const proto = el.tagName === 'TEXTAREA'
+        ? window.HTMLTextAreaElement.prototype
+        : window.HTMLInputElement.prototype;
+      const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+
+      if (descriptor && descriptor.set) {
+        descriptor.set.call(el, value);
+      } else {
+        el.value = value;
+      }
+
+      // Dispatch events React listens for
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+
+      output.push({ selector, success: true, value: el.value });
+    }
+
+    return output;
+  }, fields);
+
+  return results;
+}
+
+/**
+ * Click a checkbox/radio using React-compatible event dispatch.
+ * Handles the 'checked' property instead of 'value'.
+ */
+async function reactSetChecked(page, selector, checked = true) {
+  await page.waitForSelector(selector, { timeout: ACTION_TIMEOUT_MS });
+
+  const result = await page.evaluate((sel, shouldBeChecked) => {
+    const el = document.querySelector(sel);
+    if (!el) return { error: `Element not found: ${sel}` };
+
+    // Only toggle if current state differs
+    if (el.checked !== shouldBeChecked) {
+      // Use native setter for 'checked'
+      const descriptor = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        'checked'
+      );
+      if (descriptor && descriptor.set) {
+        descriptor.set.call(el, shouldBeChecked);
+      } else {
+        el.checked = shouldBeChecked;
+      }
+
+      // React listens for click events on checkboxes
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    return { checked: el.checked };
+  }, selector, checked);
+
+  return result;
+}
+
 // ─── Screenshot ──────────────────────────────────────────────────────────────
 async function takeScreenshot(page, fullPage = false) {
   ensureDir(SCREENSHOTS_DIR);
@@ -569,6 +693,51 @@ async function handleAction(cmd) {
             action: "evaluate",
             success: true,
             result: evalResult,
+            duration: Date.now() - startTime,
+          });
+          break;
+        }
+
+        case "set_value": {
+          // React-compatible value setting for controlled inputs
+          const svResult = await reactSetValue(page, action.selector, action.value || "");
+          await randomDelay(100, 300);
+          results.push({
+            action: "set_value",
+            success: !svResult.error,
+            selector: action.selector,
+            ...(svResult.error ? { error: svResult.error } : { value: svResult.value }),
+            duration: Date.now() - startTime,
+          });
+          break;
+        }
+
+        case "fill_form": {
+          // Fill multiple fields atomically (prevents React re-render clearing)
+          if (!action.fields || !Array.isArray(action.fields)) {
+            results.push({ action: "fill_form", success: false, error: "fields array is required" });
+            break;
+          }
+          const ffResults = await reactFillForm(page, action.fields);
+          await randomDelay(200, 500);
+          results.push({
+            action: "fill_form",
+            success: ffResults.every(r => r.success),
+            fields: ffResults,
+            duration: Date.now() - startTime,
+          });
+          break;
+        }
+
+        case "set_checked": {
+          // React-compatible checkbox/radio toggle
+          const scResult = await reactSetChecked(page, action.selector, action.checked !== false);
+          await randomDelay(100, 300);
+          results.push({
+            action: "set_checked",
+            success: !scResult.error,
+            selector: action.selector,
+            ...(scResult.error ? { error: scResult.error } : { checked: scResult.checked }),
             duration: Date.now() - startTime,
           });
           break;

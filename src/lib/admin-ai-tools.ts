@@ -487,6 +487,9 @@ Available actions:
 - navigate: Go to a URL — { action: "navigate", url: "https://..." }
 - click: Click an element — { action: "click", selector: "#btn" }
 - type: Type into a field at human speed — { action: "type", selector: "input[name=email]", text: "user@example.com", clear: true }
+- set_value: Set input value directly (React-compatible, uses native setter + event dispatch) — { action: "set_value", selector: "#email", value: "user@example.com" }
+- fill_form: Fill multiple fields atomically in one call (prevents React re-renders from clearing values) — { action: "fill_form", fields: [{ selector: "#email", value: "a@b.com" }, { selector: "#pass", value: "secret" }] }
+- set_checked: Toggle checkbox/radio (React-compatible) — { action: "set_checked", selector: "#terms", checked: true }
 - screenshot: Take a screenshot — { action: "screenshot", fullPage: false } → returns URL
 - extract: Extract text from elements — { action: "extract", selector: "h1" } → returns text content
 - wait: Wait for element or fixed time — { action: "wait", selector: ".loaded", timeout: 5000 }
@@ -494,7 +497,13 @@ Available actions:
 - select: Select dropdown option — { action: "select", selector: "select#role", value: "admin" }
 - evaluate: Run JavaScript in page — { action: "evaluate", script: "document.title" }
 
-To log into a service using vault credentials: first retrieve credentials with get_vault_entry, then use type actions for username/password fields.
+IMPORTANT — React/SPA form handling:
+- If "type" action works but fields clear when moving to the next field, the site uses React controlled components.
+- Use "fill_form" to set ALL field values atomically in a single call — this prevents re-renders between fields.
+- Use "set_checked" for checkboxes instead of "click" — it properly triggers React's change handlers.
+- After fill_form, verify with "extract" and then "click" the submit button.
+
+To log into a service using vault credentials: first retrieve credentials with get_vault_entry, then use type/fill_form actions for username/password fields.
 DANGEROUS: requires admin confirmation.`,
     input_schema: {
       type: "object" as const,
@@ -507,7 +516,7 @@ DANGEROUS: requires admin confirmation.`,
             properties: {
               action: {
                 type: "string",
-                enum: ["navigate", "click", "type", "screenshot", "extract", "wait", "scroll", "select", "evaluate"],
+                enum: ["navigate", "click", "type", "set_value", "fill_form", "set_checked", "screenshot", "extract", "wait", "scroll", "select", "evaluate"],
               },
               url: { type: "string" },
               selector: { type: "string" },
@@ -520,6 +529,19 @@ DANGEROUS: requires admin confirmation.`,
               script: { type: "string" },
               timeout: { type: "number" },
               attribute: { type: "string" },
+              checked: { type: "boolean", description: "For set_checked action" },
+              fields: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    selector: { type: "string" },
+                    value: { type: "string" },
+                  },
+                  required: ["selector", "value"],
+                },
+                description: "For fill_form action — array of { selector, value } pairs",
+              },
             },
             required: ["action"],
           },
