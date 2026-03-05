@@ -330,6 +330,7 @@ export function AdminAIChat() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let currentEvent = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -339,7 +340,6 @@ export function AdminAIChat() {
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
 
-        let currentEvent = "";
         for (const line of lines) {
           if (line.startsWith("event: ")) {
             currentEvent = line.slice(7);
@@ -417,34 +417,49 @@ export function AdminAIChat() {
                     if (tc.id !== parentId) return tc;
                     const subs = [...(tc.subAgentActivity || [])];
 
+                    const lastIdx = subs.length - 1;
                     switch (agentEvent) {
                       case "agent_start":
                         subs.push({ name: agentName, status: "running", toolCalls: [], text: "" });
                         break;
                       case "agent_tool_start":
-                        if (subs.length > 0) {
-                          subs[subs.length - 1].toolCalls.push({
-                            id: agentData.id as string,
-                            tool: agentData.tool as string,
-                            status: "running",
-                          });
+                        if (lastIdx >= 0) {
+                          subs[lastIdx] = {
+                            ...subs[lastIdx],
+                            toolCalls: [...subs[lastIdx].toolCalls, {
+                              id: agentData.id as string,
+                              tool: agentData.tool as string,
+                              status: "running" as const,
+                            }],
+                          };
                         }
                         break;
                       case "agent_tool_result":
-                        if (subs.length > 0) {
-                          const last = subs[subs.length - 1];
-                          const st = last.toolCalls.find((t) => t.id === agentData.id);
-                          if (st) { st.status = "done"; st.success = agentData.success as boolean; }
+                        if (lastIdx >= 0) {
+                          subs[lastIdx] = {
+                            ...subs[lastIdx],
+                            toolCalls: subs[lastIdx].toolCalls.map((t) =>
+                              t.id === (agentData.id as string)
+                                ? { ...t, status: "done" as const, success: agentData.success as boolean }
+                                : t
+                            ),
+                          };
                         }
                         break;
                       case "agent_text":
-                        if (subs.length > 0) subs[subs.length - 1].text += agentData.content as string;
+                        if (lastIdx >= 0) {
+                          subs[lastIdx] = { ...subs[lastIdx], text: subs[lastIdx].text + (agentData.content as string) };
+                        }
                         break;
                       case "agent_done":
-                        if (subs.length > 0) subs[subs.length - 1].status = "done";
+                        if (lastIdx >= 0) {
+                          subs[lastIdx] = { ...subs[lastIdx], status: "done" };
+                        }
                         break;
                       case "agent_error":
-                        if (subs.length > 0) subs[subs.length - 1].status = "error";
+                        if (lastIdx >= 0) {
+                          subs[lastIdx] = { ...subs[lastIdx], status: "error" };
+                        }
                         break;
                     }
 
