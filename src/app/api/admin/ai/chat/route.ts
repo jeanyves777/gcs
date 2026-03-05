@@ -243,6 +243,7 @@ export async function POST(req: NextRequest) {
         let currentMessages: Anthropic.MessageParam[] = [...anthropicMessages];
         let fullAssistantText = "";
         const allToolCalls: { tool: string; input: unknown; result: unknown }[] = [];
+        const allContentBlocks: { type: string; text?: string; toolIds?: string[] }[] = [];
 
         while (true) {
           // ── Stream response — text appears instantly as Claude generates it ──
@@ -250,6 +251,7 @@ export async function POST(req: NextRequest) {
           const toolResults: Anthropic.ToolResultBlockParam[] = [];
           const toolUseBlocks: Anthropic.ToolUseBlock[] = [];
           let response: Anthropic.Message | undefined;
+          let iterationText = ""; // Track text generated in this iteration
 
           for (let attempt = 0; attempt < 3; attempt++) {
             try {
@@ -264,6 +266,7 @@ export async function POST(req: NextRequest) {
               // Stream text to frontend immediately — no waiting for full response
               messageStream.on("text", (text) => {
                 fullAssistantText += text;
+                iterationText += text;
                 send("text", { content: text });
               });
 
@@ -309,6 +312,16 @@ export async function POST(req: NextRequest) {
               });
             }
             // text blocks already streamed live via messageStream.on("text")
+          }
+
+          // ── Track content blocks for DB persistence ──
+          // Add text block if any text was generated in this iteration
+          if (iterationText.trim()) {
+            allContentBlocks.push({ type: "text", text: iterationText });
+          }
+          // Add tool_group block if tools were called in this iteration
+          if (toolUseBlocks.length > 0) {
+            allContentBlocks.push({ type: "tool_group", toolIds: toolUseBlocks.map(b => b.id) });
           }
 
           // ── Pass 2: Execute all tool_use blocks in parallel ──
@@ -413,6 +426,7 @@ export async function POST(req: NextRequest) {
               role: "assistant",
               content: fullAssistantText || "(tool execution only)",
               toolCalls: allToolCalls.length > 0 ? JSON.stringify(allToolCalls) : null,
+              contentBlocks: allContentBlocks.length > 0 ? JSON.stringify(allContentBlocks) : null,
             },
           });
         }

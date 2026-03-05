@@ -165,19 +165,46 @@ export function AdminAIChat() {
       });
       if (res.ok) {
         const data = await res.json();
-        const loadedMessages: ChatMessage[] = data.messages.map((m: { id: string; role: string; content: string; toolCalls?: string }) => ({
-          id: m.id,
-          role: m.role as "user" | "assistant",
-          content: m.content,
-          toolCalls: m.toolCalls ? JSON.parse(m.toolCalls).map((tc: { tool: string; input: Record<string, unknown>; result: Record<string, unknown> }) => ({
-            id: crypto.randomUUID(),
-            tool: tc.tool,
-            input: tc.input || {},
-            result: tc.result || null,
-            success: true,
-            status: "done" as const,
-          })) : undefined,
-        }));
+        const loadedMessages: ChatMessage[] = data.messages.map((m: { id: string; role: string; content: string; toolCalls?: string; contentBlocks?: string }) => {
+          // Parse tool calls and assign stable IDs
+          const parsedTools: ToolExecution[] | undefined = m.toolCalls
+            ? JSON.parse(m.toolCalls).map((tc: { tool: string; input: Record<string, unknown>; result: Record<string, unknown> }) => ({
+                id: crypto.randomUUID(),
+                tool: tc.tool,
+                input: tc.input || {},
+                result: tc.result || null,
+                success: true,
+                status: "done" as const,
+              }))
+            : undefined;
+
+          // Parse content blocks and remap tool IDs to match parsed tools
+          let parsedBlocks: ContentBlock[] | undefined;
+          if (m.contentBlocks && parsedTools) {
+            const savedBlocks: { type: string; text?: string; toolIds?: string[] }[] = JSON.parse(m.contentBlocks);
+            let toolIndex = 0;
+            parsedBlocks = savedBlocks.map((block) => {
+              if (block.type === "text") {
+                return { type: "text" as const, text: block.text };
+              }
+              // Map saved tool IDs to new generated IDs by position
+              const mappedIds = (block.toolIds || []).map(() => {
+                const tool = parsedTools[toolIndex];
+                toolIndex++;
+                return tool ? tool.id : "";
+              }).filter(Boolean);
+              return { type: "tool_group" as const, toolIds: mappedIds };
+            });
+          }
+
+          return {
+            id: m.id,
+            role: m.role as "user" | "assistant",
+            content: m.content,
+            toolCalls: parsedTools,
+            contentBlocks: parsedBlocks,
+          };
+        });
         setMessages(loadedMessages);
         setActiveConversationId(id);
         setSidebarOpen(false);

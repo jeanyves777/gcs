@@ -470,6 +470,7 @@ model AiMessage {
   role           String         // "user" | "assistant"
   content        String
   toolCalls      String?        // JSON string of tool executions
+  contentBlocks  String?        // JSON string of content block ordering (text + tool interleaving)
   createdAt      DateTime       @default(now())
 
   @@index([conversationId])
