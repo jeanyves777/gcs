@@ -2,22 +2,15 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Progress } from "@/components/ui/progress";
 import {
   AlertCircle,
   Activity,
   HardDrive,
   Cpu,
   Shield,
+  ShieldCheck,
   TrendingUp,
   RefreshCw,
   CheckCircle2,
@@ -28,6 +21,13 @@ import {
   Server,
   Wifi,
   Package,
+  Clock,
+  Zap,
+  ArrowUpRight,
+  ArrowDownRight,
+  FileWarning,
+  Eye,
+  Radio,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -144,20 +144,53 @@ function formatUptime(seconds: number): string {
   return `${h}h ${m}m`;
 }
 
-const SEVERITY_COLORS: Record<string, string> = {
-  CRITICAL: "rgb(239, 68, 68)",
-  HIGH: "rgb(249, 115, 22)",
-  MEDIUM: "rgb(234, 179, 8)",
-  LOW: "rgb(59, 130, 246)",
+const SEVERITY_CONFIG: Record<string, { color: string; bg: string; border: string }> = {
+  CRITICAL: { color: "rgb(239, 68, 68)", bg: "rgba(239, 68, 68, 0.08)", border: "rgba(239, 68, 68, 0.2)" },
+  HIGH: { color: "rgb(249, 115, 22)", bg: "rgba(249, 115, 22, 0.08)", border: "rgba(249, 115, 22, 0.2)" },
+  MEDIUM: { color: "rgb(234, 179, 8)", bg: "rgba(234, 179, 8, 0.08)", border: "rgba(234, 179, 8, 0.2)" },
+  LOW: { color: "rgb(59, 130, 246)", bg: "rgba(59, 130, 246, 0.08)", border: "rgba(59, 130, 246, 0.2)" },
 };
+
+function getGradeColor(grade: string) {
+  if (grade === "A") return { text: "#22c55e", bg: "rgba(34,197,94,0.1)" };
+  if (grade === "B") return { text: "#3b82f6", bg: "rgba(59,130,246,0.1)" };
+  if (grade === "C") return { text: "#eab308", bg: "rgba(234,179,8,0.1)" };
+  if (grade === "D") return { text: "#f97316", bg: "rgba(249,115,22,0.1)" };
+  return { text: "#ef4444", bg: "rgba(239,68,68,0.1)" };
+}
+
+function getThreatColor(score: number) {
+  if (score <= 20) return "#22c55e";
+  if (score <= 40) return "#3b82f6";
+  if (score <= 60) return "#eab308";
+  if (score <= 80) return "#f97316";
+  return "#ef4444";
+}
+
+// ─── Reusable metric ring SVG ───────────────────────────────────────────────
+
+function MetricRing({ value, max = 100, size = 80, strokeWidth = 6, color, children }: {
+  value: number; max?: number; size?: number; strokeWidth?: number; color: string; children?: React.ReactNode;
+}) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progress = Math.min(value / max, 1);
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="transform -rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={strokeWidth - 1} className="opacity-[0.06]" />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={color} strokeWidth={strokeWidth}
+          strokeDasharray={`${progress * circumference} ${circumference}`}
+          strokeLinecap="round" className="transition-all duration-700 ease-out" />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">{children}</div>
+    </div>
+  );
+}
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export function InternalDashboardClient({
-  initialData,
-}: {
-  initialData: DashboardData;
-}) {
+export function InternalDashboardClient({ initialData }: { initialData: DashboardData }) {
   const [data, setData] = useState(initialData);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
@@ -172,18 +205,11 @@ export function InternalDashboardClient({
       const res = await fetch("/api/guard/internal");
       const json = await res.json();
       if (json.success) {
-        setData({
-          agent: json.agent,
-          metricSnapshots: json.metricSnapshots ?? [],
-          latestScan: json.latestScan ?? null,
-        });
+        setData({ agent: json.agent, metricSnapshots: json.metricSnapshots ?? [], latestScan: json.latestScan ?? null });
       }
-    } catch (err) {
-      console.error("Refresh failed:", err);
-    }
+    } catch (err) { console.error("Refresh failed:", err); }
   }, []);
 
-  // Auto-refresh every 10s
   useEffect(() => {
     if (!autoRefresh) return;
     const interval = setInterval(refreshData, 10000);
@@ -194,497 +220,544 @@ export function InternalDashboardClient({
     setIsScanning(true);
     setScanProgress(0);
     setScanError(null);
-
-    const progressInterval = setInterval(() => {
-      setScanProgress((p) => Math.min(p + Math.random() * 15, 90));
-    }, 500);
-
+    const progressInterval = setInterval(() => setScanProgress((p) => Math.min(p + Math.random() * 15, 90)), 500);
     try {
       const res = await fetch("/api/guard/internal/scan", { method: "POST" });
       clearInterval(progressInterval);
       setScanProgress(100);
-
-      if (!res.ok) {
-        const err = await res.json();
-        setScanError(err.error || "Scan failed");
-      } else {
-        // Refresh to get the latest data from DB
-        await refreshData();
-      }
-    } catch (err) {
-      clearInterval(progressInterval);
-      setScanError(String(err));
-    } finally {
-      setTimeout(() => {
-        setIsScanning(false);
-        setScanProgress(0);
-      }, 1000);
-    }
+      if (!res.ok) { const err = await res.json(); setScanError(err.error || "Scan failed"); }
+      else { await refreshData(); }
+    } catch (err) { clearInterval(progressInterval); setScanError(String(err)); }
+    finally { setTimeout(() => { setIsScanning(false); setScanProgress(0); }, 1000); }
   };
 
   const threatScore = latest?.threatScore ?? 0;
   const threatLevel = latest?.threatLevel ?? "LOW";
   const grade = latest?.grade ?? "-";
+  const gradeColor = getGradeColor(grade);
+  const threatColor = getThreatColor(threatScore);
+
+  const criticalCount = agent.alerts.filter(a => a.severity === "CRITICAL").length;
+  const highCount = agent.alerts.filter(a => a.severity === "HIGH").length;
+  const mediumCount = agent.alerts.filter(a => a.severity === "MEDIUM").length;
+  const lowCount = agent.alerts.filter(a => a.severity === "LOW").length;
+  const activeServices = agent.serviceStatuses.filter(s => s.isActive).length;
 
   return (
-    <div className="space-y-6">
-      {/* ─── Agent Status Header ──────────────────────────────────── */}
-      <Card className="overflow-hidden">
-        <div className="flex flex-col md:flex-row">
-          {/* Left: Agent identity + status */}
-          <CardContent className="flex-1 pt-5 pb-4">
+    <div className="space-y-5">
+
+      {/* ═══ HERO STATUS BAR ═══════════════════════════════════════════════ */}
+      <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+        {/* Top gradient accent line */}
+        <div className="h-1" style={{ background: agent.status === "ONLINE" ? "linear-gradient(90deg, #22c55e, #3b82f6, #8b5cf6)" : "linear-gradient(90deg, #ef4444, #f97316)" }} />
+
+        <div className="flex flex-col lg:flex-row">
+          {/* Left: Agent identity */}
+          <div className="flex-1 p-5 pb-4">
             <div className="flex items-start gap-4">
-              <div
-                className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0"
-                style={{
-                  background: agent.status === "ONLINE"
-                    ? "linear-gradient(135deg, rgb(34,197,94), rgb(22,163,74))"
-                    : "linear-gradient(135deg, rgb(239,68,68), rgb(185,28,28))",
-                }}
-              >
-                <Shield className="w-7 h-7 text-white" />
+              {/* Shield icon with glow */}
+              <div className="relative">
+                <div
+                  className="w-16 h-16 rounded-2xl flex items-center justify-center"
+                  style={{
+                    background: agent.status === "ONLINE"
+                      ? "linear-gradient(135deg, #22c55e 0%, #16a34a 50%, #15803d 100%)"
+                      : "linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)",
+                    boxShadow: agent.status === "ONLINE"
+                      ? "0 8px 24px rgba(34,197,94,0.35), 0 2px 8px rgba(34,197,94,0.2)"
+                      : "0 8px 24px rgba(239,68,68,0.35), 0 2px 8px rgba(239,68,68,0.2)",
+                  }}
+                >
+                  <ShieldCheck className="w-8 h-8 text-white drop-shadow-sm" />
+                </div>
+                {agent.status === "ONLINE" && (
+                  <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-green-500 border-[2.5px] flex items-center justify-center" style={{ borderColor: "var(--bg-primary)" }}>
+                    <div className="w-2 h-2 rounded-full bg-white" />
+                  </div>
+                )}
               </div>
+
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-lg font-bold">{agent.name}</h2>
-                  <Badge variant={agent.status === "ONLINE" ? "default" : "destructive"} className="gap-1">
-                    <div className={`w-1.5 h-1.5 rounded-full ${agent.status === "ONLINE" ? "bg-green-300 animate-pulse" : "bg-red-300"}`} />
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h2 className="text-xl font-extrabold tracking-tight">{agent.name}</h2>
+                  <Badge
+                    className="gap-1.5 text-[10px] uppercase tracking-widest font-bold px-2.5 py-1"
+                    style={{
+                      background: agent.status === "ONLINE" ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)",
+                      color: agent.status === "ONLINE" ? "#22c55e" : "#ef4444",
+                      border: `1px solid ${agent.status === "ONLINE" ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"}`,
+                    }}
+                  >
+                    <div className={`w-2 h-2 rounded-full ${agent.status === "ONLINE" ? "bg-green-500 animate-pulse" : "bg-red-500"}`} />
                     {agent.status}
                   </Badge>
                   {grade !== "-" && (
-                    <Badge variant={grade === "A" ? "default" : grade === "F" ? "destructive" : "secondary"} className="text-xs">
-                      Grade {grade}
+                    <Badge
+                      className="text-sm font-black px-3 py-0.5"
+                      style={{ background: gradeColor.bg, color: gradeColor.text, border: `1px solid ${gradeColor.text}30` }}
+                    >
+                      {grade}
                     </Badge>
                   )}
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-2 mt-3 text-sm">
-                  <div className="flex items-center gap-2">
-                    <Globe className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-muted-foreground">IP</span>
-                    <span className="font-medium ml-auto">{agent.ipAddress ?? "127.0.0.1"}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Server className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-muted-foreground">Host</span>
-                    <span className="font-medium ml-auto">{agent.hostname ?? "localhost"}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Activity className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-muted-foreground">Uptime</span>
-                    <span className="font-medium ml-auto">{formatUptime(latest?.uptime ?? 0)}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
-                    <span className="text-muted-foreground">Last Scan</span>
-                    <span className="font-medium ml-auto">{agent.lastHeartbeat ? timeAgo(agent.lastHeartbeat) : "Never"}</span>
-                  </div>
+
+                {/* Info pills row */}
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  {[
+                    { icon: Globe, label: "IP", value: agent.ipAddress ?? "127.0.0.1", color: "#3b82f6" },
+                    { icon: Server, label: "Host", value: agent.hostname ?? "localhost", color: "#8b5cf6" },
+                    { icon: Clock, label: "Uptime", value: formatUptime(latest?.uptime ?? 0), color: "#10b981" },
+                    { icon: Cpu, label: "CPU", value: `${(latest?.cpuPercent ?? 0).toFixed(1)}%`, color: "#f59e0b" },
+                    { icon: Activity, label: "RAM", value: `${latest?.memPercent ?? 0}%`, color: "#ec4899" },
+                    { icon: Eye, label: "Scanned", value: agent.lastHeartbeat ? timeAgo(agent.lastHeartbeat) : "never", color: "#6366f1" },
+                  ].map((item, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px]"
+                      style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}
+                    >
+                      <item.icon className="w-3.5 h-3.5" style={{ color: item.color }} />
+                      <span style={{ color: "var(--text-muted)" }}>{item.label}</span>
+                      <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{item.value}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-          </CardContent>
+          </div>
+
           {/* Right: Quick stats panel */}
-          <div className="md:w-64 border-t md:border-t-0 md:border-l p-4 flex flex-row md:flex-col justify-around gap-2" style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
-            <div className="flex items-center gap-2.5">
-              <AlertTriangle className="w-4 h-4 text-red-500" />
-              <div>
-                <p className="text-lg font-bold leading-none">{agent.alerts.length}</p>
-                <p className="text-[10px] text-muted-foreground">Open Findings</p>
+          <div
+            className="lg:w-[280px] border-t lg:border-t-0 lg:border-l grid grid-cols-2 gap-0"
+            style={{ borderColor: "var(--border)" }}
+          >
+            {[
+              { icon: AlertTriangle, label: "Open Findings", value: agent.alerts.length, color: agent.alerts.length > 0 ? "#ef4444" : "#22c55e", bg: agent.alerts.length > 0 ? "rgba(239,68,68,0.06)" : "rgba(34,197,94,0.06)" },
+              { icon: Shield, label: "Services Up", value: `${activeServices}/${agent.serviceStatuses.length}`, color: "#3b82f6", bg: "rgba(59,130,246,0.06)" },
+              { icon: Wifi, label: "Open Ports", value: latestScan?.ports?.length ?? 0, color: "#8b5cf6", bg: "rgba(139,92,246,0.06)" },
+              { icon: Package, label: agent.securityUpdates > 0 ? "Sec Patches" : "Updates", value: agent.securityUpdates > 0 ? agent.securityUpdates : agent.pendingUpdates, color: agent.securityUpdates > 0 ? "#ef4444" : "#f59e0b", bg: agent.securityUpdates > 0 ? "rgba(239,68,68,0.06)" : "rgba(245,158,11,0.06)" },
+            ].map((stat, i) => (
+              <div
+                key={i}
+                className="flex flex-col items-center justify-center py-4 px-3 text-center relative"
+                style={{
+                  background: stat.bg,
+                  borderBottom: i < 2 ? "1px solid var(--border)" : undefined,
+                  borderRight: i % 2 === 0 ? "1px solid var(--border)" : undefined,
+                }}
+              >
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center mb-2" style={{ background: `${stat.color}18` }}>
+                  <stat.icon className="w-4.5 h-4.5" style={{ color: stat.color }} />
+                </div>
+                <div className="text-xl font-black leading-none" style={{ color: stat.color }}>{stat.value}</div>
+                <div className="text-[10px] mt-1 font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>{stat.label}</div>
               </div>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <Shield className="w-4 h-4 text-blue-500" />
-              <div>
-                <p className="text-lg font-bold leading-none">{agent.serviceStatuses.filter(s => s.isActive).length}/{agent.serviceStatuses.length}</p>
-                <p className="text-[10px] text-muted-foreground">Services Up</p>
+            ))}
+          </div>
+        </div>
+
+        {/* Scan control bar */}
+        <div className="px-5 py-3 flex items-center gap-3 border-t" style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
+          <Button onClick={handleScan} disabled={isScanning} size="sm" className="gap-2 h-8 font-semibold">
+            <RefreshCw className={`w-3.5 h-3.5 ${isScanning ? "animate-spin" : ""}`} />
+            {isScanning ? "Scanning..." : "Run Full Scan"}
+          </Button>
+          <Button variant="ghost" onClick={() => setAutoRefresh(!autoRefresh)} size="sm" className="h-8 gap-1.5 text-xs">
+            <div className={`w-2 h-2 rounded-full ${autoRefresh ? "bg-green-500 animate-pulse" : "bg-gray-400"}`} />
+            Auto-refresh {autoRefresh ? "ON" : "OFF"}
+          </Button>
+          {agent.lastHeartbeat && !isScanning && (
+            <span className="text-[11px] ml-auto flex items-center gap-1.5" style={{ color: "var(--text-muted)" }}>
+              <Clock className="w-3 h-3" />
+              Last scan {timeAgo(agent.lastHeartbeat)}
+            </span>
+          )}
+          {isScanning && (
+            <div className="flex-1 flex items-center gap-2">
+              <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
+                <div
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{ width: `${scanProgress}%`, background: "linear-gradient(90deg, var(--brand-primary), #8b5cf6)" }}
+                />
               </div>
+              <span className="text-[11px] font-mono font-bold" style={{ color: "var(--text-muted)" }}>{scanProgress.toFixed(0)}%</span>
             </div>
-            <div className="flex items-center gap-2.5">
-              <Wifi className="w-4 h-4 text-purple-500" />
-              <div>
-                <p className="text-lg font-bold leading-none">{latestScan?.ports?.length ?? 0}</p>
-                <p className="text-[10px] text-muted-foreground">Open Ports</p>
-              </div>
+          )}
+          {scanError && (
+            <span className="text-xs text-red-500 flex items-center gap-1 font-medium">
+              <XCircle className="w-3.5 h-3.5" /> {scanError}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ═══ METRIC CARDS ROW ══════════════════════════════════════════════ */}
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
+
+        {/* Threat Score */}
+        <div className="rounded-xl p-4 flex flex-col items-center justify-center col-span-1" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+          <MetricRing value={threatScore} size={100} strokeWidth={7} color={threatColor}>
+            <span className="text-2xl font-black" style={{ color: threatColor }}>{threatScore}</span>
+            <span className="text-[9px] uppercase tracking-widest font-semibold" style={{ color: "var(--text-muted)" }}>{threatLevel}</span>
+          </MetricRing>
+          <div className="mt-2 text-[11px] font-medium" style={{ color: "var(--text-secondary)" }}>Threat Score</div>
+        </div>
+
+        {/* CPU */}
+        <MetricCard
+          icon={Cpu} label="CPU" value={latest?.cpuPercent ?? 0} unit="%"
+          color="#3b82f6" subtitle={`Load ${latest?.loadAvg?.[0]?.toFixed(2) ?? "0.00"}`}
+          trend={metricSnapshots.length > 1 ? (latest?.cpuPercent ?? 0) - (metricSnapshots[1]?.cpuPercent ?? 0) : undefined}
+        />
+
+        {/* Memory */}
+        <MetricCard
+          icon={Activity} label="Memory" value={latest?.memPercent ?? 0} unit="%"
+          color="#8b5cf6"
+          subtitle={`${formatBytes(latest?.memUsed ?? 0)} / ${formatBytes(latest?.memTotal ?? 0)}`}
+          trend={metricSnapshots.length > 1 ? (latest?.memPercent ?? 0) - (metricSnapshots[1]?.memPercent ?? 0) : undefined}
+        />
+
+        {/* Disk */}
+        <MetricCard
+          icon={HardDrive} label="Disk" value={latest?.diskPercent ?? 0} unit="%"
+          color="#f59e0b"
+          subtitle={`${formatBytes((latest?.diskTotal ?? 0) - (latest?.diskUsed ?? 0))} free`}
+        />
+
+        {/* Network */}
+        <div className="rounded-xl p-4" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "rgba(16,185,129,0.1)" }}>
+              <Zap className="w-3.5 h-3.5" style={{ color: "#10b981" }} />
             </div>
-            <div className="flex items-center gap-2.5">
-              <Package className="w-4 h-4 text-amber-500" />
-              <div>
-                <p className="text-lg font-bold leading-none">
-                  {agent.securityUpdates > 0 ? (
-                    <span className="text-red-500">{agent.securityUpdates}</span>
-                  ) : (
-                    agent.pendingUpdates
-                  )}
-                </p>
-                <p className="text-[10px] text-muted-foreground">{agent.securityUpdates > 0 ? "Security Patches" : "Pending Updates"}</p>
+            <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>Network</span>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
+                <ArrowDownRight className="w-3 h-3 text-green-500" /> In
+              </span>
+              <span className="text-sm font-bold">{formatBytes(latest?.networkRx ?? 0)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
+                <ArrowUpRight className="w-3 h-3 text-blue-500" /> Out
+              </span>
+              <span className="text-sm font-bold">{formatBytes(latest?.networkTx ?? 0)}</span>
+            </div>
+            <div className="pt-1 border-t" style={{ borderColor: "var(--border)" }}>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>Processes</span>
+                <span className="text-sm font-bold">{latest?.processes ?? 0}</span>
               </div>
             </div>
           </div>
         </div>
-      </Card>
-
-      {/* ─── Top Row: Threat + Metrics ────────────────────────────── */}
-      <div className="grid gap-4 md:grid-cols-5">
-        {/* Threat Score Ring */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Threat Score</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-center">
-              <div className="relative w-28 h-28">
-                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                  <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground opacity-20" />
-                  <circle cx="50" cy="50" r="45" fill="none"
-                    stroke={SEVERITY_COLORS[threatLevel] ?? "rgb(34, 197, 94)"}
-                    strokeWidth="3"
-                    strokeDasharray={`${(threatScore / 100) * 282.6} 282.6`}
-                    className="transition-all duration-500"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <div className="text-2xl font-bold">{threatScore}</div>
-                  <div className="text-[10px] text-muted-foreground">{threatLevel}</div>
-                </div>
-              </div>
-            </div>
-            <div className="text-center mt-2">
-              <Badge variant={grade === "A" ? "default" : grade === "F" ? "destructive" : "secondary"}>
-                Grade: {grade}
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* CPU */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Cpu className="w-4 h-4" /> CPU
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="text-2xl font-bold">{latest?.cpuPercent?.toFixed(1) ?? 0}%</div>
-            <Progress value={latest?.cpuPercent ?? 0} className="h-2" />
-            <p className="text-xs text-muted-foreground">
-              Load: {latest?.loadAvg?.[0]?.toFixed(2) ?? 0}
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Memory */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Activity className="w-4 h-4" /> Memory
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="text-2xl font-bold">{latest?.memPercent ?? 0}%</div>
-            <Progress value={latest?.memPercent ?? 0} className="h-2" />
-            <p className="text-xs text-muted-foreground">
-              {formatBytes(latest?.memUsed ?? 0)} / {formatBytes(latest?.memTotal ?? 0)}
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Disk */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <HardDrive className="w-4 h-4" /> Disk
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="text-2xl font-bold">{latest?.diskPercent ?? 0}%</div>
-            <Progress value={latest?.diskPercent ?? 0} className="h-2" />
-            <p className="text-xs text-muted-foreground">
-              {formatBytes((latest?.diskTotal ?? 0) - (latest?.diskUsed ?? 0))} free
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* System Info */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Server className="w-4 h-4" /> System
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1 text-xs">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Uptime</span>
-              <span className="font-medium">{formatUptime(latest?.uptime ?? 0)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Processes</span>
-              <span className="font-medium">{latest?.processes ?? 0}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Net In</span>
-              <span className="font-medium">{formatBytes(latest?.networkRx ?? 0)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Net Out</span>
-              <span className="font-medium">{formatBytes(latest?.networkTx ?? 0)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Patches</span>
-              <span className="font-medium">
-                {agent.securityUpdates > 0 ? (
-                  <span className="text-red-500">{agent.securityUpdates} security</span>
-                ) : (
-                  `${agent.pendingUpdates} pending`
-                )}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
-      {/* ─── Scan Control ────────────────────────────────────────── */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">Scan Control</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex gap-2 items-center">
-            <Button onClick={handleScan} disabled={isScanning} className="gap-2">
-              <RefreshCw className={`w-4 h-4 ${isScanning ? "animate-spin" : ""}`} />
-              {isScanning ? "Scanning..." : "Run Full Scan"}
-            </Button>
-            <Button variant="outline" onClick={() => setAutoRefresh(!autoRefresh)} size="sm">
-              Auto-refresh: {autoRefresh ? "ON" : "OFF"}
-            </Button>
-            {agent.lastHeartbeat && (
-              <span className="text-xs text-muted-foreground ml-auto">
-                Last scan: {timeAgo(agent.lastHeartbeat)}
-              </span>
+      {/* ═══ FINDINGS + PORTS (2-col) ══════════════════════════════════════ */}
+      <div className="grid gap-4 lg:grid-cols-3">
+
+        {/* Security Findings — takes 2 cols */}
+        <div className="lg:col-span-2 rounded-xl overflow-hidden" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+          <div className="px-5 py-4 flex items-center justify-between border-b" style={{ borderColor: "var(--border)" }}>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(239,68,68,0.1)" }}>
+                <FileWarning className="w-4 h-4 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold">Security Findings</h3>
+                <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                  {agent.alerts.length} open
+                  {criticalCount > 0 && <span className="text-red-500 font-medium"> &middot; {criticalCount} critical</span>}
+                  {highCount > 0 && <span className="text-orange-500 font-medium"> &middot; {highCount} high</span>}
+                </p>
+              </div>
+            </div>
+            {/* Severity pills */}
+            <div className="hidden sm:flex gap-1.5">
+              {[
+                { label: "C", count: criticalCount, color: "#ef4444" },
+                { label: "H", count: highCount, color: "#f97316" },
+                { label: "M", count: mediumCount, color: "#eab308" },
+                { label: "L", count: lowCount, color: "#3b82f6" },
+              ].map((s) => (
+                <div
+                  key={s.label}
+                  className="w-7 h-7 rounded-md flex items-center justify-center text-[10px] font-bold"
+                  style={{
+                    background: s.count > 0 ? `${s.color}15` : "var(--bg-secondary)",
+                    color: s.count > 0 ? s.color : "var(--text-muted)",
+                    border: s.count > 0 ? `1px solid ${s.color}30` : "1px solid var(--border)",
+                  }}
+                >
+                  {s.count}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="p-4 max-h-[400px] overflow-y-auto space-y-2">
+            {agent.alerts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 gap-2">
+                <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: "rgba(34,197,94,0.1)" }}>
+                  <CheckCircle2 className="w-6 h-6 text-green-500" />
+                </div>
+                <p className="text-sm font-medium text-green-600">All Clear</p>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>No active threats detected</p>
+              </div>
+            ) : (
+              agent.alerts.slice(0, 20).map((alert) => {
+                const sev = SEVERITY_CONFIG[alert.severity] ?? SEVERITY_CONFIG.LOW;
+                return (
+                  <div
+                    key={alert.id}
+                    className="flex items-start gap-3 p-3 rounded-lg transition-colors hover:brightness-95"
+                    style={{ background: sev.bg, borderLeft: `3px solid ${sev.color}` }}
+                  >
+                    {alert.severity === "CRITICAL" ? (
+                      <XCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: sev.color }} />
+                    ) : alert.severity === "HIGH" ? (
+                      <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: sev.color }} />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" style={{ color: sev.color }} />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium truncate">{alert.title}</span>
+                        <span
+                          className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded shrink-0"
+                          style={{ background: `${sev.color}20`, color: sev.color }}
+                        >
+                          {alert.severity}
+                        </span>
+                      </div>
+                      <p className="text-xs mt-0.5 line-clamp-2" style={{ color: "var(--text-secondary)" }}>{alert.description}</p>
+                      {alert.aiRecommendation && (
+                        <details className="mt-1.5">
+                          <summary className="text-[11px] cursor-pointer font-medium" style={{ color: "var(--brand-primary)" }}>
+                            View fix recommendation
+                          </summary>
+                          <pre className="mt-1.5 p-2.5 rounded-md text-[11px] overflow-auto whitespace-pre-wrap leading-relaxed"
+                            style={{ background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                            {alert.aiRecommendation}
+                          </pre>
+                        </details>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+            {agent.alerts.length > 20 && (
+              <p className="text-xs text-center py-2" style={{ color: "var(--text-muted)" }}>
+                +{agent.alerts.length - 20} more findings
+              </p>
             )}
           </div>
-          {isScanning && (
-            <div className="space-y-1">
-              <Progress value={scanProgress} className="h-2" />
-              <p className="text-xs text-muted-foreground">{scanProgress.toFixed(0)}%</p>
-            </div>
-          )}
-          {scanError && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{scanError}</AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* ─── Security Findings (from DB alerts) ──────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertCircle className="w-5 h-5" />
-            Security Findings ({agent.alerts.length})
-          </CardTitle>
-          <CardDescription>
-            {agent.alerts.filter(a => a.severity === "CRITICAL").length} critical
-            {" \u2022 "}
-            {agent.alerts.filter(a => a.severity === "HIGH").length} high
-            {" \u2022 "}
-            {agent.alerts.filter(a => a.severity === "MEDIUM").length} medium
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {agent.alerts.length === 0 ? (
-            <Alert>
-              <CheckCircle2 className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-600">
-                All systems secure. No active threats detected.
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <div className="space-y-2">
-              {agent.alerts.slice(0, 15).map((alert) => (
-                <div
-                  key={alert.id}
-                  className="flex items-start gap-3 p-3 border rounded-lg"
-                  style={{ borderLeftWidth: 4, borderLeftColor: SEVERITY_COLORS[alert.severity] ?? "#888" }}
-                >
-                  {alert.severity === "CRITICAL" ? (
-                    <XCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
-                  ) : alert.severity === "HIGH" ? (
-                    <AlertTriangle className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-yellow-500 mt-0.5 shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium truncate">{alert.title}</p>
-                      <Badge variant={alert.severity === "CRITICAL" ? "destructive" : "secondary"} className="shrink-0">
-                        {alert.severity}
-                      </Badge>
+        {/* Ports + Services column */}
+        <div className="space-y-4">
+          {/* Open Ports */}
+          <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+            <div className="px-4 py-3 flex items-center gap-2 border-b" style={{ borderColor: "var(--border)" }}>
+              <Globe className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+              <span className="text-sm font-semibold">Open Ports</span>
+              <Badge variant="secondary" className="ml-auto text-[10px]">{latestScan?.ports?.length ?? 0}</Badge>
+            </div>
+            <div className="p-3 space-y-1.5 max-h-[200px] overflow-y-auto">
+              {!latestScan?.ports?.length ? (
+                <p className="text-xs text-center py-4" style={{ color: "var(--text-muted)" }}>No scan data</p>
+              ) : (
+                latestScan.ports.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-[var(--bg-secondary)] transition-colors">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm font-bold" style={{ color: "var(--text-primary)" }}>{p.port}</span>
+                      <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{p.service}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground">{alert.description}</p>
-                    {alert.aiRecommendation && (
-                      <details className="text-xs">
-                        <summary className="cursor-pointer font-medium text-blue-600">View fix</summary>
-                        <pre className="mt-1 p-2 bg-muted rounded text-xs overflow-auto whitespace-pre-wrap">
-                          {alert.aiRecommendation}
-                        </pre>
-                      </details>
-                    )}
+                    <span
+                      className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded"
+                      style={{
+                        background: p.risk === "critical" || p.risk === "high" ? "rgba(239,68,68,0.1)" : "var(--bg-secondary)",
+                        color: p.risk === "critical" ? "#ef4444" : p.risk === "high" ? "#f97316" : "var(--text-muted)",
+                      }}
+                    >
+                      {p.risk}
+                    </span>
                   </div>
-                </div>
-              ))}
-              {agent.alerts.length > 15 && (
-                <p className="text-xs text-muted-foreground text-center">
-                  +{agent.alerts.length - 15} more findings
-                </p>
+                ))
               )}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
 
-      {/* ─── Open Ports (from latest scan) ────────────────────────── */}
-      {latestScan?.ports && latestScan.ports.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Globe className="w-5 h-5" />
-              Open Ports ({latestScan.ports.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-              {latestScan.ports.map((p, i) => (
-                <div key={i} className="flex items-center justify-between p-2 border rounded text-sm">
-                  <div className="flex items-center gap-2">
-                    <Wifi className="w-3 h-3 text-muted-foreground" />
-                    <span className="font-mono">{p.port}</span>
-                    <span className="text-muted-foreground">{p.service}</span>
+          {/* Services */}
+          <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+            <div className="px-4 py-3 flex items-center gap-2 border-b" style={{ borderColor: "var(--border)" }}>
+              <Shield className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
+              <span className="text-sm font-semibold">Services</span>
+              <Badge variant="secondary" className="ml-auto text-[10px]">
+                {activeServices}/{agent.serviceStatuses.length}
+              </Badge>
+            </div>
+            <div className="p-3 space-y-1 max-h-[200px] overflow-y-auto">
+              {agent.serviceStatuses.length === 0 ? (
+                <p className="text-xs text-center py-4" style={{ color: "var(--text-muted)" }}>No services tracked</p>
+              ) : (
+                agent.serviceStatuses.map((svc) => (
+                  <div key={svc.id} className="flex items-center justify-between py-1.5 px-2 rounded-md hover:bg-[var(--bg-secondary)] transition-colors">
+                    <span className="text-[13px] font-medium">{svc.serviceName}</span>
+                    <div className="flex items-center gap-1.5">
+                      <div className={`w-1.5 h-1.5 rounded-full ${svc.isActive ? "bg-green-500" : "bg-red-500"}`} />
+                      <span className="text-[11px]" style={{ color: svc.isActive ? "#22c55e" : "#ef4444" }}>
+                        {svc.isActive ? "Active" : "Down"}
+                      </span>
+                    </div>
                   </div>
-                  <Badge
-                    variant={p.risk === "critical" || p.risk === "high" ? "destructive" : "secondary"}
-                    className="text-[10px]"
-                  >
-                    {p.risk}
-                  </Badge>
-                </div>
-              ))}
+                ))
+              )}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        </div>
+      </div>
 
-      {/* ─── Services ────────────────────────────────────────────── */}
-      {agent.serviceStatuses.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="w-5 h-5" />
-              Services ({agent.serviceStatuses.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-4">
-              {agent.serviceStatuses.map((svc) => (
-                <div key={svc.id} className="flex items-center justify-between p-2 border rounded">
-                  <span className="text-sm font-medium">{svc.serviceName}</span>
-                  {svc.isActive ? (
-                    <Badge className="bg-green-600 text-white">Active</Badge>
-                  ) : (
-                    <Badge variant="destructive">Down</Badge>
-                  )}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ─── File Integrity (from latest scan) ───────────────────── */}
+      {/* ═══ FILE INTEGRITY ════════════════════════════════════════════════ */}
       {latestScan?.fileIntegrity && latestScan.fileIntegrity.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Lock className="w-5 h-5" />
-              File Integrity
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1">
-              {latestScan.fileIntegrity.map((fi, i) => (
-                <div key={i} className="flex items-center justify-between p-2 border rounded text-sm">
-                  <span className="font-mono text-xs truncate flex-1">{fi.path}</span>
-                  <div className="flex items-center gap-2 shrink-0 ml-2">
-                    <span className="font-mono text-xs text-muted-foreground">{fi.permissions}</span>
-                    {fi.status === "ok" ? (
-                      <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    ) : fi.status === "danger" ? (
-                      <XCircle className="w-4 h-4 text-red-500" />
-                    ) : (
-                      <AlertTriangle className="w-4 h-4 text-yellow-500" />
-                    )}
-                  </div>
-                </div>
-              ))}
+        <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+          <div className="px-5 py-4 flex items-center gap-2.5 border-b" style={{ borderColor: "var(--border)" }}>
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(139,92,246,0.1)" }}>
+              <Lock className="w-4 h-4 text-purple-500" />
             </div>
-          </CardContent>
-        </Card>
+            <div>
+              <h3 className="text-sm font-semibold">File Integrity</h3>
+              <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>Critical system file permissions</p>
+            </div>
+          </div>
+          <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+            {latestScan.fileIntegrity.map((fi, i) => (
+              <div key={i} className="flex items-center gap-3 px-5 py-2.5">
+                {fi.status === "ok" ? (
+                  <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+                ) : fi.status === "danger" ? (
+                  <XCircle className="w-4 h-4 text-red-500 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-yellow-500 shrink-0" />
+                )}
+                <span className="font-mono text-xs flex-1 truncate">{fi.path}</span>
+                <span className="font-mono text-[11px] px-2 py-0.5 rounded" style={{ background: "var(--bg-secondary)", color: "var(--text-muted)" }}>
+                  {fi.permissions}
+                </span>
+                <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{fi.owner}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
-      {/* ─── Performance Trend ───────────────────────────────────── */}
+      {/* ═══ PERFORMANCE HISTORY ═══════════════════════════════════════════ */}
       {metricSnapshots.length > 1 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5" />
-              Performance History ({metricSnapshots.length} scans)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <div className="text-sm font-medium mb-2">CPU Usage</div>
-              <div className="flex gap-1 items-end h-12">
-                {metricSnapshots.slice().reverse().map((m, i) => (
-                  <div
-                    key={i}
-                    className="flex-1 bg-blue-500 rounded-t opacity-70 hover:opacity-100 transition-opacity"
-                    style={{ height: `${Math.max(m.cpuPercent, 2)}%`, minHeight: "2px" }}
-                    title={`CPU: ${m.cpuPercent.toFixed(1)}% — ${new Date(m.timestamp).toLocaleTimeString()}`}
-                  />
-                ))}
+        <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+          <div className="px-5 py-4 flex items-center justify-between border-b" style={{ borderColor: "var(--border)" }}>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(59,130,246,0.1)" }}>
+                <TrendingUp className="w-4 h-4 text-blue-500" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold">Performance Trend</h3>
+                <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>Last {metricSnapshots.length} scans</p>
               </div>
             </div>
-            <div>
-              <div className="text-sm font-medium mb-2">Memory Usage</div>
-              <div className="flex gap-1 items-end h-12">
-                {metricSnapshots.slice().reverse().map((m, i) => (
-                  <div
-                    key={i}
-                    className="flex-1 bg-purple-500 rounded-t opacity-70 hover:opacity-100 transition-opacity"
-                    style={{ height: `${Math.max(m.memPercent, 2)}%`, minHeight: "2px" }}
-                    title={`Memory: ${m.memPercent}% — ${new Date(m.timestamp).toLocaleTimeString()}`}
-                  />
-                ))}
-              </div>
-            </div>
-            <div>
-              <div className="text-sm font-medium mb-2">Disk Usage</div>
-              <div className="flex gap-1 items-end h-12">
-                {metricSnapshots.slice().reverse().map((m, i) => (
-                  <div
-                    key={i}
-                    className="flex-1 bg-amber-500 rounded-t opacity-70 hover:opacity-100 transition-opacity"
-                    style={{ height: `${Math.max(m.diskPercent, 2)}%`, minHeight: "2px" }}
-                    title={`Disk: ${m.diskPercent}% — ${new Date(m.timestamp).toLocaleTimeString()}`}
-                  />
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          </div>
+          <div className="p-5 grid gap-6 md:grid-cols-3">
+            <TrendChart label="CPU" data={metricSnapshots} getVal={(m) => m.cpuPercent} color="#3b82f6" unit="%" />
+            <TrendChart label="Memory" data={metricSnapshots} getVal={(m) => m.memPercent} color="#8b5cf6" unit="%" />
+            <TrendChart label="Disk" data={metricSnapshots} getVal={(m) => m.diskPercent} color="#f59e0b" unit="%" />
+          </div>
+        </div>
       )}
+    </div>
+  );
+}
 
-{/* Agent info moved to top */}
+// ─── Metric Card ──────────────────────────────────────────────────────────
+
+function MetricCard({ icon: Icon, label, value, unit, color, subtitle, trend }: {
+  icon: React.ElementType; label: string; value: number; unit: string; color: string; subtitle: string;
+  trend?: number;
+}) {
+  const percentage = Math.min(value, 100);
+  return (
+    <div className="rounded-xl p-4" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `${color}14` }}>
+            <Icon className="w-3.5 h-3.5" style={{ color }} />
+          </div>
+          <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>{label}</span>
+        </div>
+        {trend !== undefined && trend !== 0 && (
+          <div className="flex items-center gap-0.5 text-[10px] font-medium" style={{ color: trend > 0 ? "#ef4444" : "#22c55e" }}>
+            {trend > 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+            {Math.abs(trend).toFixed(1)}%
+          </div>
+        )}
+      </div>
+      <div className="text-2xl font-black tracking-tight">
+        {value.toFixed(1)}<span className="text-sm font-medium ml-0.5" style={{ color: "var(--text-muted)" }}>{unit}</span>
+      </div>
+      {/* Progress bar */}
+      <div className="mt-2.5 h-1.5 rounded-full overflow-hidden" style={{ background: `${color}12` }}>
+        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${percentage}%`, background: color }} />
+      </div>
+      <p className="text-[11px] mt-1.5" style={{ color: "var(--text-muted)" }}>{subtitle}</p>
+    </div>
+  );
+}
+
+// ─── Trend Chart ──────────────────────────────────────────────────────────
+
+function TrendChart({ label, data, getVal, color, unit }: {
+  label: string; data: MetricSnapshot[]; getVal: (m: MetricSnapshot) => number; color: string; unit: string;
+}) {
+  const reversed = data.slice().reverse();
+  const values = reversed.map(getVal);
+  const max = Math.max(...values, 1);
+  const current = values[values.length - 1] ?? 0;
+  const prev = values[values.length - 2];
+  const diff = prev !== undefined ? current - prev : 0;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>{label}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-bold">{current.toFixed(1)}{unit}</span>
+          {diff !== 0 && (
+            <span className="text-[10px] font-medium" style={{ color: diff > 0 ? "#ef4444" : "#22c55e" }}>
+              {diff > 0 ? "+" : ""}{diff.toFixed(1)}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="flex items-end gap-[3px] h-16">
+        {reversed.map((m, i) => {
+          const val = getVal(m);
+          const heightPct = (val / max) * 100;
+          return (
+            <div
+              key={i}
+              className="flex-1 rounded-sm transition-all duration-300 cursor-default group relative"
+              style={{
+                height: `${Math.max(heightPct, 3)}%`,
+                background: i === reversed.length - 1 ? color : `${color}50`,
+                minHeight: "2px",
+              }}
+              title={`${val.toFixed(1)}${unit} — ${new Date(m.timestamp).toLocaleString()}`}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }
