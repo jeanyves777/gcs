@@ -1407,8 +1407,8 @@ for dp in ports:
         findings.append({
             "id": uid(), "category": "network", "severity": sev,
             "title": f"{prefix}Port {dp['port']} Open ({dp['service']})",
-            "description": f"{dp['service']} listening on {dp['address']}:{dp['port']}.{' Localhost only.' if is_local else f' Not expected for {server_type[\"label\"]}.'}",
-            "remediation": "Verify this service is required." if is_local else f"Disable service or firewall port {dp['port']}.",
+            "description": "{} listening on {}:{}. {}".format(dp['service'], dp['address'], dp['port'], 'Localhost only.' if is_local else 'Not expected for ' + server_type['label'] + '.'),
+            "remediation": "Verify this service is required." if is_local else "Disable service or firewall port {}.".format(dp['port']),
             "value": f"{dp['address']}:{dp['port']}",
         })
 
