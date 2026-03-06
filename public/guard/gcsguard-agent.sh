@@ -316,7 +316,7 @@ collect_packages_apt() {
 
   # Check for security updates list
   local security_packages=""
-  if [[ -f /var/lib/apt/lists/*security*Packages 2>/dev/null ]] || apt-get upgrade -s 2>/dev/null | grep -qi "security"; then
+  if ls /var/lib/apt/lists/*security*Packages &>/dev/null || apt-get upgrade -s 2>/dev/null | grep -qi "security"; then
     security_packages=$(apt-get upgrade -s 2>/dev/null | grep -i "^Inst" | grep -i "security" | awk '{print $2}' || true)
   fi
 
