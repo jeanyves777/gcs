@@ -28,6 +28,7 @@ import {
   FileText,
   Building2,
   KeyRound,
+  BarChart3,
 } from "lucide-react";
 import { Logo } from "@/components/layout/logo";
 import { cn } from "@/lib/utils";
@@ -52,6 +53,7 @@ const adminNavItems = [
   { href: "/portal/admin/users", label: "Users", icon: Users },
   { href: "/portal/admin/organizations", label: "Organizations", icon: Building2 },
   { href: "/portal/admin/vault", label: "Vault", icon: KeyRound },
+  { href: "/portal/admin/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
 const guardNavItems = [

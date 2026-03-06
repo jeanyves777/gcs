@@ -3,6 +3,7 @@ import { Inter, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AnalyticsTracker } from "@/components/analytics-tracker";
 import "./globals.css";
 
 const inter = Inter({
@@ -116,6 +117,7 @@ export default function RootLayout({
         >
           <TooltipProvider>
             {children}
+            <AnalyticsTracker />
             <Toaster richColors position="top-right" />
           </TooltipProvider>
         </ThemeProvider>

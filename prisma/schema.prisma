@@ -812,3 +812,108 @@ model VaultAccessLog {
   @@index([userId])
   @@index([createdAt])
 }
+
+// ============================================================
+// ANALYTICS & VISITOR TRACKING
+// ============================================================
+
+model AnalyticsVisitor {
+  id            String   @id @default(cuid())
+  fingerprint   String   @unique   // Browser fingerprint hash
+  firstSeen     DateTime @default(now())
+  lastSeen      DateTime @default(now())
+  totalVisits   Int      @default(1)
+  totalPageViews Int     @default(0)
+
+  // Device info
+  browser       String?
+  browserVersion String?
+  os            String?
+  osVersion     String?
+  deviceType    String?  // desktop | mobile | tablet
+  screenWidth   Int?
+  screenHeight  Int?
+  language      String?
+  timezone      String?
+
+  // Geo (from IP lookup)
+  country       String?
+  countryCode   String?
+  region        String?
+  city          String?
+
+  // Marketing
+  firstReferrer String?
+  firstUtmSource String?
+  firstUtmMedium String?
+  firstUtmCampaign String?
+  tags          String?  // JSON array of tags for audience segmentation
+
+  sessions      AnalyticsSession[]
+  pageViews     AnalyticsPageView[]
+
+  @@index([lastSeen])
+  @@index([country])
+  @@index([deviceType])
+  @@index([firstUtmSource])
+}
+
+model AnalyticsSession {
+  id            String   @id @default(cuid())
+  visitorId     String
+  visitor       AnalyticsVisitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  startedAt     DateTime @default(now())
+  endedAt       DateTime?
+  duration      Int      @default(0) // seconds
+  pageCount     Int      @default(0)
+  entryPage     String?
+  exitPage      String?
+  ip            String?
+  referrer      String?
+  utmSource     String?
+  utmMedium     String?
+  utmCampaign   String?
+  utmTerm       String?
+  utmContent    String?
+  userAgent     String?
+  isBounce      Boolean  @default(true) // single page visit
+
+  pageViews     AnalyticsPageView[]
+
+  @@index([visitorId])
+  @@index([startedAt])
+  @@index([ip])
+}
+
+model AnalyticsPageView {
+  id            String   @id @default(cuid())
+  visitorId     String
+  visitor       AnalyticsVisitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  sessionId     String
+  session       AnalyticsSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  path          String
+  title         String?
+  referrer      String?
+  duration      Int      @default(0) // seconds on page
+  scrollDepth   Int      @default(0) // percentage 0-100
+  timestamp     DateTime @default(now())
+
+  @@index([visitorId])
+  @@index([sessionId])
+  @@index([path])
+  @@index([timestamp])
+}
+
+model AnalyticsEvent {
+  id            String   @id @default(cuid())
+  visitorId     String
+  sessionId     String
+  eventName     String   // click, scroll, form_submit, cta_click, etc.
+  eventData     String?  // JSON
+  path          String
+  timestamp     DateTime @default(now())
+
+  @@index([visitorId])
+  @@index([eventName])
+  @@index([timestamp])
+}
