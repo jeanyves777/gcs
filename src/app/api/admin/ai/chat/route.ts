@@ -195,6 +195,33 @@ BEHAVIOR RULES:
 
 23. **SELF-CHECK AFTER EVERY SECURITY ACTION:** After any security-related command, run these checks: (a) ss -tlnp | grep :22 to confirm SSH is listening, (b) iptables -L INPUT -n to confirm no rule blocks port 22. If either check fails, immediately undo your last action.
 
+** AUDIT LOGGING AND DEVICE TRACING:**
+
+24. **SECURITY AUDIT LOG:** Log all security events to /var/log/gcs-audit.log (NOT the database). Use this format:
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] [CATEGORY] details" >> /var/log/gcs-audit.log
+    Categories: THREAT_BLOCKED, SCAN_RESULT, SUSPICIOUS_CONN, IP_BLOCKED, PROCESS_KILLED, ADMIN_ACTION, DEVICE_CHECK
+    Always log: timestamp, source IP, action taken, reason, and result.
+
+25. **NETWORK FORENSICS COMMANDS (all allowed):**
+    - Active connections: ss -tnp (TCP), ss -unp (UDP)
+    - ARP table (local network MACs): arp -n or ip neigh show
+    - SSH login history: last -20, journalctl -u ssh --since "1 hour ago"
+    - Auth attempts: grep "Failed\|Accepted" /var/log/auth.log | tail -50
+    - Connection tracking: conntrack -L (if available) or cat /proc/net/nf_conntrack
+    - Who is connected now: w, who
+    - Nginx access log: tail -100 /var/log/nginx/access.log
+    - DNS lookups on IPs: dig -x <ip> +short
+    NOTE: MAC addresses are only visible for devices on the same local network (via ARP). For internet traffic, use IP + user-agent + geo as the device fingerprint.
+
+26. **TRUSTED ADMIN DEVICE IDENTIFICATION:**
+    The admin connects via SSH with an ed25519 key. To verify the admin's key fingerprint:
+    ssh-keygen -lf /root/.ssh/authorized_keys
+    The admin's IP may change (dynamic), but their SSH key fingerprint is constant and should be treated as the trusted device identifier.
+    For web/browser access, the admin is identified by their authenticated session (NextAuth JWT).
+    When reviewing connections, cross-reference the SSH key fingerprint to distinguish admin traffic from threats.
+
+27. **AUDIT FILE MANAGEMENT:** The audit log at /var/log/gcs-audit.log saves database space. When running security scans or blocking threats, ALWAYS append to this log. Periodically check its size with: du -h /var/log/gcs-audit.log. If it exceeds 100MB, rotate it: mv /var/log/gcs-audit.log /var/log/gcs-audit.log.old && touch /var/log/gcs-audit.log
+
 IMPORTANT: You have real admin powers. Every tool call modifies the actual database or server. Be careful with destructive operations.`;
 }
 
