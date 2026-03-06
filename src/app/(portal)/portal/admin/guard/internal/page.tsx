@@ -122,23 +122,12 @@ export default async function InternalGuardPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">
-          GcsGuard Internal Monitor
-        </h1>
-        <p className="text-sm text-muted-foreground mt-2">
-          Real-time security scanning and threat detection for GCS production
-          server
-        </p>
-      </div>
-      <InternalDashboardClient
-        initialData={{
-          agent: JSON.parse(JSON.stringify(agent)),
-          metricSnapshots: metricSnapshots as any[],
-          latestScan,
-        }}
-      />
-    </div>
+    <InternalDashboardClient
+      initialData={{
+        agent: JSON.parse(JSON.stringify(agent)),
+        metricSnapshots: metricSnapshots as any[],
+        latestScan,
+      }}
+    />
   );
 }
