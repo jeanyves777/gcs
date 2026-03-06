@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Users, Search, Loader2, UserCheck, UserX } from "lucide-react";
+import { Users, Search, Loader2, UserCheck, UserX, ShieldCheck, Briefcase, UserCog } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
 
@@ -37,7 +37,17 @@ const roleLabel: Record<string, string> = {
   CLIENT_USER: "Client User",
 };
 
-export function UsersClient({ users: initial }: { users: User[] }) {
+type Stats = {
+  total: number;
+  active: number;
+  inactive: number;
+  admins: number;
+  staff: number;
+  clientAdmins: number;
+  clientUsers: number;
+};
+
+export function UsersClient({ users: initial, stats }: { users: User[]; stats: Stats }) {
   const [users, setUsers] = useState<User[]>(initial);
   const [search, setSearch] = useState("");
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -126,6 +136,38 @@ export function UsersClient({ users: initial }: { users: User[] }) {
             style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}
           />
         </div>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "Active Users", value: stats.active, icon: UserCheck, color: "var(--success)", bg: "var(--success-bg)" },
+          { label: "Admins & Staff", value: stats.admins + stats.staff, icon: ShieldCheck, color: "var(--error)", bg: "var(--error-bg)" },
+          { label: "Client Admins", value: stats.clientAdmins, icon: UserCog, color: "var(--warning)", bg: "var(--warning-bg)" },
+          { label: "Client Users", value: stats.clientUsers, icon: Briefcase, color: "var(--info)", bg: "var(--info-bg)" },
+        ].map((s) => (
+          <Card key={s.label} className="card-base">
+            <CardContent className="p-5 flex flex-col gap-4">
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: s.bg }}
+              >
+                <s.icon className="h-4 w-4" style={{ color: s.color }} />
+              </div>
+              <div>
+                <p
+                  className="text-2xl font-bold tabular-nums"
+                  style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}
+                >
+                  {s.value}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                  {s.label}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       <Card className="card-base overflow-hidden">

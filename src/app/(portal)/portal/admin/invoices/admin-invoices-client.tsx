@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Receipt, Plus, Eye, Pencil } from "lucide-react";
+import { Receipt, Plus, Eye, Pencil, DollarSign, AlertTriangle, CheckCircle2, TrendingUp } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 type Invoice = {
@@ -33,14 +33,99 @@ const statusStyle: Record<string, { bg: string; color: string }> = {
   CANCELLED: { bg: "var(--bg-tertiary)", color: "var(--text-muted)" },
 };
 
-export function AdminInvoicesClient({ invoices }: { invoices: Invoice[] }) {
+type Stats = {
+  totalRevenue: number;
+  unpaidAmount: number;
+  overdueCount: number;
+  paidThisMonth: number;
+  totalCount: number;
+};
+
+export function AdminInvoicesClient({ invoices, stats }: { invoices: Invoice[]; stats: Stats }) {
   const [activeTab, setActiveTab] = useState<FilterTab>("ALL");
 
   const filtered =
     activeTab === "ALL" ? invoices : invoices.filter((inv) => inv.status === activeTab);
 
+  const statCards = [
+    {
+      label: "Total Revenue",
+      value: formatCurrency(stats.totalRevenue),
+      icon: DollarSign,
+      color: "var(--success)",
+      bg: "var(--success-bg)",
+    },
+    {
+      label: "Unpaid Amount",
+      value: formatCurrency(stats.unpaidAmount),
+      icon: TrendingUp,
+      color: "var(--warning)",
+      bg: "var(--warning-bg)",
+    },
+    {
+      label: "Overdue",
+      value: stats.overdueCount,
+      icon: AlertTriangle,
+      color: "var(--error)",
+      bg: "var(--error-bg)",
+    },
+    {
+      label: "Paid This Month",
+      value: formatCurrency(stats.paidThisMonth),
+      icon: CheckCircle2,
+      color: "var(--info)",
+      bg: "var(--info-bg)",
+    },
+  ];
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Page title */}
+      <div>
+        <h1
+          className="text-2xl font-bold flex items-center gap-2.5"
+          style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}
+        >
+          <div
+            className="p-1.5 rounded-lg"
+            style={{ background: "var(--brand-primary)", color: "white" }}
+          >
+            <Receipt className="h-5 w-5" />
+          </div>
+          Invoices
+        </h1>
+        <p className="text-sm mt-0.5" style={{ color: "var(--text-muted)" }}>
+          {stats.totalCount} total invoice{stats.totalCount !== 1 ? "s" : ""}
+        </p>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {statCards.map((s) => (
+          <Card key={s.label} className="card-base">
+            <CardContent className="p-5 flex flex-col gap-4">
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: s.bg }}
+              >
+                <s.icon className="h-4 w-4" style={{ color: s.color }} />
+              </div>
+              <div>
+                <p
+                  className="text-2xl font-bold tabular-nums"
+                  style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}
+                >
+                  {s.value}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                  {s.label}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       {/* Header row */}
       <div className="flex items-center justify-between gap-4">
         {/* Filter tabs */}

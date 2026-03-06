@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import { requireRole } from "@/lib/auth-utils";
 import { db } from "@/lib/db";
-import { Receipt } from "lucide-react";
 import { AdminInvoicesClient } from "./admin-invoices-client";
 
-export const metadata: Metadata = { title: "Admin – Invoices" };
+export const metadata: Metadata = { title: "Admin - Invoices" };
 
 export default async function AdminInvoicesPage() {
   await requireRole(["ADMIN", "STAFF"]);
@@ -15,20 +14,26 @@ export default async function AdminInvoicesPage() {
     orderBy: { createdAt: "desc" },
   });
 
+  // Compute stats
+  const totalRevenue = invoices.filter(i => i.status === "PAID").reduce((s, i) => s + i.amount + i.tax, 0);
+  const unpaidAmount = invoices.filter(i => ["SENT", "OVERDUE"].includes(i.status)).reduce((s, i) => s + i.amount + i.tax, 0);
+  const overdueCount = invoices.filter(i => i.status === "OVERDUE").length;
+  const thisMonth = new Date();
+  thisMonth.setDate(1);
+  thisMonth.setHours(0, 0, 0, 0);
+  const paidThisMonth = invoices
+    .filter(i => i.status === "PAID" && i.paidDate && new Date(i.paidDate) >= thisMonth)
+    .reduce((s, i) => s + i.amount + i.tax, 0);
+
+  const stats = {
+    totalRevenue,
+    unpaidAmount,
+    overdueCount,
+    paidThisMonth,
+    totalCount: invoices.length,
+  };
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>
-          <div className="p-1.5 rounded-lg" style={{ background: "var(--brand-primary)", color: "white" }}>
-            <Receipt className="h-5 w-5" />
-          </div>
-          Invoices
-        </h1>
-        <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>
-          Create and manage all client invoices
-        </p>
-      </div>
-      <AdminInvoicesClient invoices={invoices} />
-    </div>
+    <AdminInvoicesClient invoices={invoices} stats={stats} />
   );
 }

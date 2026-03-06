@@ -13,5 +13,15 @@ export default async function AdminUsersPage() {
     include: { organization: { select: { name: true } } },
   });
 
-  return <UsersClient users={users} />;
+  const stats = {
+    total: users.length,
+    active: users.filter((u) => u.isActive).length,
+    inactive: users.filter((u) => !u.isActive).length,
+    admins: users.filter((u) => u.role === "ADMIN").length,
+    staff: users.filter((u) => u.role === "STAFF").length,
+    clientAdmins: users.filter((u) => u.role === "CLIENT_ADMIN").length,
+    clientUsers: users.filter((u) => u.role === "CLIENT_USER").length,
+  };
+
+  return <UsersClient users={users} stats={stats} />;
 }
