@@ -27,6 +27,7 @@ import {
   Lock,
   Server,
   Wifi,
+  Package,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -227,6 +228,100 @@ export function InternalDashboardClient({
 
   return (
     <div className="space-y-6">
+      {/* ─── Agent Status Header ──────────────────────────────────── */}
+      <Card className="overflow-hidden">
+        <div className="flex flex-col md:flex-row">
+          {/* Left: Agent identity + status */}
+          <CardContent className="flex-1 pt-5 pb-4">
+            <div className="flex items-start gap-4">
+              <div
+                className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0"
+                style={{
+                  background: agent.status === "ONLINE"
+                    ? "linear-gradient(135deg, rgb(34,197,94), rgb(22,163,74))"
+                    : "linear-gradient(135deg, rgb(239,68,68), rgb(185,28,28))",
+                }}
+              >
+                <Shield className="w-7 h-7 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-lg font-bold">{agent.name}</h2>
+                  <Badge variant={agent.status === "ONLINE" ? "default" : "destructive"} className="gap-1">
+                    <div className={`w-1.5 h-1.5 rounded-full ${agent.status === "ONLINE" ? "bg-green-300 animate-pulse" : "bg-red-300"}`} />
+                    {agent.status}
+                  </Badge>
+                  {grade !== "-" && (
+                    <Badge variant={grade === "A" ? "default" : grade === "F" ? "destructive" : "secondary"} className="text-xs">
+                      Grade {grade}
+                    </Badge>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-2 mt-3 text-sm">
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-muted-foreground">IP</span>
+                    <span className="font-medium ml-auto">{agent.ipAddress ?? "127.0.0.1"}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Server className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-muted-foreground">Host</span>
+                    <span className="font-medium ml-auto">{agent.hostname ?? "localhost"}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-muted-foreground">Uptime</span>
+                    <span className="font-medium ml-auto">{formatUptime(latest?.uptime ?? 0)}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-muted-foreground">Last Scan</span>
+                    <span className="font-medium ml-auto">{agent.lastHeartbeat ? timeAgo(agent.lastHeartbeat) : "Never"}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+          {/* Right: Quick stats panel */}
+          <div className="md:w-64 border-t md:border-t-0 md:border-l p-4 flex flex-row md:flex-col justify-around gap-2" style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
+            <div className="flex items-center gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-red-500" />
+              <div>
+                <p className="text-lg font-bold leading-none">{agent.alerts.length}</p>
+                <p className="text-[10px] text-muted-foreground">Open Findings</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <Shield className="w-4 h-4 text-blue-500" />
+              <div>
+                <p className="text-lg font-bold leading-none">{agent.serviceStatuses.filter(s => s.isActive).length}/{agent.serviceStatuses.length}</p>
+                <p className="text-[10px] text-muted-foreground">Services Up</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <Wifi className="w-4 h-4 text-purple-500" />
+              <div>
+                <p className="text-lg font-bold leading-none">{latestScan?.ports?.length ?? 0}</p>
+                <p className="text-[10px] text-muted-foreground">Open Ports</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <Package className="w-4 h-4 text-amber-500" />
+              <div>
+                <p className="text-lg font-bold leading-none">
+                  {agent.securityUpdates > 0 ? (
+                    <span className="text-red-500">{agent.securityUpdates}</span>
+                  ) : (
+                    agent.pendingUpdates
+                  )}
+                </p>
+                <p className="text-[10px] text-muted-foreground">{agent.securityUpdates > 0 ? "Security Patches" : "Pending Updates"}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
+
       {/* ─── Top Row: Threat + Metrics ────────────────────────────── */}
       <div className="grid gap-4 md:grid-cols-5">
         {/* Threat Score Ring */}
@@ -589,32 +684,7 @@ export function InternalDashboardClient({
         </Card>
       )}
 
-      {/* ─── Agent Info Footer ────────────────────────────────────── */}
-      <Card>
-        <CardContent className="pt-4">
-          <div className="grid gap-3 md:grid-cols-4 text-sm">
-            <div>
-              <p className="text-xs text-muted-foreground">Agent</p>
-              <p className="font-medium">{agent.name}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Status</p>
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${agent.status === "ONLINE" ? "bg-green-500" : "bg-red-500"}`} />
-                <span className="font-medium">{agent.status}</span>
-              </div>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">IP</p>
-              <p className="font-medium">{agent.ipAddress ?? "127.0.0.1"}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Last Heartbeat</p>
-              <p className="font-medium">{agent.lastHeartbeat ? timeAgo(agent.lastHeartbeat) : "Never"}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+{/* Agent info moved to top */}
     </div>
   );
 }
