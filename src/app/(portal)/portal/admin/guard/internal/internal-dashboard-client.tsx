@@ -90,6 +90,13 @@ interface ScanResult {
   services: { name: string; status: string; enabled: boolean }[];
   patches: { total: number; security: number; packages: string[] };
   fileIntegrity: { path: string; status: string; permissions: string; owner: string; issue?: string }[];
+  connectionAudit?: {
+    activeConnections: { protocol: string; localAddr: string; localPort: number; remoteAddr: string; remotePort: number; state: string; process: string; pid: string }[];
+    sshSessions: { user: string; ip: string; loginTime: string; tty: string; keyFingerprint?: string }[];
+    neighbors: { ip: string; mac: string; interface: string; state: string }[];
+    adminKeyFingerprint: string;
+    trustedSessionActive: boolean;
+  };
   threatScore: number;
   threatLevel: string;
   grade: string;
@@ -651,6 +658,124 @@ export function InternalDashboardClient({ initialData }: { initialData: Dashboar
                 <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{fi.owner}</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ CONNECTION AUDIT ════════════════════════════════════════════ */}
+      {latestScan?.connectionAudit && (
+        <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+          <div className="px-5 py-4 flex items-center justify-between border-b" style={{ borderColor: "var(--border)" }}>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "rgba(6,182,212,0.1)" }}>
+                <Wifi className="w-4 h-4 text-cyan-500" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold">Connection Audit</h3>
+                <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                  {latestScan.connectionAudit.activeConnections.length} connections &middot;{" "}
+                  {latestScan.connectionAudit.sshSessions.length} SSH sessions &middot;{" "}
+                  {latestScan.connectionAudit.neighbors.length} network neighbors
+                </p>
+              </div>
+            </div>
+            {latestScan.connectionAudit.trustedSessionActive && (
+              <Badge className="text-[10px] px-2 py-0.5 bg-green-500/10 text-green-600 border-green-500/20">
+                <ShieldCheck className="w-3 h-3 mr-1" /> Admin Verified
+              </Badge>
+            )}
+          </div>
+
+          {/* SSH Sessions */}
+          {latestScan.connectionAudit.sshSessions.length > 0 && (
+            <div className="border-b" style={{ borderColor: "var(--border)" }}>
+              <div className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)", background: "var(--bg-secondary)" }}>
+                Active SSH Sessions
+              </div>
+              {latestScan.connectionAudit.sshSessions.map((s, i) => (
+                <div key={i} className="flex items-center gap-3 px-5 py-2.5 border-t" style={{ borderColor: "var(--border)" }}>
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{
+                    background: s.keyFingerprint ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)"
+                  }}>
+                    {s.keyFingerprint ? (
+                      <ShieldCheck className="w-3 h-3 text-green-500" />
+                    ) : (
+                      <AlertTriangle className="w-3 h-3 text-red-500" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold">{s.user}@{s.ip}</span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: "var(--bg-secondary)", color: "var(--text-muted)" }}>
+                        {s.tty}
+                      </span>
+                    </div>
+                    {s.keyFingerprint && (
+                      <span className="text-[10px] font-mono truncate block" style={{ color: "var(--text-muted)" }}>
+                        Key: {s.keyFingerprint}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[11px] shrink-0" style={{ color: "var(--text-muted)" }}>{s.loginTime}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Active Connections (external only) */}
+          {(() => {
+            const external = latestScan.connectionAudit!.activeConnections.filter(
+              c => c.remoteAddr !== "127.0.0.1" && c.remoteAddr !== "::1"
+            );
+            if (external.length === 0) return null;
+            return (
+              <div className="border-b" style={{ borderColor: "var(--border)" }}>
+                <div className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)", background: "var(--bg-secondary)" }}>
+                  External Connections ({external.length})
+                </div>
+                <div className="max-h-48 overflow-y-auto">
+                  {external.map((c, i) => (
+                    <div key={i} className="flex items-center gap-3 px-5 py-1.5 border-t text-[11px]" style={{ borderColor: "var(--border)" }}>
+                      <span className="font-mono w-36 shrink-0">{c.remoteAddr}</span>
+                      <span className="px-1.5 py-0.5 rounded" style={{ background: "var(--bg-secondary)", color: "var(--text-muted)" }}>
+                        :{c.localPort}
+                      </span>
+                      <span className="flex-1 truncate" style={{ color: "var(--text-muted)" }}>{c.process}</span>
+                      <span className="font-mono" style={{ color: "var(--text-muted)" }}>pid:{c.pid}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Network Neighbors (ARP/MAC) */}
+          {latestScan.connectionAudit.neighbors.length > 0 && (
+            <div>
+              <div className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)", background: "var(--bg-secondary)" }}>
+                Network Neighbors (ARP/MAC)
+              </div>
+              <div className="max-h-36 overflow-y-auto">
+                {latestScan.connectionAudit.neighbors.map((n, i) => (
+                  <div key={i} className="flex items-center gap-3 px-5 py-1.5 border-t text-[11px]" style={{ borderColor: "var(--border)" }}>
+                    <span className="font-mono w-36 shrink-0">{n.ip}</span>
+                    <span className="font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(6,182,212,0.08)", color: "#06b6d4" }}>
+                      {n.mac}
+                    </span>
+                    <span style={{ color: "var(--text-muted)" }}>{n.interface}</span>
+                    <span className="ml-auto" style={{ color: "var(--text-muted)" }}>{n.state}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Admin Key Fingerprint */}
+          <div className="px-5 py-3 border-t flex items-center gap-2" style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
+            <Lock className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+              Admin Key: <span className="font-mono">{latestScan.connectionAudit.adminKeyFingerprint.split(" ").slice(0, 2).join(" ")}</span>
+            </span>
           </div>
         </div>
       )}

@@ -75,6 +75,40 @@ export interface FileIntegrityResult {
   issue?: string;
 }
 
+export interface ActiveConnection {
+  protocol: string;
+  localAddr: string;
+  localPort: number;
+  remoteAddr: string;
+  remotePort: number;
+  state: string;
+  process: string;
+  pid: string;
+}
+
+export interface NetworkNeighbor {
+  ip: string;
+  mac: string;
+  interface: string;
+  state: string;
+}
+
+export interface SSHSession {
+  user: string;
+  ip: string;
+  loginTime: string;
+  tty: string;
+  keyFingerprint?: string;
+}
+
+export interface ConnectionAudit {
+  activeConnections: ActiveConnection[];
+  sshSessions: SSHSession[];
+  neighbors: NetworkNeighbor[];
+  adminKeyFingerprint: string;
+  trustedSessionActive: boolean;
+}
+
 export interface ScanResult {
   timestamp: string;
   metrics: SystemMetrics;
@@ -84,6 +118,7 @@ export interface ScanResult {
   patches: PatchInfo;
   authEvents: AuthEvent[];
   fileIntegrity: FileIntegrityResult[];
+  connectionAudit: ConnectionAudit;
   threatScore: number;
   threatLevel: "LOW" | "ELEVATED" | "HIGH" | "CRITICAL";
   grade: "A" | "B" | "C" | "D" | "F";
@@ -361,12 +396,14 @@ export function runSecurityChecks(
 ): SecurityFinding[] {
   const findings: SecurityFinding[] = [];
 
-  // --- Firewall ---
-  const ufwStatus = run("ufw status 2>/dev/null | head -1");
-  if (!ufwStatus.includes("active")) {
-    findings.push({ id: uid(), category: "firewall", severity: "CRITICAL", title: "Firewall is DISABLED", description: "UFW firewall is not active. Server is fully exposed.", remediation: "Run: ufw enable" });
+  // --- Firewall (iptables — UFW is disabled on this server) ---
+  const iptablesRules = run("iptables -L INPUT -n 2>/dev/null | wc -l");
+  const ruleCount = parseInt(iptablesRules) || 0;
+  if (ruleCount <= 2) {
+    // Only header + default policy = no rules
+    findings.push({ id: uid(), category: "firewall", severity: "CRITICAL", title: "No Firewall Rules Active", description: "iptables has no INPUT rules. Server ports are fully exposed.", remediation: "Add iptables rules to restrict access. Do NOT use ufw (broken on this server)." });
   } else {
-    findings.push({ id: uid(), category: "firewall", severity: "INFO", title: "Firewall Active (UFW)", description: "UFW firewall is active and protecting the server.", remediation: "No action needed." });
+    findings.push({ id: uid(), category: "firewall", severity: "INFO", title: `Firewall Active (${ruleCount - 2} iptables rules)`, description: "iptables INPUT chain has active filtering rules.", remediation: "No action needed." });
   }
 
   // --- Fail2Ban ---
@@ -516,6 +553,117 @@ export function computeThreatScore(findings: SecurityFinding[]): { score: number
   return { score, level, grade };
 }
 
+// ─── Connection Audit & Device Tracing ────────────────────────────────────────
+
+const AUDIT_LOG_PATH = "/var/log/gcs-audit.log";
+
+export function writeAuditLog(category: string, details: string): void {
+  try {
+    const timestamp = new Date().toISOString();
+    const line = `[${timestamp}] [${category}] ${details}\n`;
+    fs.appendFileSync(AUDIT_LOG_PATH, line);
+  } catch {
+    // Audit log write failure is non-fatal
+  }
+}
+
+export function getAdminKeyFingerprint(): string {
+  try {
+    const out = run("ssh-keygen -lf /root/.ssh/authorized_keys 2>/dev/null | head -5");
+    return out || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+export function checkActiveConnections(): ConnectionAudit {
+  const activeConnections: ActiveConnection[] = [];
+  const sshSessions: SSHSession[] = [];
+  const neighbors: NetworkNeighbor[] = [];
+
+  // Active TCP connections (exclude localhost-to-localhost internal traffic)
+  try {
+    const ssOut = run("ss -tnp 2>/dev/null | grep ESTAB");
+    for (const line of ssOut.split("\n").filter(Boolean)) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 5) continue;
+      const localParts = parts[3].match(/(.+):(\d+)$/);
+      const remoteParts = parts[4].match(/(.+):(\d+)$/);
+      if (!localParts || !remoteParts) continue;
+
+      const procMatch = line.match(/users:\(\("([^"]+)",pid=(\d+)/);
+      activeConnections.push({
+        protocol: "TCP",
+        localAddr: localParts[1],
+        localPort: parseInt(localParts[2]),
+        remoteAddr: remoteParts[1],
+        remotePort: parseInt(remoteParts[2]),
+        state: "ESTABLISHED",
+        process: procMatch ? procMatch[1] : "unknown",
+        pid: procMatch ? procMatch[2] : "",
+      });
+    }
+  } catch { }
+
+  // Current SSH sessions with key fingerprints
+  try {
+    const whoOut = run("who 2>/dev/null");
+    for (const line of whoOut.split("\n").filter(Boolean)) {
+      const match = line.match(/^(\S+)\s+(\S+)\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}|\w+\s+\w+\s+\d+\s+\d+:\d+)\s+\((.+?)\)/);
+      if (!match) continue;
+      const [, user, tty, loginTime, ip] = match;
+
+      // Try to get key fingerprint for this session from auth.log
+      let keyFingerprint: string | undefined;
+      try {
+        const keyLog = run(`grep "Accepted publickey for ${user} from ${ip}" /var/log/auth.log 2>/dev/null | tail -1`);
+        const fpMatch = keyLog.match(/SHA256:\S+/);
+        if (fpMatch) keyFingerprint = fpMatch[0];
+      } catch { }
+
+      sshSessions.push({ user, ip, loginTime, tty, keyFingerprint });
+    }
+  } catch { }
+
+  // ARP/neighbor table (MAC addresses on local network)
+  try {
+    const arpOut = run("ip neigh show 2>/dev/null || arp -n 2>/dev/null");
+    for (const line of arpOut.split("\n").filter(Boolean)) {
+      // ip neigh format: "IP dev IFACE lladdr MAC state"
+      const ipNeighMatch = line.match(/^(\S+)\s+dev\s+(\S+)\s+lladdr\s+(\S+)\s+(\S+)/);
+      if (ipNeighMatch) {
+        neighbors.push({
+          ip: ipNeighMatch[1],
+          interface: ipNeighMatch[2],
+          mac: ipNeighMatch[3],
+          state: ipNeighMatch[4],
+        });
+        continue;
+      }
+      // arp -n format: "IP HWtype HWaddress Flags Iface"
+      const arpMatch = line.match(/^(\S+)\s+\S+\s+(\S+)\s+\S+\s+(\S+)/);
+      if (arpMatch && arpMatch[2] !== "(incomplete)") {
+        neighbors.push({
+          ip: arpMatch[1],
+          interface: arpMatch[3],
+          mac: arpMatch[2],
+          state: "reachable",
+        });
+      }
+    }
+  } catch { }
+
+  // Admin key fingerprint
+  const adminKeyFingerprint = getAdminKeyFingerprint();
+
+  // Check if a trusted admin session is active (matching key fingerprint)
+  const trustedSessionActive = sshSessions.some(s =>
+    s.keyFingerprint && adminKeyFingerprint.includes(s.keyFingerprint.replace("SHA256:", ""))
+  );
+
+  return { activeConnections, sshSessions, neighbors, adminKeyFingerprint, trustedSessionActive };
+}
+
 // ─── Master Scan ──────────────────────────────────────────────────────────────
 
 export async function runFullScan(): Promise<ScanResult> {
@@ -525,8 +673,36 @@ export async function runFullScan(): Promise<ScanResult> {
   const patches = checkPatches();
   const authEvents = checkAuthLog();
   const fileIntegrity = checkFileIntegrity();
+  const connectionAudit = checkActiveConnections();
   const findings = runSecurityChecks(ports, services, patches, authEvents, fileIntegrity, metrics);
   const { score, level, grade } = computeThreatScore(findings);
+
+  // Write audit log entry for the scan
+  const nonInfo = findings.filter(f => f.severity !== "INFO").length;
+  const connCount = connectionAudit.activeConnections.length;
+  const sshCount = connectionAudit.sshSessions.length;
+  writeAuditLog("SCAN_RESULT",
+    `grade=${grade} score=${score} findings=${nonInfo} connections=${connCount} ssh_sessions=${sshCount} ` +
+    `trusted_admin=${connectionAudit.trustedSessionActive}`
+  );
+
+  // Log each SSH session for traceability
+  for (const sess of connectionAudit.sshSessions) {
+    writeAuditLog("SSH_SESSION",
+      `user=${sess.user} ip=${sess.ip} tty=${sess.tty} key=${sess.keyFingerprint || "none"} login=${sess.loginTime}`
+    );
+  }
+
+  // Log suspicious connections (non-standard ports from external IPs)
+  const safeLocalPorts = new Set([22, 80, 443, 3000, 5432, 9876]);
+  for (const conn of connectionAudit.activeConnections) {
+    if (conn.remoteAddr === "127.0.0.1" || conn.remoteAddr === "::1") continue;
+    if (!safeLocalPorts.has(conn.localPort)) {
+      writeAuditLog("SUSPICIOUS_CONN",
+        `remote=${conn.remoteAddr}:${conn.remotePort} local_port=${conn.localPort} process=${conn.process} pid=${conn.pid}`
+      );
+    }
+  }
 
   return {
     timestamp: new Date().toISOString(),
@@ -537,6 +713,7 @@ export async function runFullScan(): Promise<ScanResult> {
     patches,
     authEvents,
     fileIntegrity,
+    connectionAudit,
     threatScore: score,
     threatLevel: level,
     grade,
