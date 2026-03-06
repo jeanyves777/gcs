@@ -1609,50 +1609,52 @@ execute_commands() {
         fi
         ;;
       RUN_SCAN)
-        # Export metrics as env vars for the python3 scanner
-        local scan_metrics
-        scan_metrics=$(collect_metrics)
-        export SCAN_CPU=$(echo "$scan_metrics" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cpu',0))" 2>/dev/null || echo "0")
-        export SCAN_MEM_TOTAL="$mem_total" SCAN_MEM_USED="$mem_used" SCAN_MEM_PCT="$mem_pct"
-        export SCAN_DISK_TOTAL="$disk_total" SCAN_DISK_USED="$disk_used" SCAN_DISK_PCT="$disk_pct"
-        export SCAN_LOAD1="$load1" SCAN_LOAD5="$load5" SCAN_LOAD15="$load15"
-        export SCAN_UPTIME="$uptime_secs" SCAN_PROCS="$proc_count"
-        export SCAN_NET_RX="$net_rx" SCAN_NET_TX="$net_tx"
+        # Disable strict mode — scan uses many commands that may return non-zero
+        set +e
 
-        # Get fresh metrics for export
-        local _cpu _mem_info _df_line _loadavg _uptime _procs _iface _netrx _nettx
-        _cpu=$(top -bn1 2>/dev/null | grep "Cpu(s)" | awk '{print $2 + $4}' || echo "0")
-        export SCAN_CPU="$_cpu"
+        # Export fresh system metrics as env vars for python3 scanner
+        export SCAN_CPU=$(top -bn1 2>/dev/null | grep "Cpu(s)" | awk '{print $2 + $4}' || echo "0")
 
         if [[ -f /proc/meminfo ]]; then
           local _mt _mf _mb _mc _ms _mu _mp
-          _mt=$(awk '/^MemTotal:/ {print $2 * 1024}' /proc/meminfo)
-          _mf=$(awk '/^MemFree:/ {print $2 * 1024}' /proc/meminfo)
-          _mb=$(awk '/^Buffers:/ {print $2 * 1024}' /proc/meminfo)
-          _mc=$(awk '/^Cached:/ {print $2 * 1024}' /proc/meminfo || echo "0")
+          _mt=$(awk '/^MemTotal:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+          _mf=$(awk '/^MemFree:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+          _mb=$(awk '/^Buffers:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+          _mc=$(awk '/^Cached:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
           _ms=$(awk '/^SReclaimable:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
-          _mu=$((_mt - _mf - _mb - _mc - _ms))
+          _mu=$((_mt - _mf - _mb - _mc - _ms)) 2>/dev/null || _mu=0
           (( _mt > 0 )) && _mp=$((_mu * 100 / _mt)) || _mp=0
-          export SCAN_MEM_TOTAL="$_mt" SCAN_MEM_USED="$_mu" SCAN_MEM_PCT="$_mp"
+          export SCAN_MEM_TOTAL="${_mt:-0}" SCAN_MEM_USED="${_mu:-0}" SCAN_MEM_PCT="${_mp:-0}"
+        else
+          export SCAN_MEM_TOTAL=0 SCAN_MEM_USED=0 SCAN_MEM_PCT=0
         fi
 
+        local _df_line
         _df_line=$(df -B1 / 2>/dev/null | tail -1)
-        export SCAN_DISK_TOTAL=$(echo "$_df_line" | awk '{print $2}')
-        export SCAN_DISK_USED=$(echo "$_df_line" | awk '{print $3}')
-        export SCAN_DISK_PCT=$(echo "$_df_line" | awk '{gsub(/%/,"",$5); print $5}')
+        export SCAN_DISK_TOTAL=$(echo "$_df_line" | awk '{print $2}' 2>/dev/null || echo "0")
+        export SCAN_DISK_USED=$(echo "$_df_line" | awk '{print $3}' 2>/dev/null || echo "0")
+        export SCAN_DISK_PCT=$(echo "$_df_line" | awk '{gsub(/%/,"",$5); print $5}' 2>/dev/null || echo "0")
 
+        local _l1 _l5 _l15
         read -r _l1 _l5 _l15 _ _ < /proc/loadavg 2>/dev/null || { _l1=0; _l5=0; _l15=0; }
-        export SCAN_LOAD1="$_l1" SCAN_LOAD5="$_l5" SCAN_LOAD15="$_l15"
+        export SCAN_LOAD1="${_l1:-0}" SCAN_LOAD5="${_l5:-0}" SCAN_LOAD15="${_l15:-0}"
 
         export SCAN_UPTIME=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "0")
         export SCAN_PROCS=$(($(ps aux 2>/dev/null | wc -l) - 1))
 
+        local _iface
         _iface=$(ip route 2>/dev/null | grep default | awk '{print $5}' | head -1 || echo "eth0")
         export SCAN_NET_RX=$(grep "$_iface" /proc/net/dev 2>/dev/null | awk '{print $2}' || echo "0")
         export SCAN_NET_TX=$(grep "$_iface" /proc/net/dev 2>/dev/null | awk '{print $10}' || echo "0")
 
-        output=$(run_security_scan 2>&1)
+        output=$(run_security_scan 2>&1) || true
         status="COMPLETED"
+        if [[ -z "$output" ]]; then
+          output="Scan completed (check server for results)"
+        fi
+
+        # Re-enable strict mode
+        set -e
         ;;
       NETWORK_SCAN)
         output="Network scan triggered"
