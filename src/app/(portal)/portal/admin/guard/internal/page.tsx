@@ -6,8 +6,11 @@ import { InternalDashboardClient } from "./internal-dashboard-client";
 
 export const metadata: Metadata = {
   title: "GcsGuard Internal Monitor | GCS Admin",
-  description: "Real-time security scanning and monitoring for GCS production server",
+  description:
+    "Real-time security scanning and monitoring for GCS production server",
 };
+
+const AGENT_ID = "INTERNAL_GCS_SERVER";
 
 export default async function InternalGuardPage() {
   const user = await getCurrentUser();
@@ -15,23 +18,29 @@ export default async function InternalGuardPage() {
     redirect("/portal/login");
   }
 
-  // Find the GCS org for the internal agent
+  // Find GCS org
   const gcsOrg = await db.organization.findFirst({
-    where: { name: "General Computing Solutions" },
+    where: { name: { contains: "General Computing" } },
     select: { id: true },
   });
 
   if (!gcsOrg) {
-    return <div className="p-6 text-red-500">GCS organization not found in database.</div>;
+    return (
+      <div className="p-6 text-red-500">
+        GCS organization not found in database. Seed the database first.
+      </div>
+    );
   }
 
   // Fetch or create internal agent
   let agent = await db.guardAgent.findUnique({
-    where: { id: "INTERNAL_GCS_SERVER" },
+    where: { id: AGENT_ID },
     include: {
-      metrics: { orderBy: { timestamp: "desc" }, take: 100 },
-      alerts: { orderBy: { createdAt: "desc" }, take: 50 },
-      devices: true,
+      alerts: {
+        where: { status: "OPEN" },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      },
       serviceStatuses: true,
     },
   });
@@ -40,7 +49,7 @@ export default async function InternalGuardPage() {
     const apiKey = "internal-" + Date.now();
     agent = await db.guardAgent.create({
       data: {
-        id: "INTERNAL_GCS_SERVER",
+        id: AGENT_ID,
         name: "GCS Internal Monitor",
         hostname: "localhost",
         ipAddress: "127.0.0.1",
@@ -52,23 +61,84 @@ export default async function InternalGuardPage() {
         organizationId: gcsOrg.id,
       },
       include: {
-        metrics: { orderBy: { timestamp: "desc" }, take: 100 },
-        alerts: { orderBy: { createdAt: "desc" }, take: 50 },
-        devices: true,
+        alerts: {
+          where: { status: "OPEN" },
+          orderBy: { createdAt: "desc" },
+          take: 50,
+        },
         serviceStatuses: true,
       },
     });
   }
 
+  // Get scan history for trend data
+  const scans = await db.guardScan.findMany({
+    where: { agentId: AGENT_ID, status: "COMPLETED" },
+    orderBy: { startedAt: "desc" },
+    take: 20,
+    select: { results: true, startedAt: true },
+  });
+
+  const metricSnapshots = scans
+    .filter((s) => s.results)
+    .map((scan) => {
+      try {
+        const r = JSON.parse(scan.results!);
+        return {
+          cpuPercent: r.metrics?.cpuPercent ?? 0,
+          memPercent: r.metrics?.memPercent ?? 0,
+          memUsed: r.metrics?.memUsed ?? 0,
+          memTotal: r.metrics?.memTotal ?? 0,
+          diskPercent: r.metrics?.diskPercent ?? 0,
+          diskTotal: r.metrics?.diskTotal ?? 0,
+          diskUsed: r.metrics?.diskUsed ?? 0,
+          loadAvg: r.metrics?.loadAvg ?? [0, 0, 0],
+          uptime: r.metrics?.uptime ?? 0,
+          processes: r.metrics?.processes ?? 0,
+          networkRx: r.metrics?.networkRx ?? 0,
+          networkTx: r.metrics?.networkTx ?? 0,
+          threatScore: r.threatScore ?? 0,
+          threatLevel: r.threatLevel ?? "LOW",
+          grade: r.grade ?? "A",
+          findingCount:
+            r.findings?.filter(
+              (f: { severity: string }) => f.severity !== "INFO"
+            ).length ?? 0,
+          timestamp: scan.startedAt.toISOString(),
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+  let latestScan = null;
+  if (scans[0]?.results) {
+    try {
+      latestScan = JSON.parse(scans[0].results);
+    } catch {
+      /* ignore */
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">GcsGuard Internal Monitor</h1>
+        <h1 className="text-3xl font-bold tracking-tight">
+          GcsGuard Internal Monitor
+        </h1>
         <p className="text-sm text-muted-foreground mt-2">
-          Real-time security scanning, threat detection, and auto-remediation for GCS production server
+          Real-time security scanning and threat detection for GCS production
+          server
         </p>
       </div>
-      <InternalDashboardClient initialAgent={JSON.parse(JSON.stringify(agent))} />
+      <InternalDashboardClient
+        initialData={{
+          agent: JSON.parse(JSON.stringify(agent)),
+          metricSnapshots: metricSnapshots as any[],
+          latestScan,
+        }}
+      />
     </div>
   );
 }

@@ -113,6 +113,33 @@ YOUR CAPABILITIES:
 - Database: SQLite locally, PostgreSQL on server
 - GitHub: https://github.com/jeanyves777/gcs (branch: main)
 
+**DATABASE SCHEMA (Prisma) — Use these EXACT field names when writing code:**
+- User: id, name, email, password, role (ADMIN|STAFF|CLIENT_ADMIN|CLIENT_USER), phone?, jobTitle?, isActive, organizationId, notificationPrefs?, createdAt, updatedAt
+- Organization: id, name, domain? (unique), logo?, website?, phone?, email?, address?, city?, state?, zipCode?, country?, industry?, description?, subscriptionTier, createdAt, updatedAt — relations: users, projects, invoices, supportTickets, guardAgents, pitches
+- Project: id, name, description?, status (PLANNED|IN_PROGRESS|ON_HOLD|COMPLETED|CANCELLED), startDate?, endDate?, budget?, organizationId, createdAt, updatedAt
+- Invoice: id, invoiceNumber (unique), amount, status (DRAFT|SENT|PAID|OVERDUE|CANCELLED), dueDate?, paidDate?, organizationId, projectId?, lineItems?, notes?, createdAt
+- SupportTicket: id, subject, description, status (OPEN|IN_PROGRESS|RESOLVED|CLOSED), priority (LOW|MEDIUM|HIGH|URGENT), category?, organizationId, userId, assignedToId?, resolvedAt?, createdAt, updatedAt — relations: messages (SupportMessage[])
+- SupportMessage: id, content, ticketId, userId, isInternal, createdAt
+- GuardAgent: id, name, apiKey (unique), apiKeyPrefix, hostname?, ipAddress?, os?, kernelVersion?, distro?, distroVersion?, packageManager?, status (PENDING|ONLINE|OFFLINE|DEGRADED), lastHeartbeat?, lastInventorySync?, lastPatchCheck?, pendingUpdates, securityUpdates, config?, organizationId, createdAt, updatedAt — relations: metrics (GuardMetric[]), alerts (GuardAlert[]), scans (GuardScan[]), devices (GuardDevice[]), serviceStatuses (GuardServiceStatus[]), packages (GuardPackage[]), patchHistory, configDeployments, urlMonitors
+- GuardMetric: id, type (CPU|MEMORY|DISK|LOAD|NETWORK_IN|NETWORK_OUT), value (Float), metadata?, agentId, timestamp — @@index([agentId, type, timestamp])
+- GuardAlert: id, type, severity (CRITICAL|HIGH|MEDIUM|LOW|INFO), title, description, evidence?, status (OPEN|INVESTIGATING|RESOLVED|FALSE_POSITIVE), aiAnalysis?, aiRecommendation?, resolvedAt?, resolvedById?, agentId, incidentId?, createdAt
+- GuardScan: id, type (FULL|QUICK|VULNERABILITY|FILE_INTEGRITY), status (RUNNING|COMPLETED|FAILED), results? (JSON string), findingCount, completedAt?, agentId, startedAt
+- GuardServiceStatus: id, serviceName, isActive, isEnabled, subState?, memoryUsage?, cpuUsage?, uptime?, agentId, lastChecked, updatedAt — @@unique([agentId, serviceName])
+- GuardDevice: id, hostname, ipAddress?, macAddress?, os?, deviceType?, lastSeen?, agentId — relations: networkScans
+- VaultEntry: id, label, username?, encryptedData, iv, authTag, category?, url?, notes?, userId, createdAt, updatedAt
+- Pitch: id, companyName, website?, email?, contactName?, status, analysisData?, pentestData?, businessIntelData?, emailsSent?, organizationId?, userId, createdAt, updatedAt
+- AiConversation: id, title?, userId, createdAt, updatedAt — relations: messages (AiMessage[])
+- AiMessage: id, conversationId, role (user|assistant), content, toolCalls?, contentBlocks?, createdAt
+
+**CRITICAL FOR CODE GENERATION:** When writing Prisma queries:
+- GuardMetric uses "timestamp" NOT "createdAt" for ordering
+- GuardScan uses "startedAt" NOT "createdAt" for ordering
+- GuardAgent relation to services is "serviceStatuses" NOT "services"
+- GuardServiceStatus fields: "serviceName", "isActive", "isEnabled" (NOT "name", "status")
+- Organization has NO "slug" field — use "name" or "domain"
+- GuardAgent requires: apiKey, apiKeyPrefix, organizationId (all required for create)
+- Always use JSON.parse(JSON.stringify(data)) when passing Prisma objects to client components
+
 **Task Delegation (Sub-Agents):**
 - Use delegate_task to spawn specialized sub-agents for parallel work
 - "research": Web search agent (Haiku) — fast web lookups, documentation
