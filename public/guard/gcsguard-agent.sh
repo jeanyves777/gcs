@@ -860,6 +860,682 @@ collect_system_versions() {
 }
 
 # ============================================================
+# FULL SECURITY SCAN
+# ============================================================
+
+run_security_scan() {
+  log "Starting full security scan..."
+
+  # Collect all data into temp files for python3 to assemble
+  local tmpdir
+  tmpdir=$(mktemp -d /tmp/gcsguard-scan.XXXXXX)
+
+  # --- System Metrics ---
+  local cpu_pct mem_total mem_used mem_pct disk_total disk_used disk_pct
+  local load1 load5 load15 uptime_secs proc_count net_rx net_tx
+
+  cpu_pct=$(top -bn1 2>/dev/null | grep "Cpu(s)" | awk '{print $2 + $4}' || echo "0")
+
+  # Memory from /proc/meminfo (matches internal scanner exactly)
+  if [[ -f /proc/meminfo ]]; then
+    mem_total=$(awk '/^MemTotal:/ {print $2 * 1024}' /proc/meminfo)
+    local mem_free buffers cached sreclaimable
+    mem_free=$(awk '/^MemFree:/ {print $2 * 1024}' /proc/meminfo)
+    buffers=$(awk '/^Buffers:/ {print $2 * 1024}' /proc/meminfo)
+    cached=$(awk '/^Cached:/ {print $2 * 1024}' /proc/meminfo || echo "0")
+    sreclaimable=$(awk '/^SReclaimable:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+    mem_used=$((mem_total - mem_free - buffers - cached - sreclaimable))
+    if (( mem_total > 0 )); then
+      mem_pct=$((mem_used * 100 / mem_total))
+    else
+      mem_pct=0
+    fi
+  else
+    mem_total=0; mem_used=0; mem_pct=0
+  fi
+
+  # Disk
+  local df_line
+  df_line=$(df -B1 / 2>/dev/null | tail -1)
+  disk_total=$(echo "$df_line" | awk '{print $2}')
+  disk_used=$(echo "$df_line" | awk '{print $3}')
+  disk_pct=$(echo "$df_line" | awk '{gsub(/%/,"",$5); print $5}')
+
+  # Load average
+  read -r load1 load5 load15 _ _ < /proc/loadavg 2>/dev/null || { load1=0; load5=0; load15=0; }
+
+  # Uptime
+  uptime_secs=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "0")
+
+  # Process count
+  proc_count=$(ps aux 2>/dev/null | wc -l)
+  proc_count=$((proc_count - 1))
+
+  # Network I/O
+  local iface
+  iface=$(ip route 2>/dev/null | grep default | awk '{print $5}' | head -1 || echo "eth0")
+  if [[ -f /proc/net/dev ]]; then
+    net_rx=$(grep "$iface" /proc/net/dev 2>/dev/null | awk '{print $2}' || echo "0")
+    net_tx=$(grep "$iface" /proc/net/dev 2>/dev/null | awk '{print $10}' || echo "0")
+  else
+    net_rx=0; net_tx=0
+  fi
+
+  # --- Open Ports (ss) ---
+  local ports_data
+  ports_data=$(ss -tlnup 2>/dev/null || netstat -tlnup 2>/dev/null || echo "")
+  echo "$ports_data" > "$tmpdir/ports_raw.txt"
+
+  # --- Services ---
+  local services_list="nginx postgresql ssh ufw fail2ban pm2-root cups snapd apache2 mysql redis-server docker"
+  local svc_data=""
+  for svc in $services_list; do
+    local svc_status svc_enabled svc_pid
+    svc_status=$(systemctl is-active "$svc" 2>/dev/null || echo "unknown")
+    svc_enabled=$(systemctl is-enabled "$svc" 2>/dev/null || echo "unknown")
+    svc_pid=$(systemctl show "$svc" --property=MainPID 2>/dev/null | cut -d= -f2 || echo "0")
+    svc_data="${svc_data}${svc}|${svc_status}|${svc_enabled}|${svc_pid}\n"
+  done
+  echo -e "$svc_data" > "$tmpdir/services.txt"
+
+  # --- Patches ---
+  DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null || true
+  local patch_all patch_sec patch_pkgs
+  patch_all=$(apt list --upgradable 2>/dev/null | grep -v "^Listing" | head -50 || true)
+  patch_sec=$(echo "$patch_all" | grep -i security || true)
+  patch_pkgs=$(echo "$patch_all" | awk -F'/' '{print $1}' | head -20 || true)
+  echo "$patch_all" > "$tmpdir/patches_all.txt"
+  echo "$patch_sec" > "$tmpdir/patches_sec.txt"
+  echo "$patch_pkgs" > "$tmpdir/patches_pkgs.txt"
+
+  # --- Auth Log ---
+  grep -i 'sshd' /var/log/auth.log 2>/dev/null | tail -100 > "$tmpdir/auth_log.txt" || true
+  fail2ban-client status sshd 2>/dev/null > "$tmpdir/fail2ban.txt" || true
+
+  # --- SSH Config ---
+  cat /etc/ssh/sshd_config 2>/dev/null > "$tmpdir/sshd_config.txt" || true
+
+  # --- File Integrity ---
+  local critical_paths="/etc/passwd /etc/shadow /etc/sudoers /etc/ssh/sshd_config /etc/nginx/nginx.conf"
+  local fi_data=""
+  for fp in $critical_paths; do
+    if [[ -f "$fp" ]]; then
+      local fi_stat
+      fi_stat=$(stat -c "%a %U %G" "$fp" 2>/dev/null || echo "??? ??? ???")
+      fi_data="${fi_data}${fp}|${fi_stat}\n"
+    else
+      fi_data="${fi_data}${fp}|MISSING\n"
+    fi
+  done
+  # Also check for .env files in common web dirs
+  for envf in /var/www/*/.env /var/www/*/.env.production /home/*/.env; do
+    if [[ -f "$envf" ]]; then
+      local fi_stat
+      fi_stat=$(stat -c "%a %U %G" "$envf" 2>/dev/null || echo "??? ??? ???")
+      fi_data="${fi_data}${envf}|${fi_stat}\n"
+    fi
+  done
+  echo -e "$fi_data" > "$tmpdir/file_integrity.txt"
+
+  # --- Firewall ---
+  local fw_rules
+  fw_rules=$(iptables -L INPUT -n 2>/dev/null | wc -l || echo "0")
+  local ufw_status
+  ufw_status=$(ufw status 2>/dev/null | head -1 || echo "inactive")
+  echo "${fw_rules}|${ufw_status}" > "$tmpdir/firewall.txt"
+
+  # --- SSL Certificate ---
+  local ssl_data=""
+  # Try the server's own hostname and common domains
+  local server_hostname
+  server_hostname=$(hostname -f 2>/dev/null || hostname)
+  for domain in "$server_hostname" "$(hostname -d 2>/dev/null || true)"; do
+    if [[ -n "$domain" && "$domain" != "localhost" ]]; then
+      local ssl_expiry
+      ssl_expiry=$(echo | timeout 5 openssl s_client -connect "${domain}:443" -servername "$domain" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null || true)
+      if [[ -n "$ssl_expiry" ]]; then
+        ssl_data="${domain}|${ssl_expiry}"
+        break
+      fi
+    fi
+  done
+  echo "$ssl_data" > "$tmpdir/ssl.txt"
+
+  # --- Active Connections ---
+  ss -tnp 2>/dev/null | grep ESTAB > "$tmpdir/connections.txt" || true
+
+  # --- SSH Sessions ---
+  who 2>/dev/null > "$tmpdir/who.txt" || true
+
+  # --- ARP/Neighbors ---
+  ip neigh show 2>/dev/null > "$tmpdir/neighbors.txt" || arp -n 2>/dev/null > "$tmpdir/neighbors.txt" || true
+
+  # --- Server Type Detection ---
+  local has_nginx has_apache has_psql has_mysql has_mongod has_postfix has_redis has_docker
+  has_nginx=$(which nginx 2>/dev/null && echo "1" || echo "0")
+  has_apache=$(which apache2 2>/dev/null || which httpd 2>/dev/null && echo "1" || echo "0")
+  has_psql=$(which psql 2>/dev/null && echo "1" || echo "0")
+  has_mysql=$(which mysql 2>/dev/null && echo "1" || echo "0")
+  has_mongod=$(which mongod 2>/dev/null && echo "1" || echo "0")
+  has_postfix=$(which postfix 2>/dev/null && echo "1" || echo "0")
+  has_redis=$(which redis-server 2>/dev/null && echo "1" || echo "0")
+  has_docker=$(which docker 2>/dev/null && echo "1" || echo "0")
+  echo "${has_nginx}|${has_apache}|${has_psql}|${has_mysql}|${has_mongod}|${has_postfix}|${has_redis}|${has_docker}" > "$tmpdir/server_detection.txt"
+
+  # --- Admin SSH Key Fingerprint ---
+  local admin_fp
+  admin_fp=$(ssh-keygen -lf /root/.ssh/authorized_keys 2>/dev/null | head -5 || ssh-keygen -lf /home/*/.ssh/authorized_keys 2>/dev/null | head -5 || echo "unknown")
+  echo "$admin_fp" > "$tmpdir/admin_keys.txt"
+
+  # --- Use Python3 to build the complete JSON scan result ---
+  local scan_json
+  scan_json=$(python3 << 'PYEOF'
+import json, sys, os, re
+from datetime import datetime
+
+tmpdir = sys.argv[1] if len(sys.argv) > 1 else "/tmp/gcsguard-scan"
+
+def read_file(name):
+    try:
+        with open(os.path.join(tmpdir, name)) as f:
+            return f.read().strip()
+    except:
+        return ""
+
+# === Metrics ===
+metrics = {
+    "cpuPercent": float(os.environ.get("SCAN_CPU", "0")),
+    "memTotal": int(os.environ.get("SCAN_MEM_TOTAL", "0")),
+    "memUsed": int(os.environ.get("SCAN_MEM_USED", "0")),
+    "memPercent": int(os.environ.get("SCAN_MEM_PCT", "0")),
+    "diskTotal": int(os.environ.get("SCAN_DISK_TOTAL", "0")),
+    "diskUsed": int(os.environ.get("SCAN_DISK_USED", "0")),
+    "diskPercent": int(os.environ.get("SCAN_DISK_PCT", "0")),
+    "loadAvg": [float(os.environ.get("SCAN_LOAD1", "0")), float(os.environ.get("SCAN_LOAD5", "0")), float(os.environ.get("SCAN_LOAD15", "0"))],
+    "uptime": int(os.environ.get("SCAN_UPTIME", "0")),
+    "processes": int(os.environ.get("SCAN_PROCS", "0")),
+    "networkRx": int(os.environ.get("SCAN_NET_RX", "0")),
+    "networkTx": int(os.environ.get("SCAN_NET_TX", "0")),
+}
+
+# === Ports ===
+PORT_ROLES = {
+    80: "web", 443: "web", 8443: "web",
+    3000: "app", 3001: "app", 4000: "app", 5000: "app", 8000: "app", 9000: "app", 8080: "app",
+    5432: "database", 3306: "database", 27017: "database", 6379: "database", 1433: "database",
+    25: "mail", 465: "mail", 587: "mail", 993: "mail", 143: "mail", 110: "mail", 995: "mail",
+    53: "dns", 3128: "proxy", 9090: "monitoring", 9100: "monitoring",
+    21: "storage", 2049: "storage", 8081: "ci_cd", 8082: "ci_cd",
+}
+SERVICE_MAP = {
+    21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS",
+    80: "HTTP", 110: "POP3", 143: "IMAP", 443: "HTTPS", 445: "SMB",
+    631: "CUPS", 993: "IMAPS", 995: "POP3S", 1433: "MSSQL", 3000: "Node",
+    3306: "MySQL", 3389: "RDP", 5432: "PostgreSQL", 5900: "VNC",
+    6379: "Redis", 8080: "HTTP-Alt", 8443: "HTTPS-Alt", 9200: "Elasticsearch",
+    9876: "GCS-Daemon", 27017: "MongoDB",
+}
+RISK_MAP = {
+    21: "critical", 23: "critical", 445: "critical", 3389: "critical",
+    5900: "high", 1433: "high", 3306: "high", 27017: "high", 9200: "high",
+    25: "medium", 110: "medium", 143: "medium", 6379: "medium", 8080: "medium", 631: "medium",
+    22: "info", 80: "info", 443: "info", 5432: "info", 3000: "low", 9876: "info", 53: "info",
+}
+
+ports = []
+seen = set()
+for line in read_file("ports_raw.txt").split("\n"):
+    if not line or ("LISTEN" not in line and "0.0.0.0" not in line and ":::" not in line):
+        continue
+    # Parse address:port
+    parts = line.split()
+    for part in parts:
+        m = re.search(r'(\S+):(\d+)$', part)
+        if m:
+            addr = m.group(1)
+            port = int(m.group(2))
+            if port > 65535 or port == 0:
+                continue
+            key = f"{addr}:{port}"
+            if key in seen:
+                continue
+            seen.add(key)
+            # Extract process name
+            proc_match = re.search(r'users:\(\("([^"]+)"', line)
+            proc_name = proc_match.group(1) if proc_match else ""
+            ports.append({
+                "port": port,
+                "protocol": "TCP",
+                "state": "LISTEN",
+                "service": SERVICE_MAP.get(port, proc_name or "unknown"),
+                "address": addr,
+                "risk": RISK_MAP.get(port, "info"),
+            })
+            break
+
+ports.sort(key=lambda p: {"critical":0,"high":1,"medium":2,"low":3,"info":4}.get(p["risk"], 4))
+
+# === Server Type Detection ===
+ROLE_PORTS = {
+    "web": [22, 53, 80, 443], "app": [22, 53, 3000, 3001, 4000, 5000, 8000, 9000],
+    "database": [22, 53, 5432, 3306, 27017, 6379, 1433],
+    "mail": [22, 53, 25, 465, 587, 993, 143, 110, 995],
+    "dns": [22, 53], "proxy": [22, 53, 80, 443, 8080, 3128],
+    "monitoring": [22, 53, 9090, 9100, 3100], "storage": [22, 53, 21, 2049],
+    "ci_cd": [22, 53, 8081, 8082],
+}
+UNEXPECTED_SERVICES = {
+    "web": ["cups", "avahi-daemon", "bluetooth", "ModemManager"],
+    "app": ["cups", "avahi-daemon", "bluetooth", "ModemManager"],
+    "database": ["cups", "avahi-daemon", "bluetooth", "apache2", "httpd"],
+    "mail": ["cups", "avahi-daemon", "bluetooth"],
+    "dns": ["cups", "avahi-daemon", "bluetooth", "apache2"],
+    "proxy": ["cups", "avahi-daemon", "bluetooth"],
+    "monitoring": ["cups", "avahi-daemon", "bluetooth"],
+    "storage": ["cups", "avahi-daemon", "bluetooth"],
+    "ci_cd": ["cups", "avahi-daemon", "bluetooth"],
+}
+ROLE_LABELS = {
+    "web": "Web Server", "app": "Application Server", "database": "Database Server",
+    "mail": "Mail Server", "dns": "DNS Server", "proxy": "Reverse Proxy",
+    "monitoring": "Monitoring Server", "storage": "File/Storage Server", "ci_cd": "CI/CD Server",
+}
+
+listening_ports = [p["port"] for p in ports]
+detected_roles = set()
+for port in listening_ports:
+    role = PORT_ROLES.get(port)
+    if role:
+        detected_roles.add(role)
+
+# Detect from installed binaries
+det = read_file("server_detection.txt").split("|")
+if len(det) >= 8:
+    if "1" in det[0] or "1" in det[1]: detected_roles.add("web")
+    if "1" in det[2] or "1" in det[3] or "1" in det[4]: detected_roles.add("database")
+    if "1" in det[5]: detected_roles.add("mail")
+
+if not detected_roles:
+    detected_roles.add("app")
+
+roles = list(detected_roles)
+priority = ["web", "app", "database", "mail", "proxy", "dns", "monitoring", "storage", "ci_cd"]
+primary = next((r for r in priority if r in detected_roles), roles[0])
+
+expected_ports = {22, 53}
+for role in roles:
+    for p in ROLE_PORTS.get(role, []):
+        expected_ports.add(p)
+if 9876 in listening_ports:
+    expected_ports.add(9876)
+
+unexpected_svcs = set(UNEXPECTED_SERVICES.get(roles[0], []))
+for role in roles[1:]:
+    unexpected_svcs &= set(UNEXPECTED_SERVICES.get(role, []))
+
+server_type = {
+    "roles": roles,
+    "primary": primary,
+    "label": " + ".join(ROLE_LABELS.get(r, r) for r in roles),
+    "expectedPorts": sorted(expected_ports),
+    "unexpectedServices": list(unexpected_svcs),
+}
+
+# === Services ===
+services = []
+for line in read_file("services.txt").split("\n"):
+    if not line or "|" not in line:
+        continue
+    parts = line.split("|")
+    if len(parts) < 4:
+        continue
+    name, status, enabled, pid = parts[0], parts[1], parts[2], parts[3]
+    status_val = status if status in ("active", "inactive", "failed") else "unknown"
+    services.append({
+        "name": name,
+        "status": status_val,
+        "enabled": enabled == "enabled",
+        "pid": pid if pid != "0" else None,
+    })
+
+# === Patches ===
+patch_all_lines = [l for l in read_file("patches_all.txt").split("\n") if l.strip()]
+patch_sec_lines = [l for l in read_file("patches_sec.txt").split("\n") if l.strip()]
+patch_pkg_lines = [l for l in read_file("patches_pkgs.txt").split("\n") if l.strip()]
+patches = {
+    "total": len(patch_all_lines),
+    "security": len(patch_sec_lines),
+    "packages": patch_pkg_lines[:20],
+}
+
+# === Auth Events ===
+auth_events = []
+for line in read_file("auth_log.txt").split("\n"):
+    if not line:
+        continue
+    ts_match = re.match(r'^(\w+\s+\d+\s+\d+:\d+:\d+)', line)
+    ts = ts_match.group(1) if ts_match else ""
+    ip_match = re.search(r'from\s+(\d+\.\d+\.\d+\.\d+)', line)
+    ip = ip_match.group(1) if ip_match else "unknown"
+    user_match = re.search(r'(?:user|for)\s+(\S+)', line, re.I)
+    user = user_match.group(1) if user_match else "unknown"
+
+    if re.search(r'Invalid user|Failed password|authentication failure', line, re.I):
+        auth_events.append({"timestamp": ts, "type": "failure", "user": user, "ip": ip, "message": line[:120]})
+    elif re.search(r'Accepted publickey|Accepted password', line, re.I):
+        auth_events.append({"timestamp": ts, "type": "success", "user": user, "ip": ip, "message": line[:120]})
+    elif re.search(r'Ban |BANNED', line, re.I):
+        auth_events.append({"timestamp": ts, "type": "ban", "user": user, "ip": ip, "message": line[:120]})
+
+# Fail2ban bans
+f2b_data = read_file("fail2ban.txt")
+banned_match = re.search(r'Banned IP list:\s+(.+)', f2b_data)
+if banned_match:
+    for ip in banned_match.group(1).strip().split():
+        if ip:
+            auth_events.append({"timestamp": datetime.now().isoformat(), "type": "ban", "user": "sshd", "ip": ip, "message": f"Fail2Ban active ban: {ip}"})
+auth_events = auth_events[-50:]
+
+# === File Integrity ===
+file_integrity = []
+for line in read_file("file_integrity.txt").split("\n"):
+    if not line or "|" not in line:
+        continue
+    parts = line.split("|")
+    path = parts[0]
+    stat_info = parts[1] if len(parts) > 1 else "MISSING"
+
+    if stat_info == "MISSING":
+        file_integrity.append({"path": path, "status": "warning", "permissions": "???", "owner": "???", "issue": "File not found"})
+        continue
+
+    stat_parts = stat_info.strip().split()
+    perms = stat_parts[0] if stat_parts else "???"
+    owner = stat_parts[1] if len(stat_parts) > 1 else "???"
+
+    status = "ok"
+    issue = None
+    try:
+        perm_num = int(perms)
+    except:
+        perm_num = 0
+
+    if ".env" in path and perm_num > 600:
+        status = "danger"
+        issue = f"World-readable .env file ({perms}) -- should be 600"
+    elif "shadow" in path and perm_num > 640:
+        status = "danger"
+        issue = f"Shadow file too permissive ({perms})"
+    elif "sudoers" in path and perm_num > 440:
+        status = "danger"
+        issue = f"Sudoers too permissive ({perms})"
+    elif "sshd_config" in path and perm_num > 644:
+        status = "warning"
+        issue = f"SSH config writable by non-root ({perms})"
+
+    file_integrity.append({"path": path, "status": status, "permissions": perms, "owner": owner, "issue": issue})
+
+# === Connection Audit ===
+active_connections = []
+for line in read_file("connections.txt").split("\n"):
+    if not line:
+        continue
+    parts = line.split()
+    if len(parts) < 5:
+        continue
+    local_m = re.search(r'(.+):(\d+)$', parts[3])
+    remote_m = re.search(r'(.+):(\d+)$', parts[4])
+    if not local_m or not remote_m:
+        continue
+    proc_match = re.search(r'users:\(\("([^"]+)",pid=(\d+)', line)
+    active_connections.append({
+        "protocol": "TCP",
+        "localAddr": local_m.group(1),
+        "localPort": int(local_m.group(2)),
+        "remoteAddr": remote_m.group(1),
+        "remotePort": int(remote_m.group(2)),
+        "state": "ESTABLISHED",
+        "process": proc_match.group(1) if proc_match else "unknown",
+        "pid": proc_match.group(2) if proc_match else "",
+    })
+
+ssh_sessions = []
+for line in read_file("who.txt").split("\n"):
+    if not line:
+        continue
+    m = re.match(r'^(\S+)\s+(\S+)\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}|\w+\s+\w+\s+\d+\s+\d+:\d+)\s+\((.+?)\)', line)
+    if m:
+        ssh_sessions.append({"user": m.group(1), "ip": m.group(4), "loginTime": m.group(3), "tty": m.group(2)})
+
+neighbors = []
+for line in read_file("neighbors.txt").split("\n"):
+    if not line:
+        continue
+    m = re.match(r'^(\S+)\s+dev\s+(\S+)\s+lladdr\s+(\S+)\s+(\S+)', line)
+    if m:
+        neighbors.append({"ip": m.group(1), "interface": m.group(2), "mac": m.group(3), "state": m.group(4)})
+
+admin_fp = read_file("admin_keys.txt") or "unknown"
+connection_audit = {
+    "activeConnections": active_connections,
+    "sshSessions": ssh_sessions,
+    "neighbors": neighbors,
+    "adminKeyFingerprint": admin_fp,
+    "trustedSessionActive": False,
+}
+
+# === Security Findings (mirrors internal-scanner.ts runSecurityChecks) ===
+findings = []
+fid = [0]
+def uid():
+    fid[0] += 1
+    return f"f{fid[0]}"
+
+sshd_config = read_file("sshd_config.txt")
+fw_data = read_file("firewall.txt").split("|")
+fw_rules = int(fw_data[0]) if fw_data[0].isdigit() else 0
+ufw_status_str = fw_data[1] if len(fw_data) > 1 else ""
+
+# Firewall
+if fw_rules <= 2 and "active" not in ufw_status_str.lower():
+    findings.append({"id": uid(), "category": "firewall", "severity": "CRITICAL", "title": "No Firewall Rules Active", "description": "iptables has no INPUT rules and UFW is not active. Server ports are fully exposed.", "remediation": "Enable UFW or add iptables rules to restrict access."})
+elif "active" in ufw_status_str.lower():
+    findings.append({"id": uid(), "category": "firewall", "severity": "INFO", "title": "UFW Firewall Active", "description": "UFW firewall is enabled and active.", "remediation": "No action needed."})
+else:
+    findings.append({"id": uid(), "category": "firewall", "severity": "INFO", "title": f"Firewall Active ({fw_rules - 2} iptables rules)", "description": "iptables INPUT chain has active filtering rules.", "remediation": "No action needed."})
+
+# Fail2Ban
+f2b_active = any(s["name"] == "fail2ban" and s["status"] == "active" for s in services)
+banned_count = len([e for e in auth_events if e["type"] == "ban"])
+if not f2b_active:
+    findings.append({"id": uid(), "category": "auth", "severity": "HIGH", "title": "Fail2Ban is not running", "description": "Brute-force protection is offline.", "remediation": "Run: systemctl start fail2ban && systemctl enable fail2ban"})
+else:
+    findings.append({"id": uid(), "category": "auth", "severity": "INFO", "title": f"Fail2Ban Active ({banned_count} IPs banned)", "description": "Brute-force protection is running.", "remediation": "No action needed."})
+
+# SSH Config
+if "PasswordAuthentication yes" in sshd_config:
+    findings.append({"id": uid(), "category": "auth", "severity": "HIGH", "title": "SSH Password Auth Enabled", "description": "Password-based SSH login is enabled. Brute-force risk.", "remediation": "Set PasswordAuthentication no in /etc/ssh/sshd_config"})
+else:
+    findings.append({"id": uid(), "category": "auth", "severity": "INFO", "title": "SSH: Key-only Authentication", "description": "Password SSH login is disabled.", "remediation": "No action needed."})
+
+# SSH Port
+ssh_on_22 = bool(re.search(r'^Port\s+22', sshd_config, re.M)) or not re.search(r'^Port\s+', sshd_config, re.M)
+if ssh_on_22:
+    key_only = "PasswordAuthentication no" in sshd_config
+    if f2b_active and key_only:
+        findings.append({"id": uid(), "category": "network", "severity": "INFO", "title": "SSH on Port 22 (Protected)", "description": "Default SSH port with fail2ban active and key-only auth.", "remediation": "No action needed."})
+    else:
+        findings.append({"id": uid(), "category": "network", "severity": "LOW", "title": "SSH on Default Port 22", "description": "Using the default SSH port increases automated attack surface.", "remediation": "Enable fail2ban and disable password authentication."})
+
+# Root Login
+root_login_m = re.search(r'^PermitRootLogin\s+(.+)', sshd_config, re.M)
+root_login = root_login_m.group(1).strip() if root_login_m else "prohibit-password"
+if root_login == "yes":
+    findings.append({"id": uid(), "category": "auth", "severity": "CRITICAL", "title": "Root SSH Login Allowed", "description": "Direct root login via SSH is permitted.", "remediation": "Set PermitRootLogin prohibit-password or no in sshd_config"})
+else:
+    findings.append({"id": uid(), "category": "auth", "severity": "INFO", "title": f"SSH Root Login: {root_login}", "description": "Root login is properly restricted.", "remediation": "No action needed."})
+
+# Brute Force
+recent_failures = len([e for e in auth_events if e["type"] == "failure"])
+f2b_banned_count_m = re.search(r"Currently banned:\s+(\d+)", f2b_data)
+f2b_banned = int(f2b_banned_count_m.group(1)) if f2b_banned_count_m else 0
+if recent_failures > 20 and not f2b_active:
+    findings.append({"id": uid(), "category": "auth", "severity": "HIGH", "title": f"{recent_failures} SSH Brute-Force Attempts (Unprotected!)", "description": f"{recent_failures} failed SSH login attempts and fail2ban is NOT running.", "remediation": "Install and enable fail2ban immediately.", "value": f"{recent_failures} attempts"})
+elif recent_failures > 20:
+    findings.append({"id": uid(), "category": "auth", "severity": "MEDIUM", "title": f"{recent_failures} SSH Login Attempts ({f2b_banned} IPs Banned)", "description": f"{recent_failures} failed attempts. Fail2ban is active with {f2b_banned} IPs banned.", "remediation": "Fail2ban is handling this. Review: fail2ban-client status sshd", "value": f"{recent_failures} attempts"})
+elif recent_failures > 0 and f2b_active:
+    findings.append({"id": uid(), "category": "auth", "severity": "INFO", "title": f"{recent_failures} Failed SSH Logins (Fail2ban Active)", "description": f"{recent_failures} failed attempts -- normal. Fail2ban active with {f2b_banned} IPs banned.", "remediation": "No action needed.", "value": f"{recent_failures} attempts"})
+elif recent_failures > 0:
+    findings.append({"id": uid(), "category": "auth", "severity": "MEDIUM", "title": f"{recent_failures} Failed SSH Logins", "description": "Failed SSH attempts detected without fail2ban protection.", "remediation": "Install fail2ban.", "value": f"{recent_failures} attempts"})
+
+# Unexpected Ports
+for dp in ports:
+    if dp["port"] not in expected_ports:
+        is_local = dp["address"] in ("127.0.0.1", "::1") or dp["address"].startswith("127.")
+        if is_local:
+            sev = "LOW"
+        elif dp["risk"] == "critical":
+            sev = "CRITICAL"
+        elif dp["risk"] == "high":
+            sev = "HIGH"
+        else:
+            sev = "MEDIUM"
+        prefix = "[Local] " if is_local else ""
+        findings.append({
+            "id": uid(), "category": "network", "severity": sev,
+            "title": f"{prefix}Port {dp['port']} Open ({dp['service']})",
+            "description": f"{dp['service']} listening on {dp['address']}:{dp['port']}.{' Localhost only.' if is_local else f' Not expected for {server_type[\"label\"]}.'}",
+            "remediation": "Verify this service is required." if is_local else f"Disable service or firewall port {dp['port']}.",
+            "value": f"{dp['address']}:{dp['port']}",
+        })
+
+# Patches
+if patches["security"] > 0:
+    findings.append({"id": uid(), "category": "packages", "severity": "HIGH", "title": f"{patches['security']} Security Updates Pending", "description": f"{patches['security']} security patches available.", "remediation": "Run: apt-get upgrade -y", "value": f"{patches['security']} updates"})
+if patches["total"] > 0 and patches["security"] == 0:
+    findings.append({"id": uid(), "category": "packages", "severity": "MEDIUM", "title": f"{patches['total']} Package Updates Available", "description": "Non-security package updates pending.", "remediation": "Run: apt-get upgrade -y", "value": f"{patches['total']} updates"})
+elif patches["total"] == 0:
+    findings.append({"id": uid(), "category": "packages", "severity": "INFO", "title": "All Packages Up to Date", "description": "No pending package updates.", "remediation": "No action needed."})
+
+# File Integrity
+for fi in file_integrity:
+    if fi["status"] == "danger":
+        findings.append({"id": uid(), "category": "files", "severity": "HIGH", "title": f"Dangerous Permissions: {fi['path'].split('/')[-1]}", "description": fi["issue"] or "Dangerous permissions.", "remediation": f"chmod 600 {fi['path']}", "value": fi["permissions"]})
+    elif fi["status"] == "warning" and fi.get("issue"):
+        findings.append({"id": uid(), "category": "files", "severity": "MEDIUM", "title": f"Permission Warning: {fi['path'].split('/')[-1]}", "description": fi["issue"], "remediation": f"Review permissions on {fi['path']}", "value": fi["permissions"]})
+
+# Nginx down
+nginx_up = any(s["name"] == "nginx" and s["status"] == "active" for s in services)
+if not nginx_up:
+    findings.append({"id": uid(), "category": "services", "severity": "CRITICAL", "title": "Nginx is DOWN", "description": "Web server is not running.", "remediation": "Run: systemctl start nginx"})
+
+# System Resources
+if metrics["cpuPercent"] > 90:
+    findings.append({"id": uid(), "category": "system", "severity": "HIGH", "title": f"CPU Critical: {metrics['cpuPercent']:.1f}%", "description": "CPU usage critically high.", "remediation": "Run: top to identify culprit.", "value": f"{metrics['cpuPercent']:.1f}%"})
+elif metrics["cpuPercent"] > 70:
+    findings.append({"id": uid(), "category": "system", "severity": "MEDIUM", "title": f"CPU High: {metrics['cpuPercent']:.1f}%", "description": "CPU usage elevated.", "remediation": "Monitor with: top", "value": f"{metrics['cpuPercent']:.1f}%"})
+
+if metrics["memPercent"] > 90:
+    findings.append({"id": uid(), "category": "system", "severity": "HIGH", "title": f"Memory Critical: {metrics['memPercent']}%", "description": "Memory usage critically high.", "remediation": "Identify hogs: ps aux --sort=-%mem | head", "value": f"{metrics['memPercent']}%"})
+
+if metrics["diskPercent"] > 90:
+    findings.append({"id": uid(), "category": "system", "severity": "CRITICAL", "title": f"Disk Almost Full: {metrics['diskPercent']}%", "description": "Disk usage critical.", "remediation": "Free disk: find /var/log -name '*.gz' -delete", "value": f"{metrics['diskPercent']}%"})
+elif metrics["diskPercent"] > 75:
+    findings.append({"id": uid(), "category": "system", "severity": "MEDIUM", "title": f"Disk Usage High: {metrics['diskPercent']}%", "description": "Disk filling up.", "remediation": "Monitor disk usage.", "value": f"{metrics['diskPercent']}%"})
+
+# CUPS check
+cups_listening = any(p["port"] == 631 for p in ports)
+if cups_listening:
+    findings.append({"id": uid(), "category": "services", "severity": "MEDIUM", "title": "CUPS Printing Service Running", "description": f"Print service active on {server_type['label']} -- unnecessary.", "remediation": "Remove: snap remove cups OR systemctl stop cups"})
+
+# SSL Certificate
+ssl_data = read_file("ssl.txt")
+if ssl_data and "|" in ssl_data:
+    domain, expiry_str = ssl_data.split("|", 1)
+    m = re.search(r'notAfter=(.+)', expiry_str)
+    if m:
+        try:
+            from email.utils import parsedate_to_datetime
+            expiry = parsedate_to_datetime(m.group(1))
+            days_left = (expiry - datetime.now(expiry.tzinfo)).days
+            if days_left < 14:
+                findings.append({"id": uid(), "category": "ssl", "severity": "CRITICAL", "title": f"SSL Certificate Expires in {days_left} days", "description": f"Certificate expires on {expiry.strftime('%Y-%m-%d')}", "remediation": "Renew: certbot renew", "value": f"{days_left} days"})
+            elif days_left < 30:
+                findings.append({"id": uid(), "category": "ssl", "severity": "HIGH", "title": f"SSL Certificate Expires in {days_left} days", "description": f"Certificate expires on {expiry.strftime('%Y-%m-%d')}", "remediation": "Schedule SSL renewal.", "value": f"{days_left} days"})
+            else:
+                findings.append({"id": uid(), "category": "ssl", "severity": "INFO", "title": f"SSL Certificate Valid ({days_left} days)", "description": f"Certificate expires on {expiry.strftime('%Y-%m-%d')}", "remediation": "No action needed.", "value": f"{days_left} days"})
+        except:
+            pass
+
+# === Threat Score ===
+score = 0
+for f in findings:
+    if f["severity"] == "CRITICAL": score += 30
+    elif f["severity"] == "HIGH": score += 15
+    elif f["severity"] == "MEDIUM": score += 5
+    elif f["severity"] == "LOW": score += 1
+score = min(score, 100)
+
+level = "CRITICAL" if score >= 50 else "HIGH" if score >= 30 else "ELEVATED" if score >= 10 else "LOW"
+safe = 100 - score
+grade = "A" if safe >= 90 else "B" if safe >= 80 else "C" if safe >= 65 else "D" if safe >= 50 else "F"
+
+# === Final Result ===
+result = {
+    "timestamp": datetime.now().isoformat(),
+    "serverType": server_type,
+    "metrics": metrics,
+    "findings": findings,
+    "ports": ports,
+    "services": services,
+    "patches": patches,
+    "authEvents": auth_events,
+    "fileIntegrity": file_integrity,
+    "connectionAudit": connection_audit,
+    "threatScore": score,
+    "threatLevel": level,
+    "grade": grade,
+}
+
+print(json.dumps(result))
+PYEOF
+  "$tmpdir")
+
+  # Cleanup temp files
+  rm -rf "$tmpdir"
+
+  if [[ -z "$scan_json" || "$scan_json" == "null" ]]; then
+    log "ERROR: Security scan failed to produce results"
+    echo ""
+    return 1
+  fi
+
+  log "Security scan complete. Submitting results..."
+
+  # Submit scan results to the dedicated scan endpoint
+  local scan_url="${API_URL}/scan"
+  local response
+  response=$(curl -sS -X POST "$scan_url" \
+    -H "Authorization: Bearer ${API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d "$scan_json" \
+    --max-time 30 2>&1) || {
+    log "ERROR: Failed to submit scan results — $response"
+    echo "Scan completed but failed to submit results"
+    return 1
+  }
+
+  # Extract grade and score from response
+  local grade score findings_count
+  grade=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('grade','?'))" 2>/dev/null || echo "?")
+  score=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('threatScore',0))" 2>/dev/null || echo "0")
+  findings_count=$(echo "$response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('findings',0))" 2>/dev/null || echo "0")
+
+  log "Scan results submitted: Grade=$grade Score=$score Findings=$findings_count"
+  echo "Security scan completed: Grade=$grade, Threat Score=$score, Findings=$findings_count"
+}
+
+# ============================================================
 # COMMAND EXECUTION
 # ============================================================
 
@@ -930,7 +1606,49 @@ execute_commands() {
         fi
         ;;
       RUN_SCAN)
-        output="Scan initiated"
+        # Export metrics as env vars for the python3 scanner
+        local scan_metrics
+        scan_metrics=$(collect_metrics)
+        export SCAN_CPU=$(echo "$scan_metrics" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cpu',0))" 2>/dev/null || echo "0")
+        export SCAN_MEM_TOTAL="$mem_total" SCAN_MEM_USED="$mem_used" SCAN_MEM_PCT="$mem_pct"
+        export SCAN_DISK_TOTAL="$disk_total" SCAN_DISK_USED="$disk_used" SCAN_DISK_PCT="$disk_pct"
+        export SCAN_LOAD1="$load1" SCAN_LOAD5="$load5" SCAN_LOAD15="$load15"
+        export SCAN_UPTIME="$uptime_secs" SCAN_PROCS="$proc_count"
+        export SCAN_NET_RX="$net_rx" SCAN_NET_TX="$net_tx"
+
+        # Get fresh metrics for export
+        local _cpu _mem_info _df_line _loadavg _uptime _procs _iface _netrx _nettx
+        _cpu=$(top -bn1 2>/dev/null | grep "Cpu(s)" | awk '{print $2 + $4}' || echo "0")
+        export SCAN_CPU="$_cpu"
+
+        if [[ -f /proc/meminfo ]]; then
+          local _mt _mf _mb _mc _ms _mu _mp
+          _mt=$(awk '/^MemTotal:/ {print $2 * 1024}' /proc/meminfo)
+          _mf=$(awk '/^MemFree:/ {print $2 * 1024}' /proc/meminfo)
+          _mb=$(awk '/^Buffers:/ {print $2 * 1024}' /proc/meminfo)
+          _mc=$(awk '/^Cached:/ {print $2 * 1024}' /proc/meminfo || echo "0")
+          _ms=$(awk '/^SReclaimable:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+          _mu=$((_mt - _mf - _mb - _mc - _ms))
+          (( _mt > 0 )) && _mp=$((_mu * 100 / _mt)) || _mp=0
+          export SCAN_MEM_TOTAL="$_mt" SCAN_MEM_USED="$_mu" SCAN_MEM_PCT="$_mp"
+        fi
+
+        _df_line=$(df -B1 / 2>/dev/null | tail -1)
+        export SCAN_DISK_TOTAL=$(echo "$_df_line" | awk '{print $2}')
+        export SCAN_DISK_USED=$(echo "$_df_line" | awk '{print $3}')
+        export SCAN_DISK_PCT=$(echo "$_df_line" | awk '{gsub(/%/,"",$5); print $5}')
+
+        read -r _l1 _l5 _l15 _ _ < /proc/loadavg 2>/dev/null || { _l1=0; _l5=0; _l15=0; }
+        export SCAN_LOAD1="$_l1" SCAN_LOAD5="$_l5" SCAN_LOAD15="$_l15"
+
+        export SCAN_UPTIME=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "0")
+        export SCAN_PROCS=$(($(ps aux 2>/dev/null | wc -l) - 1))
+
+        _iface=$(ip route 2>/dev/null | grep default | awk '{print $5}' | head -1 || echo "eth0")
+        export SCAN_NET_RX=$(grep "$_iface" /proc/net/dev 2>/dev/null | awk '{print $2}' || echo "0")
+        export SCAN_NET_TX=$(grep "$_iface" /proc/net/dev 2>/dev/null | awk '{print $10}' || echo "0")
+
+        output=$(run_security_scan 2>&1)
         status="COMPLETED"
         ;;
       NETWORK_SCAN)
