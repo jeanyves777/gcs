@@ -25,20 +25,32 @@ export default async function AdminTicketsPage() {
     }),
   ]);
 
+  const mapped = tickets.map((t) => ({
+    id: t.id,
+    ticketNumber: t.ticketNumber,
+    subject: t.subject,
+    status: t.status,
+    priority: t.priority,
+    updatedAt: t.updatedAt,
+    organization: t.organization,
+    assignee: t.assignee,
+    messageCount: t._count.messages,
+  }));
+
+  const stats = {
+    total: mapped.length,
+    open: mapped.filter((t) => t.status === "OPEN").length,
+    inProgress: mapped.filter((t) => t.status === "IN_PROGRESS").length,
+    waiting: mapped.filter((t) => t.status === "WAITING").length,
+    critical: mapped.filter((t) => t.priority === "CRITICAL").length,
+    unassigned: mapped.filter((t) => !t.assignee).length,
+  };
+
   return (
     <AdminTicketsClient
-      tickets={tickets.map((t) => ({
-        id: t.id,
-        ticketNumber: t.ticketNumber,
-        subject: t.subject,
-        status: t.status,
-        priority: t.priority,
-        updatedAt: t.updatedAt,
-        organization: t.organization,
-        assignee: t.assignee,
-        messageCount: t._count.messages,
-      }))}
+      tickets={mapped}
       staffUsers={staffUsers}
+      stats={stats}
     />
   );
 }

@@ -324,25 +324,31 @@ export function OrganizationsClient({ initialOrgs }: { initialOrgs: Org[] }) {
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {[
-          { label: "Total", value: orgs.length, icon: Building2, color: "blue" },
-          { label: "Active", value: activeOrgs, icon: Shield, color: "green" },
-          { label: "Managed", value: planCounts.GCSGUARD_MANAGED, icon: Server, color: "emerald" },
-          { label: "Free", value: planCounts.GCSGUARD_MANAGED_FREE, icon: Star, color: "amber" },
-          { label: "Non-Managed", value: planCounts.GCSGUARD_NON_MANAGED, icon: Shield, color: "cyan" },
-          { label: "Users", value: totalUsers, icon: Users, color: "purple" },
-        ].map(({ label, value, icon: Icon, color }) => (
-          <Card key={label}>
-            <CardContent className="py-3">
-              <div className="flex items-center gap-3">
-                <div className={`p-1.5 rounded-md bg-${color}-500/10`}>
-                  <Icon className={`h-3.5 w-3.5 text-${color}-600 dark:text-${color}-400`} />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{value}</span>
-                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>{label}</span>
-                </div>
+          { label: "Total", value: orgs.length, icon: Building2, color: "var(--brand-primary)", bg: "color-mix(in srgb, var(--brand-primary) 12%, transparent)" },
+          { label: "Active", value: activeOrgs, icon: Shield, color: "var(--success)", bg: "var(--success-bg)" },
+          { label: "Managed", value: planCounts.GCSGUARD_MANAGED, icon: Server, color: "var(--info)", bg: "var(--info-bg)" },
+          { label: "Free", value: planCounts.GCSGUARD_MANAGED_FREE, icon: Star, color: "var(--warning)", bg: "var(--warning-bg)" },
+          { label: "Non-Managed", value: planCounts.GCSGUARD_NON_MANAGED, icon: Shield, color: "var(--text-secondary)", bg: "var(--bg-tertiary)" },
+          { label: "Users", value: totalUsers, icon: Users, color: "var(--error)", bg: "var(--error-bg)" },
+        ].map(({ label, value, icon: Icon, color, bg }) => (
+          <Card key={label} className="card-base">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: bg }}
+              >
+                <Icon className="h-4 w-4" style={{ color }} />
+              </div>
+              <div>
+                <p
+                  className="text-xl font-bold tabular-nums"
+                  style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}
+                >
+                  {value}
+                </p>
+                <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>{label}</p>
               </div>
             </CardContent>
           </Card>

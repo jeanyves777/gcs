@@ -18,5 +18,14 @@ export default async function AdminProjectsPage() {
     },
   });
 
-  return <AdminProjectsClient projects={projects} />;
+  const stats = {
+    total: projects.length,
+    active: projects.filter((p) => p.status === "ACTIVE").length,
+    planning: projects.filter((p) => p.status === "PLANNING").length,
+    onHold: projects.filter((p) => p.status === "ON_HOLD").length,
+    completed: projects.filter((p) => p.status === "COMPLETED").length,
+    totalTasks: projects.reduce((s, p) => s + p._count.tasks, 0),
+  };
+
+  return <AdminProjectsClient projects={projects} stats={stats} />;
 }

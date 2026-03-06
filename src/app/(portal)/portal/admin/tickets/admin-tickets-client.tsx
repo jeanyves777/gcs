@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Ticket, MessageSquare } from "lucide-react";
+import { Ticket, MessageSquare, Inbox, Clock, AlertTriangle, UserX } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 type TicketItem = {
@@ -26,9 +26,19 @@ type StaffUser = {
   role: string;
 };
 
+type Stats = {
+  total: number;
+  open: number;
+  inProgress: number;
+  waiting: number;
+  critical: number;
+  unassigned: number;
+};
+
 interface Props {
   tickets: TicketItem[];
   staffUsers: StaffUser[];
+  stats: Stats;
 }
 
 type FilterTab = "ALL" | "OPEN" | "IN_PROGRESS" | "WAITING" | "RESOLVED" | "CLOSED";
@@ -55,7 +65,7 @@ function tabLabel(tab: FilterTab): string {
   return tab.replace("_", " ");
 }
 
-export function AdminTicketsClient({ tickets }: Props) {
+export function AdminTicketsClient({ tickets, stats }: Props) {
   const [activeTab, setActiveTab] = useState<FilterTab>("ALL");
 
   const filtered =
@@ -77,6 +87,38 @@ export function AdminTicketsClient({ tickets }: Props) {
         <span className="text-sm" style={{ color: "var(--text-muted)" }}>
           {tickets.length} total ticket{tickets.length !== 1 ? "s" : ""}
         </span>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "Open", value: stats.open, icon: Inbox, color: "var(--info)", bg: "var(--info-bg)" },
+          { label: "In Progress", value: stats.inProgress, icon: Clock, color: "var(--brand-primary)", bg: "color-mix(in srgb, var(--brand-primary) 12%, transparent)" },
+          { label: "Critical", value: stats.critical, icon: AlertTriangle, color: "var(--error)", bg: "var(--error-bg)" },
+          { label: "Unassigned", value: stats.unassigned, icon: UserX, color: "var(--warning)", bg: "var(--warning-bg)" },
+        ].map((s) => (
+          <Card key={s.label} className="card-base">
+            <CardContent className="p-5 flex flex-col gap-4">
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: s.bg }}
+              >
+                <s.icon className="h-4 w-4" style={{ color: s.color }} />
+              </div>
+              <div>
+                <p
+                  className="text-2xl font-bold tabular-nums"
+                  style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}
+                >
+                  {s.value}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                  {s.label}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {/* Filter tabs */}

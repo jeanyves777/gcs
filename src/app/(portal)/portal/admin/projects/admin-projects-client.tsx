@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FolderKanban, Plus, Calendar, Eye, Pencil } from "lucide-react";
+import { FolderKanban, Plus, Calendar, Eye, Pencil, Activity, PauseCircle, CheckCircle2, ListTodo } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 type ProjectStatus = "PLANNING" | "ACTIVE" | "ON_HOLD" | "COMPLETED" | "CANCELLED";
@@ -67,7 +67,16 @@ const statusLabel: Record<ProjectStatus, string> = {
   CANCELLED: "Cancelled",
 };
 
-export function AdminProjectsClient({ projects }: { projects: Project[] }) {
+type Stats = {
+  total: number;
+  active: number;
+  planning: number;
+  onHold: number;
+  completed: number;
+  totalTasks: number;
+};
+
+export function AdminProjectsClient({ projects, stats }: { projects: Project[]; stats: Stats }) {
   const [activeTab, setActiveTab] = useState<ProjectStatus | "ALL">("ALL");
 
   const filtered =
@@ -102,6 +111,38 @@ export function AdminProjectsClient({ projects }: { projects: Project[] }) {
             New project
           </Link>
         </Button>
+      </div>
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "Active", value: stats.active, icon: Activity, color: "var(--success)", bg: "var(--success-bg)" },
+          { label: "Planning", value: stats.planning, icon: FolderKanban, color: "var(--info)", bg: "var(--info-bg)" },
+          { label: "On Hold", value: stats.onHold, icon: PauseCircle, color: "var(--warning)", bg: "var(--warning-bg)" },
+          { label: "Total Tasks", value: stats.totalTasks, icon: ListTodo, color: "var(--brand-primary)", bg: "color-mix(in srgb, var(--brand-primary) 12%, transparent)" },
+        ].map((s) => (
+          <Card key={s.label} className="card-base">
+            <CardContent className="p-5 flex flex-col gap-4">
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: s.bg }}
+              >
+                <s.icon className="h-4 w-4" style={{ color: s.color }} />
+              </div>
+              <div>
+                <p
+                  className="text-2xl font-bold tabular-nums"
+                  style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}
+                >
+                  {s.value}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                  {s.label}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {/* Status filter tabs */}
