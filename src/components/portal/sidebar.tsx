@@ -55,7 +55,6 @@ const adminNavItems = [
   { href: "/portal/admin/organizations", label: "Organizations", icon: Building2 },
   { href: "/portal/admin/vault", label: "Vault", icon: KeyRound },
   { href: "/portal/admin/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/portal/admin/security-reports", label: "Security Reports", icon: ShieldAlert },
 ];
 
 const guardNavItems = [
@@ -67,6 +66,7 @@ const guardNavItems = [
   { href: "/portal/admin/guard/config", label: "Config", icon: FileText },
   { href: "/portal/admin/guard/monitoring", label: "Monitoring", icon: Activity },
   { href: "/portal/admin/guard/deploy", label: "Deploy", icon: Rocket },
+  { href: "/portal/admin/security-reports", label: "Security Reports", icon: ShieldAlert },
 ];
 
 interface SidebarProps {

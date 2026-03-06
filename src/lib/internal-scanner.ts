@@ -569,7 +569,7 @@ export function writeAuditLog(category: string, details: string): void {
 
 export function getAdminKeyFingerprint(): string {
   try {
-    const out = run("ssh-keygen -lf /root/.ssh/authorized_keys 2>/dev/null | head -5");
+    const out = run("ssh-keygen -lf /home/ubuntu/.ssh/authorized_keys 2>/dev/null | head -5 || ssh-keygen -lf /root/.ssh/authorized_keys 2>/dev/null | head -5");
     return out || "unknown";
   } catch {
     return "unknown";
