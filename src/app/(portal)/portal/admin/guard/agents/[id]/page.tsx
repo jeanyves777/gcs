@@ -19,7 +19,7 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
       organization: { select: { id: true, name: true } },
       alerts: {
         orderBy: { createdAt: "desc" },
-        take: 30,
+        take: 50,
       },
       devices: {
         orderBy: { lastSeen: "desc" },

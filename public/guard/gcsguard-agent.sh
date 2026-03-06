@@ -1187,7 +1187,7 @@ main() {
   trap 'log "Agent stopping"; rm -f "$PID_FILE"; exit 0' SIGTERM SIGINT
 
   while true; do
-    send_heartbeat &>/dev/null || log "Heartbeat cycle failed"
+    send_heartbeat 2>/dev/null || log "Heartbeat cycle failed"
     sleep "$HEARTBEAT_INTERVAL"
   done
 }
