@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const links = [
   { label: "Dashboard", href: "/portal/admin/guard" },
+  { label: "Internal", href: "/portal/admin/guard/internal" },
   { label: "Agents", href: "/portal/admin/guard/agents" },
   { label: "Alerts", href: "/portal/admin/guard/alerts" },
   { label: "Patches", href: "/portal/admin/guard/patches" },
