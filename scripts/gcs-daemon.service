@@ -10,6 +10,7 @@ ExecStart=/root/.nvm/versions/node/v20.18.1/bin/node /var/www/gcs/scripts/gcs-da
 Restart=always
 RestartSec=5
 Environment=GCS_DAEMON_PORT=9876
+Environment=PATH=/root/.nvm/versions/node/v20.18.1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EnvironmentFile=/var/www/gcs/.env.production
 
 [Install]

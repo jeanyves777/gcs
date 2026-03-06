@@ -34,6 +34,12 @@ export async function sshReadFile(input: ToolInput): Promise<string> {
 }
 
 export async function sshWriteFile(input: ToolInput): Promise<string> {
+  if (!input.path || typeof input.path !== "string") {
+    return JSON.stringify({ error: "path (string) is required" });
+  }
+  if (input.content == null || typeof input.content !== "string") {
+    return JSON.stringify({ error: "content (string) is required — the file content may have been too large and got truncated" });
+  }
   // Create parent directories if needed
   const dir = input.path.substring(0, input.path.lastIndexOf("/"));
   if (dir) {
@@ -52,6 +58,15 @@ export async function sshWriteFile(input: ToolInput): Promise<string> {
 }
 
 export async function sshEditFile(input: ToolInput): Promise<string> {
+  if (!input.path || typeof input.path !== "string") {
+    return JSON.stringify({ error: "path (string) is required" });
+  }
+  if (input.old_string == null || typeof input.old_string !== "string") {
+    return JSON.stringify({ error: "old_string (string) is required" });
+  }
+  if (input.new_string == null || typeof input.new_string !== "string") {
+    return JSON.stringify({ error: "new_string (string) is required" });
+  }
   // Read current content
   const readResult = await execOnServer(`cat ${JSON.stringify(input.path)} 2>&1`);
   if (readResult.code !== 0) {

@@ -264,7 +264,7 @@ export async function POST(req: NextRequest) {
           for (let attempt = 0; attempt < 3; attempt++) {
             try {
               const messageStream = client.messages.stream({
-                model: "claude-sonnet-4-6",
+                model: "claude-haiku-4-5-20251001",
                 max_tokens: 8192,
                 system: buildSystemPrompt(currentPath || "/portal/admin"),
                 messages: currentMessages,
