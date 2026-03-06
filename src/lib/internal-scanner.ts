@@ -109,8 +109,19 @@ export interface ConnectionAudit {
   trustedSessionActive: boolean;
 }
 
+export type ServerRole = "web" | "database" | "mail" | "app" | "ci_cd" | "monitoring" | "dns" | "proxy" | "storage";
+
+export interface ServerType {
+  roles: ServerRole[];
+  primary: ServerRole;
+  label: string;          // e.g. "Web + App + Database Server"
+  expectedPorts: number[];
+  unexpectedServices: string[]; // services that shouldn't be on this server type
+}
+
 export interface ScanResult {
   timestamp: string;
+  serverType: ServerType;
   metrics: SystemMetrics;
   findings: SecurityFinding[];
   ports: PortInfo[];
@@ -136,6 +147,118 @@ function run(cmd: string, timeoutMs = 8000): string {
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10);
+}
+
+// ─── Server Type Detection ────────────────────────────────────────────────────
+
+// Port → role mapping
+const PORT_ROLES: Record<number, ServerRole> = {
+  80: "web", 443: "web", 8080: "web", 8443: "web",
+  3000: "app", 3001: "app", 4000: "app", 5000: "app", 8000: "app", 9000: "app",
+  5432: "database", 3306: "database", 27017: "database", 6379: "database", 1433: "database",
+  25: "mail", 465: "mail", 587: "mail", 993: "mail", 143: "mail", 110: "mail", 995: "mail",
+  53: "dns",
+  8080: "proxy", 3128: "proxy",
+  9090: "monitoring", 9100: "monitoring", 3100: "monitoring",
+  21: "storage", 2049: "storage",
+  8081: "ci_cd", 8082: "ci_cd",
+};
+
+// Each role's expected ports (always includes 22 for SSH)
+const ROLE_PORTS: Record<ServerRole, number[]> = {
+  web:        [22, 53, 80, 443],
+  app:        [22, 53, 3000, 3001, 4000, 5000, 8000, 9000],
+  database:   [22, 53, 5432, 3306, 27017, 6379, 1433],
+  mail:       [22, 53, 25, 465, 587, 993, 143, 110, 995],
+  dns:        [22, 53],
+  proxy:      [22, 53, 80, 443, 8080, 3128],
+  monitoring: [22, 53, 9090, 9100, 3100],
+  storage:    [22, 53, 21, 2049],
+  ci_cd:      [22, 53, 8081, 8082],
+};
+
+// Services that should NOT be on certain server types
+const UNEXPECTED_SERVICES: Record<ServerRole, string[]> = {
+  web:        ["cups", "avahi-daemon", "bluetooth", "ModemManager", "NetworkManager-wait-online"],
+  app:        ["cups", "avahi-daemon", "bluetooth", "ModemManager"],
+  database:   ["cups", "avahi-daemon", "bluetooth", "apache2", "httpd"],
+  mail:       ["cups", "avahi-daemon", "bluetooth"],
+  dns:        ["cups", "avahi-daemon", "bluetooth", "apache2"],
+  proxy:      ["cups", "avahi-daemon", "bluetooth"],
+  monitoring: ["cups", "avahi-daemon", "bluetooth"],
+  storage:    ["cups", "avahi-daemon", "bluetooth"],
+  ci_cd:      ["cups", "avahi-daemon", "bluetooth"],
+};
+
+const ROLE_LABELS: Record<ServerRole, string> = {
+  web: "Web Server", app: "Application Server", database: "Database Server",
+  mail: "Mail Server", dns: "DNS Server", proxy: "Reverse Proxy",
+  monitoring: "Monitoring Server", storage: "File/Storage Server", ci_cd: "CI/CD Server",
+};
+
+export function detectServerType(ports: PortInfo[]): ServerType {
+  const listeningPorts = ports.map(p => p.port);
+  const detectedRoles = new Set<ServerRole>();
+
+  // Detect roles from listening ports
+  for (const port of listeningPorts) {
+    const role = PORT_ROLES[port];
+    if (role) detectedRoles.add(role);
+  }
+
+  // Also detect from running processes/services
+  if (run("which nginx 2>/dev/null") || run("which apache2 2>/dev/null") || run("which httpd 2>/dev/null")) {
+    detectedRoles.add("web");
+  }
+  if (run("which psql 2>/dev/null") || run("which mysql 2>/dev/null") || run("which mongod 2>/dev/null")) {
+    detectedRoles.add("database");
+  }
+  if (run("which postfix 2>/dev/null") || run("which dovecot 2>/dev/null") || run("which sendmail 2>/dev/null")) {
+    detectedRoles.add("mail");
+  }
+  if (run("which jenkins 2>/dev/null") || run("which gitlab-runner 2>/dev/null")) {
+    detectedRoles.add("ci_cd");
+  }
+  if (run("which prometheus 2>/dev/null") || run("which grafana-server 2>/dev/null")) {
+    detectedRoles.add("monitoring");
+  }
+  if (run("which squid 2>/dev/null") || run("which haproxy 2>/dev/null")) {
+    detectedRoles.add("proxy");
+  }
+
+  // Fallback if nothing detected
+  if (detectedRoles.size === 0) detectedRoles.add("app");
+
+  const roles = Array.from(detectedRoles);
+
+  // Primary role: web > app > database > mail > proxy > others
+  const priority: ServerRole[] = ["web", "app", "database", "mail", "proxy", "dns", "monitoring", "storage", "ci_cd"];
+  const primary = priority.find(r => detectedRoles.has(r)) || roles[0];
+
+  // Build expected ports: union of all detected roles
+  const expectedPorts = new Set<number>([22, 53]); // SSH + DNS always expected
+  for (const role of roles) {
+    for (const port of ROLE_PORTS[role]) expectedPorts.add(port);
+  }
+  // Also add the daemon port if it's listening (role-specific local services)
+  if (listeningPorts.includes(9876)) expectedPorts.add(9876);
+
+  // Build unexpected services: intersection of all roles
+  const unexpectedSets = roles.map(r => new Set(UNEXPECTED_SERVICES[r]));
+  const unexpectedServices = unexpectedSets.length > 0
+    ? Array.from(unexpectedSets.reduce((a, b) => new Set([...a].filter(x => b.has(x)))))
+    : [];
+
+  // Build label
+  const label = roles.map(r => ROLE_LABELS[r]).join(" + ");
+
+  return {
+    roles,
+    primary,
+    label,
+    expectedPorts: Array.from(expectedPorts).sort((a, b) => a - b),
+    unexpectedServices,
+  };
 }
 
 // ─── System Metrics ────────────────────────────────────────────────────────────
@@ -392,7 +515,8 @@ export function runSecurityChecks(
   patches: PatchInfo,
   authEvents: AuthEvent[],
   fileIntegrity: FileIntegrityResult[],
-  metrics: SystemMetrics
+  metrics: SystemMetrics,
+  serverType: ServerType
 ): SecurityFinding[] {
   const findings: SecurityFinding[] = [];
 
@@ -455,18 +579,18 @@ export function runSecurityChecks(
     findings.push({ id: uid(), category: "auth", severity: "MEDIUM", title: `${recentFailures} Failed SSH Logins`, description: "Failed SSH attempts detected without fail2ban protection.", remediation: "Install fail2ban: apt install fail2ban && systemctl enable --now fail2ban", value: `${recentFailures} attempts` });
   }
 
-  // --- Dangerous Ports ---
-  const dangerPorts = ports.filter(p => p.risk === "critical" || p.risk === "high");
-  for (const dp of dangerPorts) {
-    if ([22, 80, 443, 5432].includes(dp.port)) continue;
-    const isLocalOnly = dp.address === "127.0.0.1" || dp.address === "::1";
+  // --- Unnecessary / Dangerous Ports (based on detected server type) ---
+  const flaggedPorts = ports.filter(p => !serverType.expectedPorts.includes(p.port));
+  for (const dp of flaggedPorts) {
+    const isLocalOnly = dp.address === "127.0.0.1" || dp.address === "::1" || dp.address.startsWith("127.");
+    const severity = isLocalOnly ? "LOW" : (dp.risk === "critical" ? "CRITICAL" : dp.risk === "high" ? "HIGH" : "MEDIUM");
     findings.push({
       id: uid(),
       category: "network",
-      severity: isLocalOnly ? "LOW" : (dp.risk === "critical" ? "CRITICAL" : "HIGH"),
+      severity,
       title: `${isLocalOnly ? "[Local] " : ""}Port ${dp.port} Open (${dp.service})`,
-      description: `${dp.service} is listening on ${dp.address}:${dp.port}.${isLocalOnly ? " Localhost only — lower risk." : " Publicly accessible!"}`,
-      remediation: isLocalOnly ? "Verify this service is required." : `Firewall or bind ${dp.service} to 127.0.0.1 only.`,
+      description: `${dp.service} is listening on ${dp.address}:${dp.port}.${isLocalOnly ? " Localhost only — lower risk." : ` Publicly accessible — not expected for ${serverType.label}.`}`,
+      remediation: isLocalOnly ? "Verify this service is required." : `This port is not expected on a ${serverType.label}. Disable the service or firewall port ${dp.port}.`,
       value: `${dp.address}:${dp.port}`,
     });
   }
@@ -513,10 +637,25 @@ export function runSecurityChecks(
     findings.push({ id: uid(), category: "system", severity: "MEDIUM", title: `Disk Usage High: ${metrics.diskPercent}%`, description: "Disk is filling up.", remediation: "Monitor disk usage regularly.", value: `${metrics.diskPercent}%` });
   }
 
-  // --- CUPS ---
-  const cupsService = services.find(s => s.name === "cups");
-  if (cupsService?.status === "active") {
-    findings.push({ id: uid(), category: "services", severity: "MEDIUM", title: "CUPS Printing Service Running", description: "Print service is active on a web server — unnecessary attack surface.", remediation: "Run: systemctl stop cups && systemctl disable cups" });
+  // --- Unexpected Services (based on server type) ---
+  for (const svcName of serverType.unexpectedServices) {
+    const svc = services.find(s => s.name === svcName);
+    const snapInstalled = run(`snap list ${svcName} 2>/dev/null`).includes(svcName);
+    const isActive = svc?.status === "active" || snapInstalled;
+    if (isActive) {
+      findings.push({
+        id: uid(), category: "services", severity: "MEDIUM",
+        title: `Unexpected Service: ${svcName}`,
+        description: `${svcName} is running on a ${serverType.label} — not expected for this server type and increases attack surface.`,
+        remediation: `Remove: snap remove ${svcName} OR systemctl stop ${svcName} && systemctl disable ${svcName}`,
+      });
+    }
+  }
+  // Also check CUPS specifically (can hide as snap)
+  const cupsSnap = run("snap list cups 2>/dev/null").includes("cups");
+  const cupsListening = ports.some(p => p.port === 631);
+  if (cupsListening || cupsSnap) {
+    findings.push({ id: uid(), category: "services", severity: "MEDIUM", title: "CUPS Printing Service Running", description: `Print service is active on a ${serverType.label} — unnecessary attack surface.`, remediation: "Remove: snap remove cups OR systemctl stop cups && systemctl disable cups" });
   }
 
   // --- SSL ---
@@ -687,7 +826,8 @@ export async function runFullScan(): Promise<ScanResult> {
   const authEvents = checkAuthLog();
   const fileIntegrity = checkFileIntegrity();
   const connectionAudit = checkActiveConnections();
-  const findings = runSecurityChecks(ports, services, patches, authEvents, fileIntegrity, metrics);
+  const serverType = detectServerType(ports);
+  const findings = runSecurityChecks(ports, services, patches, authEvents, fileIntegrity, metrics, serverType);
   const { score, level, grade } = computeThreatScore(findings);
 
   // Write audit log entry for the scan
@@ -719,6 +859,7 @@ export async function runFullScan(): Promise<ScanResult> {
 
   return {
     timestamp: new Date().toISOString(),
+    serverType,
     metrics,
     findings,
     ports,

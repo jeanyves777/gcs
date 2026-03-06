@@ -71,6 +71,13 @@ interface ServiceStatus {
 }
 
 interface ScanResult {
+  serverType?: {
+    roles: string[];
+    primary: string;
+    label: string;
+    expectedPorts: number[];
+    unexpectedServices: string[];
+  };
   metrics: {
     cpuPercent: number;
     memPercent: number;
@@ -304,6 +311,15 @@ export function InternalDashboardClient({ initialData }: { initialData: Dashboar
                       style={{ background: gradeColor.bg, color: gradeColor.text, border: `1px solid ${gradeColor.text}30` }}
                     >
                       {grade}
+                    </Badge>
+                  )}
+                  {latest?.serverType && (
+                    <Badge
+                      className="text-[10px] uppercase tracking-widest font-bold px-2.5 py-1"
+                      style={{ background: "rgba(99,102,241,0.12)", color: "#6366f1", border: "1px solid rgba(99,102,241,0.25)" }}
+                    >
+                      <Server className="w-3 h-3 mr-1" />
+                      {latest.serverType.label}
                     </Badge>
                   )}
                 </div>
