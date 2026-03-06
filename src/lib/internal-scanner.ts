@@ -424,7 +424,14 @@ export function runSecurityChecks(
   }
 
   if (sshConfig.match(/^Port\s+22/m) || !sshConfig.match(/^Port\s+/m)) {
-    findings.push({ id: uid(), category: "network", severity: "LOW", title: "SSH on Default Port 22", description: "Using the default SSH port increases automated attack surface.", remediation: "Consider changing SSH port to a non-standard port." });
+    // Check if fail2ban is protecting SSH — if so, port 22 is acceptable
+    const f2bActive = run("systemctl is-active fail2ban 2>/dev/null").trim() === "active";
+    const keyOnly = sshConfig.includes("PasswordAuthentication no");
+    if (f2bActive && keyOnly) {
+      findings.push({ id: uid(), category: "network", severity: "INFO", title: "SSH on Port 22 (Protected)", description: "Default SSH port with fail2ban active and key-only auth. Acceptable security posture.", remediation: "No action needed — fail2ban blocks brute force, password auth is disabled." });
+    } else {
+      findings.push({ id: uid(), category: "network", severity: "LOW", title: "SSH on Default Port 22", description: "Using the default SSH port increases automated attack surface.", remediation: f2bActive ? "Password auth is still enabled — disable it." : "Enable fail2ban and disable password authentication." });
+    }
   }
 
   const rootLogin = sshConfig.match(/^PermitRootLogin\s+(.+)/m)?.[1]?.trim();
@@ -436,10 +443,16 @@ export function runSecurityChecks(
 
   // --- Brute Force ---
   const recentFailures = authEvents.filter(e => e.type === "failure").length;
-  if (recentFailures > 20) {
-    findings.push({ id: uid(), category: "auth", severity: "HIGH", title: `${recentFailures} SSH Brute-Force Attempts`, description: `${recentFailures} failed SSH login attempts detected in recent logs.`, remediation: "Review fail2ban rules and consider geo-blocking.", value: `${recentFailures} attempts` });
+  const f2bRunning = run("systemctl is-active fail2ban 2>/dev/null").trim() === "active";
+  const f2bBanned = parseInt(run("fail2ban-client status sshd 2>/dev/null | grep 'Currently banned' | awk '{print $NF}'").trim() || "0", 10);
+  if (recentFailures > 20 && !f2bRunning) {
+    findings.push({ id: uid(), category: "auth", severity: "HIGH", title: `${recentFailures} SSH Brute-Force Attempts (Unprotected!)`, description: `${recentFailures} failed SSH login attempts and fail2ban is NOT running.`, remediation: "Install and enable fail2ban immediately: apt install fail2ban && systemctl enable --now fail2ban", value: `${recentFailures} attempts` });
+  } else if (recentFailures > 20) {
+    findings.push({ id: uid(), category: "auth", severity: "MEDIUM", title: `${recentFailures} SSH Login Attempts (${f2bBanned} IPs Banned)`, description: `${recentFailures} failed attempts detected. Fail2ban is active and has banned ${f2bBanned} IPs.`, remediation: "Fail2ban is handling this. Review banned IPs: fail2ban-client status sshd", value: `${recentFailures} attempts` });
+  } else if (recentFailures > 0 && f2bRunning) {
+    findings.push({ id: uid(), category: "auth", severity: "INFO", title: `${recentFailures} Failed SSH Logins (Fail2ban Active)`, description: `${recentFailures} failed attempts — normal internet noise. Fail2ban is active with ${f2bBanned} IPs currently banned.`, remediation: "No action needed — fail2ban is protecting SSH.", value: `${recentFailures} attempts` });
   } else if (recentFailures > 0) {
-    findings.push({ id: uid(), category: "auth", severity: "MEDIUM", title: `${recentFailures} Failed SSH Logins`, description: "Some failed SSH attempts detected.", remediation: "Monitor fail2ban logs.", value: `${recentFailures} attempts` });
+    findings.push({ id: uid(), category: "auth", severity: "MEDIUM", title: `${recentFailures} Failed SSH Logins`, description: "Failed SSH attempts detected without fail2ban protection.", remediation: "Install fail2ban: apt install fail2ban && systemctl enable --now fail2ban", value: `${recentFailures} attempts` });
   }
 
   // --- Dangerous Ports ---
