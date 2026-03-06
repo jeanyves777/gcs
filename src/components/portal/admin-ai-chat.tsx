@@ -1026,8 +1026,8 @@ function MessageBubble({ message, onQuickReply }: { message: ChatMessage; onQuic
   }
   const hasChoices = numberedChoices.length >= 2;
 
-  // Detect if the assistant is asking for simple yes/no confirmation (not multi-choice)
-  const isAskingConfirmation = !isUser && !hasChoices && message.content &&
+  // Detect if the assistant is asking for yes/no confirmation
+  const isAskingConfirmation = !isUser && message.content &&
     /\b(proceed|confirm|go ahead|shall I|should I|want me to)\b.*\?/i.test(message.content);
 
   const hasContentBlocks = !isUser && message.contentBlocks && message.contentBlocks.length > 0;
@@ -1083,27 +1083,27 @@ function MessageBubble({ message, onQuickReply }: { message: ChatMessage; onQuic
         </>
       )}
 
-      {/* Multi-choice buttons */}
+      {/* Multi-choice option buttons */}
       {hasChoices && (
-        <div className="flex flex-wrap gap-2 max-w-[85%]">
+        <div className="grid gap-2 max-w-[85%]" style={{ gridTemplateColumns: numberedChoices.length <= 3 ? `repeat(${numberedChoices.length}, 1fr)` : "repeat(2, 1fr)" }}>
           {numberedChoices.map((choice) => (
             <button
               key={choice.num}
               onClick={() => onQuickReply(`${choice.num}. ${choice.text}`)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium transition-all hover:scale-[1.02] active:scale-[0.98]"
+              className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold transition-all hover:scale-[1.02] active:scale-[0.97]"
               style={{
-                background: "var(--bg-secondary)",
-                color: "var(--text-primary)",
-                border: "1px solid var(--border)",
+                background: "var(--brand-primary)",
+                color: "white",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
               }}
             >
               <span
-                className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0"
-                style={{ background: "var(--brand-primary)", color: "white" }}
+                className="w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0"
+                style={{ background: "rgba(255,255,255,0.25)" }}
               >
                 {choice.num}
               </span>
-              <span className="text-left">{choice.text}</span>
+              <span className="text-left leading-tight">{choice.text}</span>
             </button>
           ))}
         </div>
@@ -1114,16 +1114,16 @@ function MessageBubble({ message, onQuickReply }: { message: ChatMessage; onQuic
         <div className="flex gap-2">
           <button
             onClick={() => onQuickReply("Yes, proceed.")}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:opacity-90"
-            style={{ background: "#16a34a" }}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:scale-[1.02] active:scale-[0.97]"
+            style={{ background: "#16a34a", boxShadow: "0 2px 8px rgba(22,163,74,0.3)" }}
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
             Yes, proceed
           </button>
           <button
             onClick={() => onQuickReply("No, cancel.")}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:opacity-90"
-            style={{ background: "#dc2626" }}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:scale-[1.02] active:scale-[0.97]"
+            style={{ background: "#dc2626", boxShadow: "0 2px 8px rgba(220,38,38,0.3)" }}
           >
             <XCircle className="w-3.5 h-3.5" />
             No, cancel
