@@ -176,6 +176,10 @@ export function AgentDetailClient({
   const [logContent, setLogContent] = useState("");
   const [fetchingLogs, setFetchingLogs] = useState(false);
 
+  // Scan state
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
+
   // Build chart data
   const chartData: Record<string, Record<string, number>> = {};
   for (const m of metrics) {
@@ -356,6 +360,31 @@ export function AgentDetailClient({
     } catch { setFetchingLogs(false); toast.error("Error fetching logs"); }
   }
 
+  async function handleScan() {
+    setIsScanning(true);
+    setScanProgress(0);
+    const progressInterval = setInterval(() => setScanProgress(p => Math.min(p + Math.random() * 12, 90)), 600);
+    try {
+      // Queue RUN_SCAN, COLLECT_PACKAGES, NETWORK_SCAN commands
+      const cmds = ["RUN_SCAN", "COLLECT_PACKAGES", "NETWORK_SCAN"];
+      for (const type of cmds) {
+        await fetch(`/api/guard/admin/agents/${agent.id}/command`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type, payload: {} }),
+        });
+      }
+      clearInterval(progressInterval);
+      setScanProgress(100);
+      toast.success("Security scan queued — results will appear at next heartbeat");
+    } catch {
+      clearInterval(progressInterval);
+      toast.error("Failed to queue scan");
+    } finally {
+      setTimeout(() => { setIsScanning(false); setScanProgress(0); }, 1500);
+    }
+  }
+
   const statusColor = online ? "#22c55e" : agent.status === "PENDING" ? "#f59e0b" : "#ef4444";
   const statusGrad = online
     ? "linear-gradient(135deg, #22c55e 0%, #16a34a 50%, #15803d 100%)"
@@ -481,25 +510,41 @@ export function AgentDetailClient({
           </div>
         </div>
 
-        {/* System info bar */}
-        <div className="px-5 py-3 flex items-center gap-4 flex-wrap border-t text-[11px]" style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
-          {agent.kernelVersion && (
-            <span style={{ color: "var(--text-muted)" }}>
-              Kernel <span className="font-semibold" style={{ color: "var(--text-secondary)" }}>{agent.kernelVersion}</span>
-            </span>
+        {/* Scan control bar */}
+        <div className="px-5 py-3 flex items-center gap-3 border-t" style={{ borderColor: "var(--border)", background: "var(--bg-secondary)" }}>
+          <Button onClick={handleScan} disabled={isScanning || !online} size="sm" className="gap-2 h-8 font-semibold">
+            <RefreshCw className={`w-3.5 h-3.5 ${isScanning ? "animate-spin" : ""}`} />
+            {isScanning ? "Scanning..." : "Run Security Scan"}
+          </Button>
+
+          {/* System info pills */}
+          <div className="hidden md:flex items-center gap-3 text-[11px]">
+            {agent.kernelVersion && (
+              <span style={{ color: "var(--text-muted)" }}>
+                Kernel <span className="font-semibold" style={{ color: "var(--text-secondary)" }}>{agent.kernelVersion}</span>
+              </span>
+            )}
+            {agent.packageManager && (
+              <span style={{ color: "var(--text-muted)" }}>
+                Pkg <span className="font-semibold" style={{ color: "var(--text-secondary)" }}>{agent.packageManager}</span>
+              </span>
+            )}
+          </div>
+
+          {isScanning && (
+            <div className="flex-1 flex items-center gap-2">
+              <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
+                <div
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{ width: `${scanProgress}%`, background: "linear-gradient(90deg, var(--brand-primary), #8b5cf6)" }}
+                />
+              </div>
+              <span className="text-[11px] font-mono font-bold" style={{ color: "var(--text-muted)" }}>{scanProgress.toFixed(0)}%</span>
+            </div>
           )}
-          {agent.packageManager && (
-            <span style={{ color: "var(--text-muted)" }}>
-              Pkg Manager <span className="font-semibold" style={{ color: "var(--text-secondary)" }}>{agent.packageManager}</span>
-            </span>
-          )}
-          {agent.apiKeyPrefix && (
-            <span style={{ color: "var(--text-muted)" }}>
-              API Key <span className="font-mono font-semibold" style={{ color: "var(--text-secondary)" }}>{agent.apiKeyPrefix}</span>
-            </span>
-          )}
-          {agent.lastHeartbeat && (
-            <span className="ml-auto flex items-center gap-1.5" style={{ color: "var(--text-muted)" }}>
+
+          {!isScanning && agent.lastHeartbeat && (
+            <span className="text-[11px] ml-auto flex items-center gap-1.5" style={{ color: "var(--text-muted)" }}>
               <Clock className="w-3 h-3" />
               Last heartbeat {timeAgo(agent.lastHeartbeat)}
             </span>
@@ -507,23 +552,77 @@ export function AgentDetailClient({
         </div>
       </div>
 
-      {/* ═══ METRIC RINGS ROW ════════════════════════════════════════════ */}
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+      {/* ═══ METRIC CARDS ROW ════════════════════════════════════════════ */}
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-5">
+        {/* CPU */}
         {[
           { label: "CPU", value: latestCpu, unit: "%", color: "#3b82f6", sub: `Load ${latestLoad.toFixed(2)}` },
           { label: "Memory", value: latestMem, unit: "%", color: "#8b5cf6", sub: "" },
           { label: "Disk", value: latestDisk, unit: "%", color: "#f59e0b", sub: "" },
-          { label: "Devices", value: agent.devices.length, unit: "", color: "#10b981", sub: `${agent.devices.filter(d => d.isOnline).length} online`, max: Math.max(agent.devices.length, 1) },
         ].map((m) => (
           <div key={m.label} className="rounded-xl p-4 flex flex-col items-center justify-center" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
-            <MetricRing value={m.value} max={m.max ?? 100} size={90} strokeWidth={6} color={m.color}>
-              <span className="text-xl font-black" style={{ color: m.color }}>{m.unit === "%" ? m.value.toFixed(0) : m.value}</span>
-              {m.unit && <span className="text-[9px] font-semibold" style={{ color: "var(--text-muted)" }}>{m.unit}</span>}
+            <MetricRing value={m.value} max={100} size={90} strokeWidth={6} color={m.color}>
+              <span className="text-xl font-black" style={{ color: m.color }}>{m.value.toFixed(0)}</span>
+              <span className="text-[9px] font-semibold" style={{ color: "var(--text-muted)" }}>%</span>
             </MetricRing>
             <div className="mt-2 text-[11px] font-semibold" style={{ color: "var(--text-secondary)" }}>{m.label}</div>
             {m.sub && <div className="text-[10px]" style={{ color: "var(--text-muted)" }}>{m.sub}</div>}
           </div>
         ))}
+
+        {/* Network summary card */}
+        <div className="rounded-xl p-4" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "rgba(16,185,129,0.1)" }}>
+              <Wifi className="w-3.5 h-3.5" style={{ color: "#10b981" }} />
+            </div>
+            <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>Network</span>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>Devices</span>
+              <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{agent.devices.length}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>Online</span>
+              <span className="text-sm font-bold" style={{ color: "#22c55e" }}>{agent.devices.filter(d => d.isOnline).length}</span>
+            </div>
+            <div className="pt-1 border-t" style={{ borderColor: "var(--border)" }}>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>Unauthorized</span>
+                <span className="text-sm font-bold" style={{ color: agent.devices.filter(d => !d.isAuthorized).length > 0 ? "#ef4444" : "var(--text-primary)" }}>
+                  {agent.devices.filter(d => !d.isAuthorized).length}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Security summary card */}
+        <div className="rounded-xl p-4" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "rgba(239,68,68,0.1)" }}>
+              <Shield className="w-3.5 h-3.5" style={{ color: "#ef4444" }} />
+            </div>
+            <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>Security</span>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>Open Alerts</span>
+              <span className="text-sm font-bold" style={{ color: openAlerts > 0 ? "#ef4444" : "#22c55e" }}>{openAlerts}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>Sec Patches</span>
+              <span className="text-sm font-bold" style={{ color: agent.securityUpdates > 0 ? "#ef4444" : "var(--text-primary)" }}>{agent.securityUpdates}</span>
+            </div>
+            <div className="pt-1 border-t" style={{ borderColor: "var(--border)" }}>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>URLs Down</span>
+                <span className="text-sm font-bold" style={{ color: downUrls > 0 ? "#ef4444" : "#22c55e" }}>{downUrls}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* ═══ TAB NAVIGATION ══════════════════════════════════════════════ */}
