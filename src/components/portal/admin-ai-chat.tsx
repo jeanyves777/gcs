@@ -1012,8 +1012,22 @@ function EmptyState({ onQuickAction }: { onQuickAction: (text: string) => void }
 function MessageBubble({ message, onQuickReply }: { message: ChatMessage; onQuickReply: (text: string) => void }) {
   const isUser = message.role === "user";
 
-  // Detect if the assistant is asking for confirmation
-  const isAskingConfirmation = !isUser && message.content &&
+  // Detect numbered choices (1. Option, 2. Option, etc.)
+  const numberedChoices: { num: string; text: string }[] = [];
+  if (!isUser && message.content) {
+    const choiceRegex = /^\s*(\d+)\.\s+\*{0,2}(.+?)\*{0,2}\s*(?:—|--|:|\n|$)/gm;
+    let match;
+    while ((match = choiceRegex.exec(message.content)) !== null) {
+      const text = match[2].replace(/\*+/g, "").trim();
+      if (text.length > 2 && text.length < 120) {
+        numberedChoices.push({ num: match[1], text });
+      }
+    }
+  }
+  const hasChoices = numberedChoices.length >= 2;
+
+  // Detect if the assistant is asking for simple yes/no confirmation (not multi-choice)
+  const isAskingConfirmation = !isUser && !hasChoices && message.content &&
     /\b(proceed|confirm|go ahead|shall I|should I|want me to)\b.*\?/i.test(message.content);
 
   const hasContentBlocks = !isUser && message.contentBlocks && message.contentBlocks.length > 0;
@@ -1069,7 +1083,33 @@ function MessageBubble({ message, onQuickReply }: { message: ChatMessage; onQuic
         </>
       )}
 
-      {/* Quick confirmation buttons */}
+      {/* Multi-choice buttons */}
+      {hasChoices && (
+        <div className="flex flex-wrap gap-2 max-w-[85%]">
+          {numberedChoices.map((choice) => (
+            <button
+              key={choice.num}
+              onClick={() => onQuickReply(`${choice.num}. ${choice.text}`)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium transition-all hover:scale-[1.02] active:scale-[0.98]"
+              style={{
+                background: "var(--bg-secondary)",
+                color: "var(--text-primary)",
+                border: "1px solid var(--border)",
+              }}
+            >
+              <span
+                className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0"
+                style={{ background: "var(--brand-primary)", color: "white" }}
+              >
+                {choice.num}
+              </span>
+              <span className="text-left">{choice.text}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Quick yes/no confirmation buttons */}
       {isAskingConfirmation && (
         <div className="flex gap-2">
           <button
