@@ -56,6 +56,7 @@ const adminNavItems = [
 
 const guardNavItems = [
   { href: "/portal/admin/guard", label: "Dashboard", icon: ShieldCheck, exact: true },
+  { href: "/portal/admin/guard/internal", label: "Internal Monitor", icon: Shield },
   { href: "/portal/admin/guard/agents", label: "Agents", icon: Server },
   { href: "/portal/admin/guard/alerts", label: "Alerts", icon: AlertTriangle },
   { href: "/portal/admin/guard/patches", label: "Patches", icon: Package },
