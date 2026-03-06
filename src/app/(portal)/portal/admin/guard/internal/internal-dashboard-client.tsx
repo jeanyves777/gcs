@@ -313,13 +313,13 @@ export function InternalDashboardClient({ initialData }: { initialData: Dashboar
                       {grade}
                     </Badge>
                   )}
-                  {latest?.serverType && (
+                  {latestScan?.serverType && (
                     <Badge
                       className="text-[10px] uppercase tracking-widest font-bold px-2.5 py-1"
                       style={{ background: "rgba(99,102,241,0.12)", color: "#6366f1", border: "1px solid rgba(99,102,241,0.25)" }}
                     >
                       <Server className="w-3 h-3 mr-1" />
-                      {latest.serverType.label}
+                      {latestScan.serverType.label}
                     </Badge>
                   )}
                 </div>
