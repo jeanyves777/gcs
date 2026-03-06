@@ -571,6 +571,42 @@ DANGEROUS: requires admin confirmation.`,
       required: [],
     },
   },
+  // ─── Analytics & Visitor Tracking ─────────────────────────────────────────
+  {
+    name: "get_analytics_overview",
+    description: "Get visitor analytics overview: total visitors, page views, sessions, bounce rate, avg duration, top pages, referrers, device/browser/OS/country breakdowns. Use when admin asks about traffic, visitors, analytics, or site usage.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        range: { type: "string", enum: ["24h", "7d", "30d", "90d", "all"], description: "Time range for analytics (default: 7d)" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_visitor_details",
+    description: "Get detailed visitor profiles with device fingerprint, browser, OS, location, IP, referrer, UTM data, visit history. Use when admin asks about specific visitors, suspicious IPs, or wants to see who visited the site.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        page: { type: "number", description: "Page number for pagination (default: 1)" },
+        range: { type: "string", enum: ["24h", "7d", "30d", "90d", "all"], description: "Time range (default: 7d)" },
+        fingerprint: { type: "string", description: "Specific visitor fingerprint to look up" },
+        ip: { type: "string", description: "Filter by IP address" },
+        country: { type: "string", description: "Filter by country name" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_analytics_realtime",
+    description: "Get real-time analytics: visitors active in last 5 minutes, their pages, IPs, locations. Use when admin asks 'who is on the site right now' or about current traffic.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
   // ─── Sub-Agent Delegation ───────────────────────────────────────────────
   {
     name: "delegate_task",
@@ -658,6 +694,10 @@ export async function executeTool(name: string, input: ToolInput): Promise<strin
       case "browser_action": return await browserAction(input);
       case "browser_close": return await browserClose(input);
       case "browser_sessions": return await browserSessions();
+      // Analytics
+      case "get_analytics_overview": return JSON.stringify(await getAnalyticsOverview(input));
+      case "get_visitor_details": return JSON.stringify(await getVisitorDetails(input));
+      case "get_analytics_realtime": return JSON.stringify(await getAnalyticsRealtime());
       case "delegate_task": return JSON.stringify({ error: "delegate_task must be handled by the chat route, not executeTool" });
       default: return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
@@ -1017,6 +1057,195 @@ async function searchVault(input: ToolInput) {
     entries: entries.map((e) => ({
       id: e.id, label: e.label, category: e.category, url: e.url, description: e.description,
       hasUsername: !!e.encUsername, hasPassword: !!e.encPassword, hasApiKey: !!e.encApiKey,
+    })),
+  };
+}
+
+// ─── Analytics Implementations ──────────────────────────────────────────────
+
+async function getAnalyticsOverview(input: ToolInput) {
+  const range = input.range || "7d";
+  const now = new Date();
+  let since: Date;
+  switch (range) {
+    case "24h": since = new Date(now.getTime() - 24 * 60 * 60 * 1000); break;
+    case "7d": since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
+    case "30d": since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
+    case "90d": since = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000); break;
+    default: since = new Date(0);
+  }
+
+  const [visitors, pageViews, sessions, newVisitors] = await Promise.all([
+    db.analyticsVisitor.count({ where: { lastSeen: { gte: since } } }),
+    db.analyticsPageView.count({ where: { timestamp: { gte: since } } }),
+    db.analyticsSession.count({ where: { startedAt: { gte: since } } }),
+    db.analyticsVisitor.count({ where: { firstSeen: { gte: since } } }),
+  ]);
+
+  const topPages = await db.$queryRawUnsafe<{ path: string; views: bigint }[]>(
+    `SELECT path, COUNT(*) as views FROM "AnalyticsPageView" WHERE timestamp >= $1 GROUP BY path ORDER BY views DESC LIMIT 10`, since
+  ).catch(() => []);
+
+  const topCountries = await db.$queryRawUnsafe<{ country: string; count: bigint }[]>(
+    `SELECT country, COUNT(*) as count FROM "AnalyticsVisitor" WHERE "lastSeen" >= $1 AND country IS NOT NULL GROUP BY country ORDER BY count DESC LIMIT 10`, since
+  ).catch(() => []);
+
+  const topReferrers = await db.$queryRawUnsafe<{ referrer: string; count: bigint }[]>(
+    `SELECT referrer, COUNT(*) as count FROM "AnalyticsSession" WHERE "startedAt" >= $1 AND referrer IS NOT NULL AND referrer != '' GROUP BY referrer ORDER BY count DESC LIMIT 10`, since
+  ).catch(() => []);
+
+  const deviceBreakdown = await db.$queryRawUnsafe<{ deviceType: string; count: bigint }[]>(
+    `SELECT "deviceType", COUNT(*) as count FROM "AnalyticsVisitor" WHERE "lastSeen" >= $1 AND "deviceType" IS NOT NULL GROUP BY "deviceType"`, since
+  ).catch(() => []);
+
+  const browserBreakdown = await db.$queryRawUnsafe<{ browser: string; count: bigint }[]>(
+    `SELECT browser, COUNT(*) as count FROM "AnalyticsVisitor" WHERE "lastSeen" >= $1 AND browser IS NOT NULL GROUP BY browser ORDER BY count DESC LIMIT 8`, since
+  ).catch(() => []);
+
+  // Serialize bigints
+  const s = (arr: Record<string, unknown>[]) => arr.map(item => {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(item)) out[k] = typeof v === "bigint" ? Number(v) : v;
+    return out;
+  });
+
+  return {
+    range,
+    totalVisitors: visitors,
+    totalPageViews: pageViews,
+    totalSessions: sessions,
+    newVisitors,
+    returningVisitors: visitors - newVisitors,
+    topPages: s(topPages),
+    topCountries: s(topCountries),
+    topReferrers: s(topReferrers),
+    devices: s(deviceBreakdown),
+    browsers: s(browserBreakdown),
+  };
+}
+
+async function getVisitorDetails(input: ToolInput) {
+  const range = input.range || "7d";
+  const page = input.page || 1;
+  const perPage = 15;
+  const now = new Date();
+  let since: Date;
+  switch (range) {
+    case "24h": since = new Date(now.getTime() - 24 * 60 * 60 * 1000); break;
+    case "7d": since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
+    case "30d": since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
+    case "90d": since = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000); break;
+    default: since = new Date(0);
+  }
+
+  // Build where clause
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const where: any = { lastSeen: { gte: since } };
+  if (input.fingerprint) where.fingerprint = input.fingerprint;
+  if (input.country) where.country = { contains: input.country };
+
+  // If filtering by IP, we need to find visitors via sessions
+  if (input.ip) {
+    const sessions = await db.analyticsSession.findMany({
+      where: { ip: input.ip, startedAt: { gte: since } },
+      select: { visitorId: true },
+      distinct: ["visitorId"],
+    });
+    where.id = { in: sessions.map(s => s.visitorId) };
+  }
+
+  const [visitors, total] = await Promise.all([
+    db.analyticsVisitor.findMany({
+      where,
+      orderBy: { lastSeen: "desc" },
+      take: perPage,
+      skip: (page - 1) * perPage,
+      include: {
+        sessions: {
+          orderBy: { startedAt: "desc" },
+          take: 3,
+          select: { id: true, ip: true, startedAt: true, entryPage: true, exitPage: true, duration: true, pageCount: true, referrer: true, utmSource: true, utmMedium: true, utmCampaign: true, isBounce: true },
+        },
+        pageViews: {
+          orderBy: { timestamp: "desc" },
+          take: 10,
+          select: { path: true, title: true, duration: true, scrollDepth: true, timestamp: true },
+        },
+      },
+    }),
+    db.analyticsVisitor.count({ where }),
+  ]);
+
+  return {
+    visitors: visitors.map(v => ({
+      id: v.id,
+      fingerprint: v.fingerprint,
+      firstSeen: v.firstSeen,
+      lastSeen: v.lastSeen,
+      totalVisits: v.totalVisits,
+      totalPageViews: v.totalPageViews,
+      browser: v.browser,
+      browserVersion: v.browserVersion,
+      os: v.os,
+      osVersion: v.osVersion,
+      deviceType: v.deviceType,
+      screenSize: v.screenWidth && v.screenHeight ? `${v.screenWidth}x${v.screenHeight}` : null,
+      language: v.language,
+      timezone: v.timezone,
+      country: v.country,
+      countryCode: v.countryCode,
+      region: v.region,
+      city: v.city,
+      firstReferrer: v.firstReferrer,
+      utm: { source: v.firstUtmSource, medium: v.firstUtmMedium, campaign: v.firstUtmCampaign },
+      recentSessions: v.sessions,
+      recentPages: v.pageViews,
+    })),
+    pagination: { page, perPage, total, totalPages: Math.ceil(total / perPage) },
+  };
+}
+
+async function getAnalyticsRealtime() {
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+  const activeSessions = await db.analyticsSession.findMany({
+    where: {
+      OR: [
+        { endedAt: { gte: fiveMinAgo } },
+        { endedAt: null, startedAt: { gte: fiveMinAgo } },
+      ],
+    },
+    orderBy: { startedAt: "desc" },
+    include: {
+      visitor: {
+        select: { fingerprint: true, browser: true, os: true, deviceType: true, country: true, city: true },
+      },
+      pageViews: {
+        orderBy: { timestamp: "desc" },
+        take: 1,
+        select: { path: true, title: true, timestamp: true },
+      },
+    },
+  });
+
+  return {
+    activeVisitors: activeSessions.length,
+    timestamp: new Date().toISOString(),
+    sessions: activeSessions.map(s => ({
+      sessionId: s.id,
+      ip: s.ip,
+      fingerprint: s.visitor.fingerprint.slice(0, 16) + "...",
+      browser: s.visitor.browser,
+      os: s.visitor.os,
+      device: s.visitor.deviceType,
+      country: s.visitor.country,
+      city: s.visitor.city,
+      currentPage: s.pageViews[0]?.path || s.entryPage,
+      pageTitle: s.pageViews[0]?.title,
+      startedAt: s.startedAt,
+      pageCount: s.pageCount,
+      referrer: s.referrer,
+      utmSource: s.utmSource,
     })),
   };
 }
