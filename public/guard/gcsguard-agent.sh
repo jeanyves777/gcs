@@ -1610,46 +1610,10 @@ execute_commands() {
         fi
         ;;
       RUN_SCAN)
-        # Run scan in background — it submits results directly to the API
-        # This prevents blocking the heartbeat loop for 60+ seconds
-        (
-          set +e
-          # Collect fresh system metrics
-          export SCAN_CPU=$(top -bn1 2>/dev/null | grep "Cpu(s)" | awk '{print $2 + $4}' || echo "0")
-
-          if [[ -f /proc/meminfo ]]; then
-            _mt=$(awk '/^MemTotal:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
-            _mf=$(awk '/^MemFree:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
-            _mb=$(awk '/^Buffers:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
-            _mc=$(awk '/^Cached:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
-            _ms=$(awk '/^SReclaimable:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
-            _mu=$((_mt - _mf - _mb - _mc - _ms)) 2>/dev/null || _mu=0
-            (( _mt > 0 )) && _mp=$((_mu * 100 / _mt)) || _mp=0
-            export SCAN_MEM_TOTAL="${_mt:-0}" SCAN_MEM_USED="${_mu:-0}" SCAN_MEM_PCT="${_mp:-0}"
-          else
-            export SCAN_MEM_TOTAL=0 SCAN_MEM_USED=0 SCAN_MEM_PCT=0
-          fi
-
-          _df_line=$(df -B1 / 2>/dev/null | tail -1)
-          export SCAN_DISK_TOTAL=$(echo "$_df_line" | awk '{print $2}' 2>/dev/null || echo "0")
-          export SCAN_DISK_USED=$(echo "$_df_line" | awk '{print $3}' 2>/dev/null || echo "0")
-          export SCAN_DISK_PCT=$(echo "$_df_line" | awk '{gsub(/%/,"",$5); print $5}' 2>/dev/null || echo "0")
-
-          read -r _l1 _l5 _l15 _ _ < /proc/loadavg 2>/dev/null || { _l1=0; _l5=0; _l15=0; }
-          export SCAN_LOAD1="${_l1:-0}" SCAN_LOAD5="${_l5:-0}" SCAN_LOAD15="${_l15:-0}"
-
-          export SCAN_UPTIME=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "0")
-          export SCAN_PROCS=$(($(ps aux 2>/dev/null | wc -l) - 1))
-
-          _iface=$(ip route 2>/dev/null | grep default | awk '{print $5}' | head -1 || echo "eth0")
-          export SCAN_NET_RX=$(grep "$_iface" /proc/net/dev 2>/dev/null | awk '{print $2}' || echo "0")
-          export SCAN_NET_TX=$(grep "$_iface" /proc/net/dev 2>/dev/null | awk '{print $10}' || echo "0")
-
-          log "Background scan starting..."
-          run_security_scan >> "$LOG" 2>&1 || log "Background scan failed"
-          log "Background scan finished"
-        ) &
-        output="Security scan started in background"
+        # Signal the main loop to launch background scan after execute_commands returns
+        # Cannot launch background process from inside $() subshell
+        touch /tmp/gcsguard-run-scan-flag
+        output="Security scan starting"
         status="COMPLETED"
         ;;
       NETWORK_SCAN)
@@ -1885,6 +1849,52 @@ send_urgent_alert() {
 }
 
 # ============================================================
+# BACKGROUND SCAN LAUNCHER
+# ============================================================
+
+launch_background_scan() {
+  log "Background scan starting..."
+  (
+    set +euo pipefail
+
+    # Collect fresh system metrics
+    export SCAN_CPU=$(top -bn1 2>/dev/null | grep "Cpu(s)" | awk '{print $2 + $4}' || echo "0")
+
+    if [[ -f /proc/meminfo ]]; then
+      _mt=$(awk '/^MemTotal:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+      _mf=$(awk '/^MemFree:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+      _mb=$(awk '/^Buffers:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+      _mc=$(awk '/^Cached:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+      _ms=$(awk '/^SReclaimable:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+      _mu=$((_mt - _mf - _mb - _mc - _ms)) 2>/dev/null || _mu=0
+      (( _mt > 0 )) && _mp=$((_mu * 100 / _mt)) || _mp=0
+      export SCAN_MEM_TOTAL="${_mt:-0}" SCAN_MEM_USED="${_mu:-0}" SCAN_MEM_PCT="${_mp:-0}"
+    else
+      export SCAN_MEM_TOTAL=0 SCAN_MEM_USED=0 SCAN_MEM_PCT=0
+    fi
+
+    _df_line=$(df -B1 / 2>/dev/null | tail -1)
+    export SCAN_DISK_TOTAL=$(echo "$_df_line" | awk '{print $2}' 2>/dev/null || echo "0")
+    export SCAN_DISK_USED=$(echo "$_df_line" | awk '{print $3}' 2>/dev/null || echo "0")
+    export SCAN_DISK_PCT=$(echo "$_df_line" | awk '{gsub(/%/,"",$5); print $5}' 2>/dev/null || echo "0")
+
+    read -r _l1 _l5 _l15 _ _ < /proc/loadavg 2>/dev/null || { _l1=0; _l5=0; _l15=0; }
+    export SCAN_LOAD1="${_l1:-0}" SCAN_LOAD5="${_l5:-0}" SCAN_LOAD15="${_l15:-0}"
+
+    export SCAN_UPTIME=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "0")
+    export SCAN_PROCS=$(($(ps aux 2>/dev/null | wc -l) - 1))
+
+    _iface=$(ip route 2>/dev/null | grep default | awk '{print $5}' | head -1 || echo "eth0")
+    export SCAN_NET_RX=$(grep "$_iface" /proc/net/dev 2>/dev/null | awk '{print $2}' || echo "0")
+    export SCAN_NET_TX=$(grep "$_iface" /proc/net/dev 2>/dev/null | awk '{print $10}' || echo "0")
+
+    run_security_scan >> "$LOG" 2>&1 || log "Background scan failed"
+    log "Background scan finished"
+  ) &
+  disown
+}
+
+# ============================================================
 # MAIN LOOP
 # ============================================================
 
@@ -1907,6 +1917,13 @@ main() {
 
   while true; do
     send_heartbeat 2>/dev/null || log "Heartbeat cycle failed"
+
+    # Check if a scan was requested (flag set by execute_commands in subshell)
+    if [[ -f /tmp/gcsguard-run-scan-flag ]]; then
+      rm -f /tmp/gcsguard-run-scan-flag
+      launch_background_scan
+    fi
+
     sleep "$HEARTBEAT_INTERVAL"
   done
 }
