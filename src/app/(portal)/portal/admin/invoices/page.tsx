@@ -22,7 +22,7 @@ export default async function AdminInvoicesPage() {
   thisMonth.setDate(1);
   thisMonth.setHours(0, 0, 0, 0);
   const paidThisMonth = invoices
-    .filter(i => i.status === "PAID" && i.paidDate && new Date(i.paidDate) >= thisMonth)
+    .filter(i => i.status === "PAID" && i.paidAt && new Date(i.paidAt) >= thisMonth)
     .reduce((s, i) => s + i.amount + i.tax, 0);
 
   const stats = {
