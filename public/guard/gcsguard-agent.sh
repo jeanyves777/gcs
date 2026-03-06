@@ -1031,11 +1031,12 @@ run_security_scan() {
 
   # --- Use Python3 to build the complete JSON scan result ---
   local scan_json
+  export GCSGUARD_SCAN_TMPDIR="$tmpdir"
   scan_json=$(python3 << 'PYEOF'
 import json, sys, os, re
 from datetime import datetime
 
-tmpdir = sys.argv[1] if len(sys.argv) > 1 else "/tmp/gcsguard-scan"
+tmpdir = os.environ.get("GCSGUARD_SCAN_TMPDIR", "/tmp/gcsguard-scan")
 
 def read_file(name):
     try:
@@ -1501,7 +1502,7 @@ result = {
 
 print(json.dumps(result))
 PYEOF
-  "$tmpdir")
+  )
 
   # Cleanup temp files
   rm -rf "$tmpdir"
