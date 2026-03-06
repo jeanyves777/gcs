@@ -153,12 +153,13 @@ function uid(): string {
 
 // Port → role mapping
 const PORT_ROLES: Record<number, ServerRole> = {
-  80: "web", 443: "web", 8080: "web", 8443: "web",
+  80: "web", 443: "web", 8443: "web",
   3000: "app", 3001: "app", 4000: "app", 5000: "app", 8000: "app", 9000: "app",
+  8080: "app", // common for web apps and reverse proxies
   5432: "database", 3306: "database", 27017: "database", 6379: "database", 1433: "database",
   25: "mail", 465: "mail", 587: "mail", 993: "mail", 143: "mail", 110: "mail", 995: "mail",
   53: "dns",
-  8080: "proxy", 3128: "proxy",
+  3128: "proxy",
   9090: "monitoring", 9100: "monitoring", 3100: "monitoring",
   21: "storage", 2049: "storage",
   8081: "ci_cd", 8082: "ci_cd",
