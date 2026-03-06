@@ -864,6 +864,8 @@ collect_system_versions() {
 # ============================================================
 
 run_security_scan() {
+  # Disable set -e inside scan — many commands legitimately return non-zero
+  set +e
   log "Starting full security scan..."
 
   # Collect all data into temp files for python3 to assemble
@@ -1533,6 +1535,7 @@ PYEOF
 
   log "Scan results submitted: Grade=$grade Score=$score Findings=$findings_count"
   echo "Security scan completed: Grade=$grade, Threat Score=$score, Findings=$findings_count"
+  set -e  # Re-enable strict mode
 }
 
 # ============================================================
