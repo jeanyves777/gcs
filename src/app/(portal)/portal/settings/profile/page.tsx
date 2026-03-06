@@ -75,7 +75,18 @@ export default function ProfileSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}>Profile</h1>
+      <h1
+        className="text-2xl font-bold flex items-center gap-2.5"
+        style={{ color: "var(--text-primary)", fontFamily: "var(--font-display)" }}
+      >
+        <div
+          className="p-1.5 rounded-lg"
+          style={{ background: "var(--brand-primary)", color: "white" }}
+        >
+          <User className="h-5 w-5" />
+        </div>
+        Profile
+      </h1>
       <Card className="card-base">
         <CardContent className="p-6 space-y-5">
           {/* Avatar */}
