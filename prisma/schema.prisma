@@ -917,3 +917,31 @@ model AnalyticsEvent {
   @@index([eventName])
   @@index([timestamp])
 }
+
+// ============================================================
+// SECURITY REPORTS (External Website/Email Scans)
+// ============================================================
+
+model SecurityReport {
+  id              String   @id @default(cuid())
+  target          String   // domain or email scanned
+  targetType      String   @default("website") // website | email
+  status          String   @default("scanning") // scanning | completed | failed
+  overallGrade    String?  // A | B | C | D | F
+  riskScore       Int?     // 0-100
+  totalFindings   Int      @default(0)
+  criticalCount   Int      @default(0)
+  highCount       Int      @default(0)
+  mediumCount     Int      @default(0)
+  lowCount        Int      @default(0)
+  executiveSummary String?
+  reportData      String?  // Full JSON report
+  actionPlan      String?  // JSON action plan
+  userId          String
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+
+  @@index([userId])
+  @@index([target])
+  @@index([createdAt])
+}
