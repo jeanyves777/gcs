@@ -6,11 +6,11 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/var/www/gcs
-ExecStart=/root/.nvm/versions/node/v20.18.1/bin/node /var/www/gcs/scripts/gcs-daemon.js
+ExecStart=/root/.nvm/versions/node/v20.20.0/bin/node /var/www/gcs/scripts/gcs-daemon.js
 Restart=always
 RestartSec=5
 Environment=GCS_DAEMON_PORT=9876
-Environment=PATH=/root/.nvm/versions/node/v20.18.1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PATH=/root/.nvm/versions/node/v20.20.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EnvironmentFile=/var/www/gcs/.env.production
 
 [Install]
