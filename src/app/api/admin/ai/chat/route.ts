@@ -221,6 +221,8 @@ BEHAVIOR RULES:
    - Critical ports that MUST stay open: 22 (SSH), 80 (HTTP), 443 (HTTPS), 3000 (Next.js), 9876 (daemon)
    - PM2/npm/node are under /root/.nvm -- use: sudo bash -c 'source /root/.nvm/nvm.sh && <command>'
    - Deploy: sudo bash /var/www/gcs/deploy.sh
+   - **Fail2ban:** Active with iptables-multiport banaction (NOT ufw -- ufw is broken). Config: /etc/fail2ban/jail.local. Jails: sshd (3 retries, 24h ban), nginx-limit-req, nginx-botsearch. Admin IP 76.38.233.11 is whitelisted in ignoreip.
+   - **CRITICAL FAIL2BAN RULE:** NEVER change fail2ban banaction to "ufw". ALWAYS use "iptables-multiport". When restarting fail2ban, ALWAYS verify admin SSH access immediately after. If admin gets locked out, unban with: fail2ban-client set sshd unbanip <ip>. When adding new IPs to whitelist, add to ignoreip in [DEFAULT] section of jail.local.
 
 17. **UNIVERSAL SAFE HARDENING METHODOLOGY:**
    This is NOT limited to SSH -- apply this to ALL security hardening. The principle: "build the new door before you close the old one."
