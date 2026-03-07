@@ -252,6 +252,13 @@ export async function POST(request: Request) {
         try {
           const packages = typeof cr.output === "string" ? JSON.parse(cr.output) : cr.output;
           if (Array.isArray(packages)) {
+            // Reset all existing packages to INSTALLED first
+            // (packages no longer upgradable won't be in the results)
+            await db.guardPackage.updateMany({
+              where: { agentId: agent.id, status: "UPDATE_AVAILABLE" },
+              data: { status: "INSTALLED", newVersion: null, isSecurityUpdate: false, lastChecked: new Date() },
+            });
+
             let pending = 0;
             let security = 0;
             for (const pkg of packages) {
@@ -397,6 +404,12 @@ export async function POST(request: Request) {
   // Handle packageRefresh (auto-sent after install/upgrade)
   if (Array.isArray(packageRefresh) && packageRefresh.length > 0) {
     try {
+      // Reset all existing packages to INSTALLED first
+      await db.guardPackage.updateMany({
+        where: { agentId: agent.id, status: "UPDATE_AVAILABLE" },
+        data: { status: "INSTALLED", newVersion: null, isSecurityUpdate: false, lastChecked: new Date() },
+      });
+
       let pending = 0;
       let security = 0;
       for (const pkg of packageRefresh) {
