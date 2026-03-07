@@ -18,6 +18,7 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
     include: {
       organization: { select: { id: true, name: true } },
       alerts: {
+        where: { status: "OPEN" },
         orderBy: { createdAt: "desc" },
         take: 50,
       },
@@ -29,54 +30,69 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
         take: 20,
         include: { createdBy: { select: { name: true } } },
       },
+      serviceStatuses: true,
     },
   });
 
   if (!agent) notFound();
 
-  // Fetch latest metrics (last 24h)
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const [metrics, packages, patchHistory, services, urlMonitors, configDeployments] = await Promise.all([
-    db.guardMetric.findMany({
-      where: { agentId: id, timestamp: { gte: since } },
-      orderBy: { timestamp: "asc" },
-      select: { type: true, value: true, timestamp: true },
-    }),
-    db.guardPackage.findMany({
-      where: { agentId: id, status: "UPDATE_AVAILABLE" },
-      orderBy: [{ isSecurityUpdate: "desc" }, { name: "asc" }],
-    }),
-    db.guardPatchHistory.findMany({
-      where: { agentId: id },
-      orderBy: { createdAt: "desc" },
-      take: 30,
-      include: { approvedBy: { select: { name: true } } },
-    }),
-    db.guardServiceStatus.findMany({
-      where: { agentId: id },
-      orderBy: [{ isActive: "asc" }, { serviceName: "asc" }],
-    }),
-    db.guardUrlMonitor.findMany({
-      where: { agentId: id },
-      orderBy: [{ isDown: "desc" }, { name: "asc" }],
-    }),
-    db.guardConfigDeployment.findMany({
-      where: { agentId: id },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-      include: { deployedBy: { select: { name: true } } },
-    }),
-  ]);
+  // Fetch scan history (same as internal dashboard)
+  const scans = await db.guardScan.findMany({
+    where: { agentId: id, status: "COMPLETED" },
+    orderBy: { startedAt: "desc" },
+    take: 20,
+    select: { results: true, startedAt: true },
+  });
+
+  const metricSnapshots = scans
+    .filter((s) => s.results)
+    .map((scan) => {
+      try {
+        const r = JSON.parse(scan.results!);
+        return {
+          cpuPercent: r.metrics?.cpuPercent ?? 0,
+          memPercent: r.metrics?.memPercent ?? 0,
+          memUsed: r.metrics?.memUsed ?? 0,
+          memTotal: r.metrics?.memTotal ?? 0,
+          diskPercent: r.metrics?.diskPercent ?? 0,
+          diskTotal: r.metrics?.diskTotal ?? 0,
+          diskUsed: r.metrics?.diskUsed ?? 0,
+          loadAvg: r.metrics?.loadAvg ?? [0, 0, 0],
+          uptime: r.metrics?.uptime ?? 0,
+          processes: r.metrics?.processes ?? 0,
+          networkRx: r.metrics?.networkRx ?? 0,
+          networkTx: r.metrics?.networkTx ?? 0,
+          threatScore: r.threatScore ?? 0,
+          threatLevel: r.threatLevel ?? "LOW",
+          grade: r.grade ?? "A",
+          findingCount:
+            r.findings?.filter(
+              (f: { severity: string }) => f.severity !== "INFO"
+            ).length ?? 0,
+          timestamp: scan.startedAt.toISOString(),
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+  let latestScan = null;
+  if (scans[0]?.results) {
+    try {
+      latestScan = JSON.parse(scans[0].results);
+    } catch {
+      /* ignore */
+    }
+  }
 
   return (
     <AgentDetailClient
-      agent={JSON.parse(JSON.stringify(agent))}
-      metrics={JSON.parse(JSON.stringify(metrics))}
-      packages={JSON.parse(JSON.stringify(packages))}
-      patchHistory={JSON.parse(JSON.stringify(patchHistory))}
-      services={JSON.parse(JSON.stringify(services))}
-      urlMonitors={JSON.parse(JSON.stringify(urlMonitors))}
-      configDeployments={JSON.parse(JSON.stringify(configDeployments))}
+      initialData={{
+        agent: JSON.parse(JSON.stringify(agent)),
+        metricSnapshots: metricSnapshots as any[],
+        latestScan,
+      }}
     />
   );
 }
