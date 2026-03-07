@@ -30,6 +30,7 @@ import {
   KeyRound,
   BarChart3,
   ShieldAlert,
+  Crosshair,
 } from "lucide-react";
 import { Logo } from "@/components/layout/logo";
 import { cn } from "@/lib/utils";
@@ -67,6 +68,7 @@ const guardNavItems = [
   { href: "/portal/admin/guard/monitoring", label: "Monitoring", icon: Activity },
   { href: "/portal/admin/guard/deploy", label: "Deploy", icon: Rocket },
   { href: "/portal/admin/security-reports", label: "Security Reports", icon: ShieldAlert },
+  { href: "/portal/admin/pentest", label: "Pentest", icon: Crosshair },
 ];
 
 interface SidebarProps {

@@ -945,3 +945,38 @@ model SecurityReport {
   @@index([target])
   @@index([createdAt])
 }
+
+// ============================================================
+// PENTEST ENGAGEMENTS (Advanced Penetration Testing)
+// ============================================================
+
+model PentestEngagement {
+  id              String   @id @default(cuid())
+  target          String   // IP address or domain
+  targetType      String   @default("website") // website | ip | network
+  status          String   @default("queued") // queued | running | completed | failed | cancelled
+  modules         String   // JSON array of selected modules
+  progress        Int      @default(0) // 0-100
+  currentModule   String?  // Currently running module name
+  overallGrade    String?  // A+ | A | B | C | D | F
+  riskScore       Int?     // 0-100
+  totalFindings   Int      @default(0)
+  criticalCount   Int      @default(0)
+  highCount       Int      @default(0)
+  mediumCount     Int      @default(0)
+  lowCount        Int      @default(0)
+  infoCount       Int      @default(0)
+  executiveSummary String?
+  reportData      String?  // Full JSON report with all module results
+  moduleResults   String?  // JSON: { [moduleName]: { status, findings, duration } }
+  authorization   Boolean  @default(false) // User confirmed authorization
+  userId          String
+  createdAt       DateTime @default(now())
+  startedAt       DateTime?
+  completedAt     DateTime?
+
+  @@index([userId])
+  @@index([target])
+  @@index([status])
+  @@index([createdAt])
+}
