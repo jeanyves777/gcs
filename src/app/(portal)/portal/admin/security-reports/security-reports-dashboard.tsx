@@ -41,6 +41,8 @@ function timeAgo(date: string): string {
   return "just now";
 }
 
+const PAGE_SIZE = 10;
+
 export function SecurityReportsDashboard() {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +51,13 @@ export function SecurityReportsDashboard() {
   const [targetType, setTargetType] = useState<"website" | "email">("website");
   const [emailTo, setEmailTo] = useState("");
   const [emailingId, setEmailingId] = useState<string | null>(null);
+
+  // Filters & pagination
+  const [searchQuery, setSearchQuery] = useState("");
+  const [gradeFilter, setGradeFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"date" | "risk" | "findings">("date");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const fetchReports = useCallback(async () => {
     setLoading(true);
@@ -119,6 +128,21 @@ export function SecurityReportsDashboard() {
   const totalFindings = completed.reduce((s, r) => s + r.totalFindings, 0);
   const totalCritical = completed.reduce((s, r) => s + r.criticalCount, 0);
 
+  // Filter, sort, paginate
+  const filtered = reports.filter(r => {
+    if (searchQuery && !r.target.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    if (gradeFilter !== "all" && r.overallGrade !== gradeFilter) return false;
+    if (statusFilter !== "all" && r.status !== statusFilter) return false;
+    return true;
+  }).sort((a, b) => {
+    if (sortBy === "risk") return (b.riskScore || 0) - (a.riskScore || 0);
+    if (sortBy === "findings") return b.totalFindings - a.totalFindings;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   return (
     <div className="space-y-5 max-w-[1400px] mx-auto">
       {/* ═══ HEADER ═══════════════════════════════════════════════════════ */}
@@ -181,6 +205,53 @@ export function SecurityReportsDashboard() {
         <StatCard icon={ShieldAlert} label="Critical Issues" value={totalCritical.toString()} color="#ef4444" />
       </div>
 
+      {/* ═══ FILTERS ════════════════════════════════════════════════════ */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "var(--text-muted)" }} />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+            placeholder="Search targets..."
+            className="w-full pl-8 pr-3 py-2 rounded-lg text-sm border"
+            style={{ background: "var(--bg-primary)", borderColor: "var(--border)", color: "var(--text-primary)" }}
+          />
+        </div>
+        <select value={gradeFilter} onChange={(e) => { setGradeFilter(e.target.value); setCurrentPage(1); }}
+          className="px-3 py-2 rounded-lg text-xs border cursor-pointer"
+          style={{ background: "var(--bg-primary)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
+          <option value="all">All Grades</option>
+          {["A", "B", "C", "D", "F"].map(g => <option key={g} value={g}>Grade {g}</option>)}
+        </select>
+        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+          className="px-3 py-2 rounded-lg text-xs border cursor-pointer"
+          style={{ background: "var(--bg-primary)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
+          <option value="all">All Status</option>
+          <option value="completed">Completed</option>
+          <option value="scanning">Scanning</option>
+          <option value="failed">Failed</option>
+        </select>
+        <select value={sortBy} onChange={(e) => { setSortBy(e.target.value as "date" | "risk" | "findings"); setCurrentPage(1); }}
+          className="px-3 py-2 rounded-lg text-xs border cursor-pointer"
+          style={{ background: "var(--bg-primary)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
+          <option value="date">Sort: Newest</option>
+          <option value="risk">Sort: Risk Score</option>
+          <option value="findings">Sort: Findings</option>
+        </select>
+        {(searchQuery || gradeFilter !== "all" || statusFilter !== "all") && (
+          <button
+            onClick={() => { setSearchQuery(""); setGradeFilter("all"); setStatusFilter("all"); setCurrentPage(1); }}
+            className="px-2 py-2 rounded-lg text-xs font-medium hover:opacity-80"
+            style={{ color: "var(--text-muted)" }}>
+            Clear filters
+          </button>
+        )}
+        <span className="text-[10px] ml-auto" style={{ color: "var(--text-muted)" }}>
+          {filtered.length} of {reports.length} reports
+        </span>
+      </div>
+
       {/* ═══ REPORT LIST ══════════════════════════════════════════════════ */}
       <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
         <div className="px-5 py-3 text-[10px] font-semibold uppercase tracking-wider hidden md:grid grid-cols-[1fr_80px_60px_180px_120px_100px] gap-3"
@@ -193,14 +264,16 @@ export function SecurityReportsDashboard() {
           <span>Actions</span>
         </div>
         <div className="divide-y" style={{ borderColor: "var(--border)" }}>
-          {reports.length === 0 && (
+          {paged.length === 0 && (
             <div className="px-5 py-12 text-center">
               <Shield className="w-10 h-10 mx-auto mb-3" style={{ color: "var(--text-muted)" }} />
-              <p className="text-sm font-medium">No reports yet</p>
-              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Enter a website or email above to start a security scan</p>
+              <p className="text-sm font-medium">{reports.length === 0 ? "No reports yet" : "No matching reports"}</p>
+              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                {reports.length === 0 ? "Enter a website or email above to start a security scan" : "Try adjusting your filters"}
+              </p>
             </div>
           )}
-          {reports.map((r) => (
+          {paged.map((r) => (
             <div key={r.id} className="px-5 py-3 hover:bg-[var(--bg-secondary)] transition-colors">
               <div className="md:grid grid-cols-[1fr_80px_60px_180px_120px_100px] gap-3 items-center">
                 {/* Target */}
@@ -280,6 +353,44 @@ export function SecurityReportsDashboard() {
             </div>
           ))}
         </div>
+
+        {/* ═══ PAGINATION ═════════════════════════════════════════════════ */}
+        {totalPages > 1 && (
+          <div className="px-5 py-3 flex items-center justify-between" style={{ borderTop: "1px solid var(--border)", background: "var(--bg-secondary)" }}>
+            <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+              Page {safePage} of {totalPages} ({filtered.length} results)
+            </span>
+            <div className="flex items-center gap-1">
+              <Button size="sm" variant="outline" className="h-7 text-xs px-2"
+                disabled={safePage <= 1} onClick={() => setCurrentPage(1)}>
+                First
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs px-2"
+                disabled={safePage <= 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))}>
+                Prev
+              </Button>
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                const start = Math.max(1, Math.min(safePage - 2, totalPages - 4));
+                const page = start + i;
+                if (page > totalPages) return null;
+                return (
+                  <Button key={page} size="sm" variant={page === safePage ? "default" : "outline"}
+                    className="h-7 w-7 text-xs p-0" onClick={() => setCurrentPage(page)}>
+                    {page}
+                  </Button>
+                );
+              })}
+              <Button size="sm" variant="outline" className="h-7 text-xs px-2"
+                disabled={safePage >= totalPages} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}>
+                Next
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs px-2"
+                disabled={safePage >= totalPages} onClick={() => setCurrentPage(totalPages)}>
+                Last
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
