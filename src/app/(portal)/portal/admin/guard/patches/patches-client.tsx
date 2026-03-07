@@ -209,9 +209,10 @@ export function PatchesClient({ agents: initialAgents, totalPending: initPending
           // Stop polling after a delay, refresh data
           setTimeout(() => {
             setTrackedIds([]);
-            if (tab === "overview") fetchOverview();
+            fetchOverview();
             if (tab === "packages") fetchPackages();
-          }, 5000);
+            if (tab === "history") fetchHistory();
+          }, 3000);
         }
       } catch { /* ignore */ }
     };
@@ -219,7 +220,7 @@ export function PatchesClient({ agents: initialAgents, totalPending: initPending
     poll(); // immediate first poll
     const interval = setInterval(poll, 3000);
     return () => clearInterval(interval);
-  }, [trackedIds, tab, fetchOverview, fetchPackages]);
+  }, [trackedIds, tab, fetchOverview, fetchPackages, fetchHistory]);
 
   function trackCommand(commandId: string) {
     setTrackedIds((prev) => [...prev, commandId]);
@@ -1092,7 +1093,12 @@ function HistoryRow({
           {h.approvedBy?.name || "—"}
         </td>
         <td className="py-2 px-3 text-xs" style={{ color: "var(--text-muted)" }}>
-          {formatDate(h.createdAt)}
+          <div>{formatDate(h.createdAt)}</div>
+          {h.completedAt && (
+            <div className="text-green-600 dark:text-green-400">
+              Done: {formatDate(h.completedAt)}
+            </div>
+          )}
         </td>
         <td className="py-2 px-3 text-right">
           {(h.output || h.error) && (
@@ -1105,10 +1111,18 @@ function HistoryRow({
       {expanded && (h.output || h.error) && (
         <tr>
           <td colSpan={8} className="px-3 pb-3">
-            <pre className="text-xs p-3 rounded-lg overflow-x-auto max-h-40"
+            <pre className="text-xs p-3 rounded-lg overflow-x-auto max-h-48 whitespace-pre-wrap"
                  style={{ background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
               {h.error ? `ERROR: ${h.error}\n\n` : ""}
-              {h.output || ""}
+              {(() => {
+                if (!h.output) return "";
+                try {
+                  const parsed = JSON.parse(h.output);
+                  return typeof parsed === "string" ? parsed : (parsed.output || parsed.summary || JSON.stringify(parsed, null, 2));
+                } catch {
+                  return h.output;
+                }
+              })()}
             </pre>
           </td>
         </tr>
@@ -1148,14 +1162,31 @@ function CommandStatusRow({ cmd }: { cmd: TrackedCommand }) {
   const detail = payload.packages?.join(", ") || payload.type || "";
 
   let resultText = "";
+  let resultSummary = "";
   if (cmd.result) {
     try {
-      const r = JSON.parse(cmd.result);
-      resultText = typeof r === "string" ? r : r.output || r.stdout || JSON.stringify(r, null, 2);
+      const parsed = JSON.parse(cmd.result);
+      if (typeof parsed === "string") {
+        try {
+          const inner = JSON.parse(parsed);
+          resultText = inner.output || inner.stdout || parsed;
+          resultSummary = inner.summary || (inner.packageCount ? `${inner.packageCount} packages` : "");
+        } catch {
+          resultText = parsed;
+        }
+      } else {
+        resultText = parsed.output || parsed.stdout || JSON.stringify(parsed, null, 2);
+        resultSummary = parsed.summary || (parsed.packageCount ? `${parsed.packageCount} packages` : "");
+      }
     } catch {
       resultText = cmd.result;
     }
   }
+
+  // Status label with more context
+  const statusLabel = s.pulse
+    ? `${s.label} (${elapsed}s)`
+    : `${s.label} in ${elapsed}s`;
 
   return (
     <div className={`rounded-lg p-3 ${s.pulse ? "animate-pulse" : ""}`} style={{ background: "var(--bg-secondary)" }}>
@@ -1170,20 +1201,23 @@ function CommandStatusRow({ cmd }: { cmd: TrackedCommand }) {
                 {typeLabel[cmd.type] || cmd.type}
               </span>
               <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                {cmd.agent.name}
+                {cmd.agent.hostname || cmd.agent.name}
               </span>
             </div>
             <p className="text-xs truncate" style={{ color: "var(--text-secondary)" }}>
               {detail && <span className="font-mono">{detail.length > 80 ? detail.slice(0, 80) + "..." : detail}</span>}
             </p>
+            {resultSummary && (
+              <p className="text-xs mt-0.5 font-mono" style={{ color: cmd.status === "FAILED" ? "var(--error)" : "var(--success, #22c55e)" }}>
+                {resultSummary.slice(0, 120)}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>
-            {elapsed}s
-          </span>
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${s.color}`}>
-            {s.label}
+            {s.icon}
+            {statusLabel}
           </span>
           {resultText && (
             <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={() => setShowOutput(!showOutput)}>
@@ -1193,9 +1227,9 @@ function CommandStatusRow({ cmd }: { cmd: TrackedCommand }) {
         </div>
       </div>
       {showOutput && resultText && (
-        <pre className="mt-2 text-xs p-2 rounded overflow-x-auto max-h-48"
+        <pre className="mt-2 text-xs p-2 rounded overflow-x-auto max-h-64 whitespace-pre-wrap"
              style={{ background: "var(--bg-primary)", color: "var(--text-secondary)" }}>
-          {resultText.slice(0, 5000)}
+          {resultText.slice(0, 8000)}
         </pre>
       )}
     </div>

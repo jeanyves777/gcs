@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
-  const { metrics, alerts, systemInfo, devices, commandResults, serviceStatuses } = body;
+  const { metrics, alerts, systemInfo, devices, commandResults, serviceStatuses, packageRefresh } = body;
 
   // Update agent status and system info
   const updateData: Record<string, unknown> = {
@@ -158,10 +158,90 @@ export async function POST(request: Request) {
         where: { id: cr.id },
         data: {
           status: cr.status,
-          result: cr.output ? JSON.stringify(cr.output) : null,
+          result: cr.output ? (typeof cr.output === "string" ? cr.output : JSON.stringify(cr.output)) : null,
           completedAt: new Date(),
         },
       });
+
+      // Update PatchHistory records when patch commands complete
+      if (["INSTALL_PACKAGES", "SYSTEM_UPGRADE", "UNINSTALL_PACKAGES", "ROLLBACK_PACKAGE"].includes(command.type)) {
+        const patchStatus = cr.status === "COMPLETED" ? "COMPLETED" : "FAILED";
+
+        if (command.type === "INSTALL_PACKAGES" || command.type === "UNINSTALL_PACKAGES") {
+          // Update patch history for specific packages in this command
+          try {
+            const payload = typeof command.payload === "string" ? JSON.parse(command.payload) : command.payload;
+            const packageNames = payload?.packages || [];
+            if (packageNames.length > 0) {
+              await db.guardPatchHistory.updateMany({
+                where: {
+                  agentId: agent.id,
+                  packageName: { in: packageNames },
+                  status: "PENDING",
+                },
+                data: {
+                  status: patchStatus,
+                  completedAt: new Date(),
+                  output: cr.output ? (typeof cr.output === "string" ? cr.output.slice(0, 5000) : JSON.stringify(cr.output).slice(0, 5000)) : null,
+                },
+              });
+            }
+          } catch {
+            // Ignore payload parse errors
+          }
+        } else if (command.type === "SYSTEM_UPGRADE") {
+          // System upgrade affects all pending patches for this agent
+          await db.guardPatchHistory.updateMany({
+            where: {
+              agentId: agent.id,
+              status: "PENDING",
+            },
+            data: {
+              status: patchStatus,
+              completedAt: new Date(),
+              output: cr.output ? (typeof cr.output === "string" ? cr.output.slice(0, 2000) : JSON.stringify(cr.output).slice(0, 2000)) : null,
+            },
+          });
+        } else if (command.type === "ROLLBACK_PACKAGE") {
+          try {
+            const payload = typeof command.payload === "string" ? JSON.parse(command.payload) : command.payload;
+            const pkgName = payload?.package;
+            if (pkgName) {
+              await db.guardPatchHistory.updateMany({
+                where: {
+                  agentId: agent.id,
+                  packageName: pkgName,
+                  status: "PENDING",
+                },
+                data: {
+                  status: patchStatus,
+                  completedAt: new Date(),
+                },
+              });
+            }
+          } catch {
+            // Ignore
+          }
+        }
+
+        // After successful package operations, update agent's pending counts
+        if (cr.status === "COMPLETED") {
+          const updatable = await db.guardPackage.count({
+            where: { agentId: agent.id, status: "UPDATE_AVAILABLE" },
+          });
+          const securityUpdatable = await db.guardPackage.count({
+            where: { agentId: agent.id, status: "UPDATE_AVAILABLE", isSecurityUpdate: true },
+          });
+          await db.guardAgent.update({
+            where: { id: agent.id },
+            data: {
+              pendingUpdates: updatable,
+              securityUpdates: securityUpdatable,
+              lastPatchCheck: new Date(),
+            },
+          });
+        }
+      }
 
       // Special handling for COLLECT_PACKAGES results
       if (command.type === "COLLECT_PACKAGES" && cr.status === "COMPLETED" && cr.output) {
@@ -309,6 +389,57 @@ export async function POST(request: Request) {
     const elapsed = (now.getTime() - m.lastChecked.getTime()) / 1000;
     return elapsed >= m.intervalSec;
   });
+
+  // Handle packageRefresh (auto-sent after install/upgrade)
+  if (Array.isArray(packageRefresh) && packageRefresh.length > 0) {
+    try {
+      let pending = 0;
+      let security = 0;
+      for (const pkg of packageRefresh) {
+        if (!pkg.name || !pkg.version) continue;
+        await db.guardPackage.upsert({
+          where: {
+            agentId_name_source: {
+              agentId: agent.id,
+              name: pkg.name,
+              source: pkg.source || "apt",
+            },
+          },
+          update: {
+            version: pkg.version,
+            newVersion: pkg.newVersion || null,
+            isSecurityUpdate: pkg.isSecurityUpdate ?? false,
+            status: pkg.newVersion ? "UPDATE_AVAILABLE" : "INSTALLED",
+            lastChecked: new Date(),
+          },
+          create: {
+            name: pkg.name,
+            version: pkg.version,
+            newVersion: pkg.newVersion || null,
+            source: pkg.source || "apt",
+            isSecurityUpdate: pkg.isSecurityUpdate ?? false,
+            status: pkg.newVersion ? "UPDATE_AVAILABLE" : "INSTALLED",
+            agentId: agent.id,
+          },
+        });
+        if (pkg.newVersion) {
+          pending++;
+          if (pkg.isSecurityUpdate) security++;
+        }
+      }
+      await db.guardAgent.update({
+        where: { id: agent.id },
+        data: {
+          pendingUpdates: pending,
+          securityUpdates: security,
+          lastInventorySync: new Date(),
+          lastPatchCheck: new Date(),
+        },
+      });
+    } catch {
+      // Ignore package refresh errors
+    }
+  }
 
   // Fetch pending commands to send to agent
   const pendingCommands = await db.guardCommand.findMany({

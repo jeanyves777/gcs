@@ -420,13 +420,19 @@ install_packages() {
     return
   fi
 
-  log "Installing packages: $packages_json (source: $source_info)"
+  local pkg_count
+  pkg_count=$(echo "$packages_json" | wc -w)
+  log "Installing ${pkg_count} packages: $packages_json (source: $source_info)"
 
   local pm
   pm=$(detect_package_manager)
 
+  # Run apt-get update first to ensure fresh package lists
   case "$pm" in
     apt)
+      log "Running apt-get update before install..."
+      apt-get update -qq 2>/dev/null
+      log "Starting apt-get install for ${pkg_count} packages..."
       output=$(DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-change-held-packages $packages_json 2>&1) && status="COMPLETED" || status="FAILED"
       ;;
     dnf)
@@ -436,14 +442,28 @@ install_packages() {
       output=$(yum install -y $packages_json 2>&1) && status="COMPLETED" || status="FAILED"
       ;;
     *)
-      output="Unknown package manager"
+      output="Unknown package manager: $pm"
       status="FAILED"
       ;;
   esac
 
-  # Escape output for JSON
-  output=$(echo "$output" | tail -20 | sed 's/"/\\"/g' | tr '\n' ' ')
-  echo "{\"status\":\"${status}\",\"output\":\"${output}\"}"
+  log "Install ${status}: ${pkg_count} packages"
+
+  # Build structured JSON output with python3
+  python3 -c "
+import json, sys
+output = sys.stdin.read()
+# Extract summary info from apt output
+lines = output.strip().split('\n')
+summary_lines = [l for l in lines if any(k in l.lower() for k in ['upgraded', 'newly installed', 'to remove', 'not upgraded', 'e:', 'err:', 'warning:'])]
+result = {
+    'status': sys.argv[1],
+    'packageCount': int(sys.argv[2]),
+    'output': output[-5000:] if len(output) > 5000 else output,
+    'summary': '\n'.join(summary_lines[-10:]) if summary_lines else ''
+}
+print(json.dumps(result))
+" "$status" "$pkg_count" <<< "$output" 2>/dev/null || echo "{\"status\":\"${status}\",\"output\":\"Install ${status}\"}"
 }
 
 system_upgrade() {
@@ -503,8 +523,23 @@ system_upgrade() {
       ;;
   esac
 
-  output=$(echo "$output" | tail -30 | sed 's/"/\\"/g' | tr '\n' ' ')
-  echo "{\"status\":\"${status}\",\"output\":\"${output}\"}"
+  log "System upgrade ${status}: type=$upgrade_type dryRun=$dry_run"
+
+  # Build structured JSON output with python3
+  python3 -c "
+import json, sys
+output = sys.stdin.read()
+lines = output.strip().split('\n')
+summary_lines = [l for l in lines if any(k in l.lower() for k in ['upgraded', 'newly installed', 'to remove', 'not upgraded', 'e:', 'err:', 'warning:', 'kept back'])]
+result = {
+    'status': sys.argv[1],
+    'upgradeType': sys.argv[2],
+    'dryRun': sys.argv[3] == 'True',
+    'output': output[-5000:] if len(output) > 5000 else output,
+    'summary': '\n'.join(summary_lines[-10:]) if summary_lines else ''
+}
+print(json.dumps(result))
+" "$status" "$upgrade_type" "$dry_run" <<< "$output" 2>/dev/null || echo "{\"status\":\"${status}\",\"output\":\"Upgrade ${status}\"}"
 }
 
 # ============================================================
@@ -1636,12 +1671,22 @@ execute_commands() {
         result=$(install_packages "$payload")
         output="$result"
         status=$(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','FAILED'))" 2>/dev/null || echo "COMPLETED")
+        # Auto-refresh package inventory after install
+        if [[ "$status" == "COMPLETED" ]]; then
+          log "Auto-refreshing package inventory after successful install"
+          touch /tmp/gcsguard-collect-packages-flag
+        fi
         ;;
       SYSTEM_UPGRADE)
         local result
         result=$(system_upgrade "$payload")
         output="$result"
         status=$(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','FAILED'))" 2>/dev/null || echo "COMPLETED")
+        # Auto-refresh package inventory after upgrade
+        if [[ "$status" == "COMPLETED" ]]; then
+          log "Auto-refreshing package inventory after successful upgrade"
+          touch /tmp/gcsguard-collect-packages-flag
+        fi
         ;;
       ROLLBACK_PACKAGE)
         local package version
@@ -1761,13 +1806,26 @@ execute_commands() {
     esac
 
     log "Command $cmd_id ($cmd_type): $status"
-    if [[ -n "$(echo "$results" | grep -o '{' | head -1)" ]]; then
-      results=$(echo "$results" | sed 's/\]$/,/')
-    else
-      results="["
+    # Build JSON result entry using python3 for safe escaping
+    local json_entry
+    json_entry=$(python3 -c "
+import json, sys
+entry = {'id': sys.argv[1], 'status': sys.argv[2], 'output': sys.stdin.read()[:8000]}
+print(json.dumps(entry))
+" "$cmd_id" "$status" <<< "$output" 2>/dev/null)
+
+    if [[ -z "$json_entry" ]]; then
+      # Fallback if python3 fails
+      local safe_output
+      safe_output=$(echo "$output" | head -20 | tr '\n' ' ' | sed 's/"/\\"/g' | cut -c1-2000)
+      json_entry="{\"id\":\"${cmd_id}\",\"status\":\"${status}\",\"output\":\"${safe_output}\"}"
     fi
-    output=$(echo "$output" | sed 's/"/\\"/g' | head -5 | tr '\n' ' ')
-    results="${results}{\"id\":\"${cmd_id}\",\"status\":\"${status}\",\"output\":\"${output}\"}]"
+
+    if [[ "$results" == "[]" ]]; then
+      results="[${json_entry}]"
+    else
+      results="${results%]},${json_entry}]"
+    fi
   done
 
   echo "$results"
@@ -1950,6 +2008,28 @@ main() {
     if [[ -f /tmp/gcsguard-run-scan-flag ]]; then
       rm -f /tmp/gcsguard-run-scan-flag
       launch_background_scan
+    fi
+
+    # Check if package collection was requested (after install/upgrade)
+    if [[ -f /tmp/gcsguard-collect-packages-flag ]]; then
+      rm -f /tmp/gcsguard-collect-packages-flag
+      log "Running post-install package collection"
+      local pm pkg_data
+      pm=$(detect_package_manager)
+      case "$pm" in
+        apt)   pkg_data=$(collect_packages_apt) ;;
+        dnf|yum) pkg_data=$(collect_packages_yum) ;;
+        *)     pkg_data="[]" ;;
+      esac
+      # Send package data via packageRefresh field in heartbeat
+      if [[ "$pkg_data" != "[]" ]]; then
+        curl -sS -X POST "${API_URL}/heartbeat" \
+          -H "Authorization: Bearer ${API_KEY}" \
+          -H "Content-Type: application/json" \
+          -d "{\"metrics\":{},\"systemInfo\":{},\"alerts\":[],\"devices\":[],\"commandResults\":[],\"serviceStatuses\":[],\"packageRefresh\":${pkg_data}}" \
+          --max-time 15 &>/dev/null || log "Failed to send package refresh data"
+        log "Package inventory refreshed and sent to server"
+      fi
     fi
 
     sleep "$HEARTBEAT_INTERVAL"
