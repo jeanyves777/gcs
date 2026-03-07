@@ -1908,14 +1908,44 @@ send_heartbeat() {
   if [[ "$commands" != "[]" ]]; then
     log "Received ${commands} commands"
     cmd_results=$(execute_commands "$commands")
-    # Send command results in next heartbeat (stored for next iteration)
-    # For immediate feedback, send a follow-up
+    # Send command results immediately for live tracking
     if [[ "$cmd_results" != "[]" ]]; then
-      curl -sS -X POST "${API_URL}/heartbeat" \
-        -H "Authorization: Bearer ${API_KEY}" \
-        -H "Content-Type: application/json" \
-        -d "{\"metrics\":${metrics},\"systemInfo\":${system_info},\"alerts\":[],\"devices\":[],\"commandResults\":${cmd_results},\"serviceStatuses\":[]}" \
-        --max-time 10 &>/dev/null || true
+      log "Sending command results back to server..."
+      # Use python3 to build a safe JSON payload (avoids shell escaping issues)
+      local result_payload
+      result_payload=$(python3 -c "
+import json, sys
+try:
+    results = json.loads(sys.argv[1])
+    payload = {
+        'metrics': {},
+        'systemInfo': {},
+        'alerts': [],
+        'devices': [],
+        'commandResults': results,
+        'serviceStatuses': []
+    }
+    print(json.dumps(payload))
+except Exception as e:
+    print(json.dumps({'error': str(e)}), file=sys.stderr)
+    sys.exit(1)
+" "$cmd_results" 2>/dev/null)
+
+      if [[ -n "$result_payload" ]]; then
+        local result_response
+        result_response=$(curl -sS -X POST "${API_URL}/heartbeat" \
+          -H "Authorization: Bearer ${API_KEY}" \
+          -H "Content-Type: application/json" \
+          -d "$result_payload" \
+          --max-time 15 2>&1) || {
+          log "ERROR: Failed to send command results — $result_response"
+        }
+        if [[ -n "$result_response" ]]; then
+          log "Command results sent successfully"
+        fi
+      else
+        log "ERROR: Failed to build result payload from: ${cmd_results:0:200}"
+      fi
     fi
   fi
 }
