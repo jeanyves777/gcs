@@ -187,6 +187,9 @@ export function PatchesClient({ agents: initialAgents, totalPending: initPending
     if (tab === "history") fetchHistory();
   }, [tab, fetchHistory]);
 
+  // Auto-refresh after commands complete (polls until package counts change)
+  const [postRefreshCount, setPostRefreshCount] = useState(0);
+
   // Poll tracked commands every 3s while any are active
   useEffect(() => {
     if (trackedIds.length === 0) return;
@@ -205,14 +208,12 @@ export function PatchesClient({ agents: initialAgents, totalPending: initPending
           const failed = cmds.filter((c) => c.status === "FAILED");
           const completed = cmds.filter((c) => c.status === "COMPLETED");
           if (failed.length > 0) toast.error(`${failed.length} command(s) failed`);
-          if (completed.length > 0) toast.success(`${completed.length} command(s) completed`);
-          // Stop polling after a delay, refresh data
-          setTimeout(() => {
-            setTrackedIds([]);
-            fetchOverview();
-            if (tab === "packages") fetchPackages();
-            if (tab === "history") fetchHistory();
-          }, 3000);
+          if (completed.length > 0) {
+            toast.success(`${completed.length} command(s) completed — refreshing inventory...`);
+          }
+          // Stop command polling, start post-refresh polling
+          setTrackedIds([]);
+          setPostRefreshCount(8); // Poll 8 times (every 5s = 40s window for package refresh)
         }
       } catch { /* ignore */ }
     };
@@ -220,7 +221,23 @@ export function PatchesClient({ agents: initialAgents, totalPending: initPending
     poll(); // immediate first poll
     const interval = setInterval(poll, 3000);
     return () => clearInterval(interval);
-  }, [trackedIds, tab, fetchOverview, fetchPackages, fetchHistory]);
+  }, [trackedIds]);
+
+  // Post-completion refresh: keep polling overview until counts update
+  useEffect(() => {
+    if (postRefreshCount <= 0) return;
+
+    const refresh = async () => {
+      await fetchOverview();
+      if (tab === "packages") await fetchPackages();
+      if (tab === "history") await fetchHistory();
+      setPostRefreshCount((c) => c - 1);
+    };
+
+    refresh(); // immediate
+    const interval = setInterval(refresh, 5000);
+    return () => clearInterval(interval);
+  }, [postRefreshCount, tab, fetchOverview, fetchPackages, fetchHistory]);
 
   function trackCommand(commandId: string) {
     setTrackedIds((prev) => [...prev, commandId]);

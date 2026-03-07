@@ -224,22 +224,26 @@ export async function POST(request: Request) {
           }
         }
 
-        // After successful package operations, update agent's pending counts
+        // After successful package operations, auto-queue a COLLECT_PACKAGES to refresh inventory
         if (cr.status === "COMPLETED") {
-          const updatable = await db.guardPackage.count({
-            where: { agentId: agent.id, status: "UPDATE_AVAILABLE" },
-          });
-          const securityUpdatable = await db.guardPackage.count({
-            where: { agentId: agent.id, status: "UPDATE_AVAILABLE", isSecurityUpdate: true },
-          });
-          await db.guardAgent.update({
-            where: { id: agent.id },
-            data: {
-              pendingUpdates: updatable,
-              securityUpdates: securityUpdatable,
-              lastPatchCheck: new Date(),
+          // Check if there's already a pending COLLECT_PACKAGES
+          const existingCollect = await db.guardCommand.findFirst({
+            where: {
+              agentId: agent.id,
+              type: "COLLECT_PACKAGES",
+              status: { in: ["PENDING", "SENT"] },
             },
           });
+          if (!existingCollect) {
+            await db.guardCommand.create({
+              data: {
+                type: "COLLECT_PACKAGES",
+                payload: "{}",
+                agentId: agent.id,
+                createdById: command.createdById,
+              },
+            });
+          }
         }
       }
 
