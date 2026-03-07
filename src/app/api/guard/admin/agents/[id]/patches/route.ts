@@ -81,5 +81,74 @@ export async function POST(
     return NextResponse.json({ command });
   }
 
-  return NextResponse.json({ error: "Invalid action. Use 'install' or 'upgrade'." }, { status: 400 });
+  if (action === "uninstall") {
+    const { packages } = body;
+    if (!Array.isArray(packages) || packages.length === 0) {
+      return NextResponse.json({ error: "packages array is required" }, { status: 400 });
+    }
+
+    const command = await db.guardCommand.create({
+      data: {
+        type: "UNINSTALL_PACKAGES",
+        payload: JSON.stringify({ packages }),
+        agentId: id,
+        createdById: session.user.id,
+      },
+    });
+
+    // Create patch history records
+    for (const pkgName of packages) {
+      const pkg = await db.guardPackage.findFirst({
+        where: { agentId: id, name: pkgName },
+      });
+
+      await db.guardPatchHistory.create({
+        data: {
+          packageName: pkgName,
+          fromVersion: pkg?.version || "unknown",
+          toVersion: "removed",
+          source: pkg?.source || agent.packageManager || "apt",
+          status: "PENDING",
+          agentId: id,
+          approvedById: session.user.id,
+          approvedAt: new Date(),
+        },
+      });
+    }
+
+    return NextResponse.json({ command });
+  }
+
+  if (action === "rollback") {
+    const { packageName, version } = body;
+    if (!packageName || !version) {
+      return NextResponse.json({ error: "packageName and version are required" }, { status: 400 });
+    }
+
+    const command = await db.guardCommand.create({
+      data: {
+        type: "ROLLBACK_PACKAGE",
+        payload: JSON.stringify({ package: packageName, version }),
+        agentId: id,
+        createdById: session.user.id,
+      },
+    });
+
+    await db.guardPatchHistory.create({
+      data: {
+        packageName,
+        fromVersion: "current",
+        toVersion: version,
+        source: agent.packageManager || "apt",
+        status: "PENDING",
+        agentId: id,
+        approvedById: session.user.id,
+        approvedAt: new Date(),
+      },
+    });
+
+    return NextResponse.json({ command });
+  }
+
+  return NextResponse.json({ error: "Invalid action. Use 'install', 'upgrade', 'uninstall', or 'rollback'." }, { status: 400 });
 }

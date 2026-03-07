@@ -1667,6 +1667,34 @@ execute_commands() {
           status="FAILED"
         fi
         ;;
+      UNINSTALL_PACKAGES)
+        local packages_to_remove
+        packages_to_remove=$(echo "$payload" | python3 -c "import sys,json; d=json.load(sys.stdin); print(' '.join(d.get('packages',[])))" 2>/dev/null)
+        if [[ -z "$packages_to_remove" ]]; then
+          output="{\"status\":\"FAILED\",\"output\":\"No packages specified\"}"
+          status="FAILED"
+        else
+          log "Uninstalling packages: $packages_to_remove"
+          local pm
+          pm=$(detect_package_manager)
+          case "$pm" in
+            apt)
+              output=$(DEBIAN_FRONTEND=noninteractive apt-get remove -y $packages_to_remove 2>&1) && status="COMPLETED" || status="FAILED"
+              ;;
+            dnf)
+              output=$(dnf remove -y $packages_to_remove 2>&1) && status="COMPLETED" || status="FAILED"
+              ;;
+            yum)
+              output=$(yum remove -y $packages_to_remove 2>&1) && status="COMPLETED" || status="FAILED"
+              ;;
+            *)
+              output="Unknown package manager"
+              status="FAILED"
+              ;;
+          esac
+          output="{\"status\":\"$status\",\"output\":$(echo "$output" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()[:5000]))" 2>/dev/null || echo "\"$output\"")}"
+        fi
+        ;;
       GET_CONFIG)
         output=$(get_config_file "$payload")
         status="COMPLETED"
