@@ -188,7 +188,7 @@ export function GuardDashboardClient({ agents, alertCounts, recentAlerts, patchS
         {/* Stats Grid — 4 cards */}
         <div className="lg:col-span-8 grid grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Agents */}
-          <Card>
+          <Card className="overflow-hidden">
             <CardContent className="pt-5 pb-4">
               <div className="flex items-center justify-between mb-3">
                 <div className="p-2 rounded-lg bg-blue-500/10">
@@ -213,7 +213,7 @@ export function GuardDashboardClient({ agents, alertCounts, recentAlerts, patchS
           </Card>
 
           {/* Open Alerts */}
-          <Card>
+          <Card className="overflow-hidden">
             <CardContent className="pt-5 pb-4">
               <div className="flex items-center justify-between mb-3">
                 <div className="p-2 rounded-lg bg-red-500/10">
@@ -237,7 +237,7 @@ export function GuardDashboardClient({ agents, alertCounts, recentAlerts, patchS
           </Card>
 
           {/* Patches */}
-          <Card>
+          <Card className="overflow-hidden">
             <CardContent className="pt-5 pb-4">
               <div className="flex items-center justify-between mb-3">
                 <div className="p-2 rounded-lg bg-orange-500/10">
@@ -260,7 +260,7 @@ export function GuardDashboardClient({ agents, alertCounts, recentAlerts, patchS
           </Card>
 
           {/* URL Monitors */}
-          <Card>
+          <Card className="overflow-hidden">
             <CardContent className="pt-5 pb-4">
               <div className="flex items-center justify-between mb-3">
                 <div className="p-2 rounded-lg bg-indigo-500/10">
