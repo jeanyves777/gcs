@@ -745,11 +745,15 @@ export function checkActiveConnections(): ConnectionAudit {
       if (!localParts || !remoteParts) continue;
 
       const procMatch = line.match(/users:\(\("([^"]+)",pid=(\d+)/);
+      // FILTER: Skip localhost-to-localhost connections (127.0.0.1, ::1)
+      // These are internal app connections (e.g., Next.js → PostgreSQL) and are safe
+      const remoteAddr = remoteParts[1];
+      if (remoteAddr === "127.0.0.1" || remoteAddr === "::1") continue;
       activeConnections.push({
         protocol: "TCP",
         localAddr: localParts[1],
         localPort: parseInt(localParts[2]),
-        remoteAddr: remoteParts[1],
+        remoteAddr: remoteAddr,
         remotePort: parseInt(remoteParts[2]),
         state: "ESTABLISHED",
         process: procMatch ? procMatch[1] : "unknown",
