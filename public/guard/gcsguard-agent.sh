@@ -427,7 +427,7 @@ install_packages() {
 
   case "$pm" in
     apt)
-      output=$(DEBIAN_FRONTEND=noninteractive apt-get install -y $packages_json 2>&1) && status="COMPLETED" || status="FAILED"
+      output=$(DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-change-held-packages $packages_json 2>&1) && status="COMPLETED" || status="FAILED"
       ;;
     dnf)
       output=$(dnf install -y $packages_json 2>&1) && status="COMPLETED" || status="FAILED"
@@ -475,7 +475,7 @@ system_upgrade() {
           output=$(DEBIAN_FRONTEND=noninteractive apt-get upgrade -s 2>&1)
           status="COMPLETED"
         else
-          output=$(DEBIAN_FRONTEND=noninteractive apt-get upgrade -y 2>&1) && status="COMPLETED" || status="FAILED"
+          output=$(DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --allow-change-held-packages 2>&1) && status="COMPLETED" || status="FAILED"
         fi
       fi
       ;;
