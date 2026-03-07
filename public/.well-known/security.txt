@@ -1,0 +1,8 @@
+# Security Policy for General Computing Solutions
+# https://itatgcs.com
+
+Contact: mailto:info@itatgcs.com
+Expires: 2027-03-06T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://itatgcs.com/.well-known/security.txt
+Policy: https://itatgcs.com/privacy
