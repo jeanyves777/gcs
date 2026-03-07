@@ -548,3 +548,9 @@
   transform: translateY(-4px);
   box-shadow: 0 12px 40px rgba(0,0,0,0.12) !important;
 }
+
+/* ─── Print styles ─────────────────────────────────────────────────────── */
+@media print {
+  body { background: #fff !important; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}

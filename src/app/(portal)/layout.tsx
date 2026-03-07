@@ -24,21 +24,25 @@ export default async function PortalLayout({
   const showAdminAI = isGCSStaff(session.user.role);
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-secondary)" }}>
-      <Sidebar role={session.user.role} />
+    <div className="flex h-screen overflow-hidden print:block print:h-auto" style={{ background: "var(--bg-secondary)" }}>
+      <div className="print:hidden">
+        <Sidebar role={session.user.role} />
+      </div>
 
-      <div className="flex flex-col flex-1 overflow-hidden min-w-0">
-        <Topbar user={session.user} unreadCount={unreadCount} />
+      <div className="flex flex-col flex-1 overflow-hidden min-w-0 print:overflow-visible">
+        <div className="print:hidden">
+          <Topbar user={session.user} unreadCount={unreadCount} />
+        </div>
 
         <main
-          className="flex-1 overflow-y-auto p-4 md:p-6"
+          className="flex-1 overflow-y-auto p-4 md:p-6 print:overflow-visible print:p-0"
           style={{ background: "var(--bg-secondary)" }}
         >
           {children}
         </main>
       </div>
 
-      {showAdminAI && <AdminAIChat />}
+      {showAdminAI && <div className="print:hidden"><AdminAIChat /></div>}
     </div>
   );
 }

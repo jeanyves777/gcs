@@ -104,7 +104,7 @@ export async function POST(
         <div style="background:linear-gradient(135deg,#0f172a,#1e293b);padding:30px;text-align:center;color:#fff;">
           <h1 style="margin:0;font-size:22px;">Security Assessment Report</h1>
           <p style="margin:8px 0 0;opacity:0.8;font-size:14px;">${report.target}</p>
-          <div style="margin:20px auto;width:80px;height:80px;border-radius:50%;background:${gc};display:flex;align-items:center;justify-content:center;">
+          <div style="margin:20px auto;width:80px;height:80px;border-radius:50%;background:${gc};text-align:center;line-height:80px;">
             <span style="font-size:36px;font-weight:bold;color:#fff;">${report.overallGrade}</span>
           </div>
           <p style="margin:0;font-size:13px;opacity:0.7;">Risk Score: ${report.riskScore}/100 | ${report.totalFindings} findings</p>

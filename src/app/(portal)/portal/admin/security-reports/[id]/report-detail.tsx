@@ -7,7 +7,7 @@ import Link from "next/link";
 import {
   Shield, ShieldAlert, ShieldCheck, ArrowLeft, Mail, Download, Globe, Lock,
   AlertTriangle, CheckCircle2, XCircle, Server, Wifi, FileText, Clock,
-  ChevronDown, ChevronRight, Zap, Target,
+  ChevronDown, ChevronRight, Zap, Target, RefreshCw,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -102,6 +102,9 @@ export function SecurityReportDetail({ reportId }: { reportId: string }) {
   const [loading, setLoading] = useState(true);
   const [expandedFinding, setExpandedFinding] = useState<string | null>(null);
   const [expandedPhase, setExpandedPhase] = useState<number>(0);
+  const [showEmailDialog, setShowEmailDialog] = useState(false);
+  const [emailTo, setEmailTo] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -124,6 +127,23 @@ export function SecurityReportDetail({ reportId }: { reportId: string }) {
     }, 5000);
     return () => clearInterval(interval);
   }, [reportId]);
+
+  const handleSendEmail = async () => {
+    if (!emailTo) return;
+    setEmailSending(true);
+    try {
+      const res = await fetch(`/api/admin/security-reports/${reportId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "email", email: emailTo }),
+      });
+      if (res.ok) {
+        setShowEmailDialog(false);
+        setEmailTo("");
+      }
+    } catch { }
+    setEmailSending(false);
+  };
 
   if (loading && !report) {
     return (
@@ -159,7 +179,7 @@ export function SecurityReportDetail({ reportId }: { reportId: string }) {
   return (
     <div className="space-y-5 max-w-[1200px] mx-auto">
       {/* Back */}
-      <Link href="/portal/admin/security-reports" className="inline-flex items-center gap-1 text-xs hover:underline" style={{ color: "var(--text-muted)" }}>
+      <Link href="/portal/admin/security-reports" className="inline-flex items-center gap-1 text-xs hover:underline print:hidden" style={{ color: "var(--text-muted)" }}>
         <ArrowLeft className="w-3 h-3" /> Back to Reports
       </Link>
 
@@ -195,14 +215,8 @@ export function SecurityReportDetail({ reportId }: { reportId: string }) {
               </Badge>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => {
-              const email = prompt("Send report to email:");
-              if (email) fetch(`/api/admin/security-reports/${reportId}`, {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "email", email }),
-              }).then(() => alert("Sent!"));
-            }}>
+          <div className="flex gap-2 print:hidden">
+            <Button size="sm" variant="outline" onClick={() => setShowEmailDialog(true)}>
               <Mail className="w-3.5 h-3.5 mr-1" /> Email
             </Button>
             <Button size="sm" variant="outline" onClick={() => window.print()}>
@@ -211,6 +225,35 @@ export function SecurityReportDetail({ reportId }: { reportId: string }) {
           </div>
         </div>
       </div>
+
+      {/* ═══ EMAIL DIALOG ════════════════════════════════════════════════ */}
+      {showEmailDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 print:hidden" onClick={() => setShowEmailDialog(false)}>
+          <div className="rounded-xl p-6 w-full max-w-md shadow-2xl" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }} onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-bold mb-1">Send Report via Email</h3>
+            <p className="text-xs mb-4" style={{ color: "var(--text-muted)" }}>
+              The security report for <strong>{report.target}</strong> will be sent as a formatted email.
+            </p>
+            <input
+              type="email"
+              value={emailTo}
+              onChange={(e) => setEmailTo(e.target.value)}
+              placeholder="recipient@example.com"
+              className="w-full px-3 py-2 rounded-lg text-sm mb-4 outline-none focus:ring-2 focus:ring-blue-500"
+              style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter" && emailTo) handleSendEmail(); }}
+            />
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setShowEmailDialog(false)}>Cancel</Button>
+              <Button size="sm" disabled={!emailTo || emailSending} onClick={handleSendEmail}>
+                {emailSending ? <RefreshCw className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Mail className="w-3.5 h-3.5 mr-1" />}
+                {emailSending ? "Sending..." : "Send"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══ EXECUTIVE SUMMARY ═══════════════════════════════════════════ */}
       <div className="rounded-xl p-5" style={{ background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
@@ -454,10 +497,10 @@ export function SecurityReportDetail({ reportId }: { reportId: string }) {
       )}
 
       {/* ═══ CTA ═════════════════════════════════════════════════════════ */}
-      <div className="rounded-xl p-6 text-center" style={{ background: "linear-gradient(135deg, var(--brand-primary), #1565C0)", color: "#fff" }}>
-        <ShieldCheck className="w-10 h-10 mx-auto mb-3 opacity-80" />
-        <h2 className="text-lg font-bold mb-2">Need Help Fixing These Issues?</h2>
-        <p className="text-sm opacity-80 mb-4 max-w-md mx-auto">
+      <div className="rounded-xl p-6 text-center print:hidden" style={{ background: "linear-gradient(135deg, var(--brand-primary), #1565C0)" }}>
+        <ShieldCheck className="w-10 h-10 mx-auto mb-3" style={{ color: "rgba(255,255,255,0.85)" }} />
+        <h2 className="text-lg font-bold mb-2" style={{ color: "#ffffff" }}>Need Help Fixing These Issues?</h2>
+        <p className="text-sm mb-4 max-w-md mx-auto" style={{ color: "rgba(255,255,255,0.85)" }}>
           GCS can implement all security recommendations. Our team handles everything from quick fixes to full infrastructure hardening.
         </p>
         <Button variant="secondary" size="sm">Contact GCS for Remediation Quote</Button>
