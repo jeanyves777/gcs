@@ -135,5 +135,41 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  if (view === "commands") {
+    // Active/recent patch commands for live tracking
+    const commandIds = url.searchParams.get("ids");
+
+    if (commandIds) {
+      // Poll specific command IDs
+      const ids = commandIds.split(",").filter(Boolean);
+      const commands = await db.guardCommand.findMany({
+        where: { id: { in: ids } },
+        include: {
+          agent: { select: { id: true, name: true, hostname: true } },
+          createdBy: { select: { name: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      return NextResponse.json({ commands });
+    }
+
+    // Recent patch-related commands (last 24h)
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const commands = await db.guardCommand.findMany({
+      where: {
+        type: { in: ["INSTALL_PACKAGES", "SYSTEM_UPGRADE", "UNINSTALL_PACKAGES", "ROLLBACK_PACKAGE", "COLLECT_PACKAGES"] },
+        createdAt: { gte: since },
+      },
+      include: {
+        agent: { select: { id: true, name: true, hostname: true } },
+        createdBy: { select: { name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+
+    return NextResponse.json({ commands });
+  }
+
   return NextResponse.json({ error: "Invalid view parameter" }, { status: 400 });
 }

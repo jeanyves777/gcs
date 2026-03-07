@@ -59,6 +59,19 @@ interface PatchHistoryItem {
   approvedBy: { name: string } | null;
 }
 
+interface TrackedCommand {
+  id: string;
+  type: string;
+  payload: string;
+  status: string;
+  result: string | null;
+  createdAt: string;
+  sentAt: string | null;
+  completedAt: string | null;
+  agent: { id: string; name: string; hostname: string | null };
+  createdBy: { name: string };
+}
+
 interface Props {
   agents: AgentSummary[];
   totalPending: number;
@@ -107,6 +120,11 @@ export function PatchesClient({ agents: initialAgents, totalPending: initPending
   // Install new package
   const [installAgent, setInstallAgent] = useState("");
   const [installPkgName, setInstallPkgName] = useState("");
+
+  // Live command tracking
+  const [trackedIds, setTrackedIds] = useState<string[]>([]);
+  const [trackedCommands, setTrackedCommands] = useState<TrackedCommand[]>([]);
+  const [showTracker, setShowTracker] = useState(false);
 
   const fetchOverview = useCallback(async () => {
     setLoading(true);
@@ -169,6 +187,45 @@ export function PatchesClient({ agents: initialAgents, totalPending: initPending
     if (tab === "history") fetchHistory();
   }, [tab, fetchHistory]);
 
+  // Poll tracked commands every 3s while any are active
+  useEffect(() => {
+    if (trackedIds.length === 0) return;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/guard/admin/patches?view=commands&ids=${trackedIds.join(",")}`);
+        const data = await res.json();
+        const cmds: TrackedCommand[] = data.commands || [];
+        setTrackedCommands(cmds);
+
+        // Check if all are done
+        const allDone = cmds.every((c) => c.status === "COMPLETED" || c.status === "FAILED");
+        if (allDone && cmds.length > 0) {
+          // Notify
+          const failed = cmds.filter((c) => c.status === "FAILED");
+          const completed = cmds.filter((c) => c.status === "COMPLETED");
+          if (failed.length > 0) toast.error(`${failed.length} command(s) failed`);
+          if (completed.length > 0) toast.success(`${completed.length} command(s) completed`);
+          // Stop polling after a delay, refresh data
+          setTimeout(() => {
+            setTrackedIds([]);
+            if (tab === "overview") fetchOverview();
+            if (tab === "packages") fetchPackages();
+          }, 5000);
+        }
+      } catch { /* ignore */ }
+    };
+
+    poll(); // immediate first poll
+    const interval = setInterval(poll, 3000);
+    return () => clearInterval(interval);
+  }, [trackedIds, tab, fetchOverview, fetchPackages]);
+
+  function trackCommand(commandId: string) {
+    setTrackedIds((prev) => [...prev, commandId]);
+    setShowTracker(true);
+  }
+
   // ─── Actions ─────────────────────────────────────────────────────────────
 
   async function refreshAllAgents() {
@@ -200,7 +257,9 @@ export function PatchesClient({ agents: initialAgents, totalPending: initPending
         body: JSON.stringify({ action: "upgrade", type }),
       });
       if (res.ok) {
+        const data = await res.json();
         toast.success(`${type === "security" ? "Security" : "Full"} upgrade queued`);
+        if (data.command?.id) trackCommand(data.command.id);
       } else {
         const err = await res.json();
         toast.error(err.error || "Failed to queue upgrade");
@@ -220,7 +279,9 @@ export function PatchesClient({ agents: initialAgents, totalPending: initPending
         body: JSON.stringify({ action: "install", packages: pkgNames }),
       });
       if (res.ok) {
+        const data = await res.json();
         toast.success(`Install queued: ${pkgNames.join(", ")}`);
+        if (data.command?.id) trackCommand(data.command.id);
         if (tab === "packages") fetchPackages();
       } else {
         const err = await res.json();
@@ -241,7 +302,9 @@ export function PatchesClient({ agents: initialAgents, totalPending: initPending
         body: JSON.stringify({ action: "uninstall", packages: pkgNames }),
       });
       if (res.ok) {
+        const data = await res.json();
         toast.success(`Uninstall queued: ${pkgNames.join(", ")}`);
+        if (data.command?.id) trackCommand(data.command.id);
         if (tab === "packages") fetchPackages();
       } else {
         const err = await res.json();
@@ -275,7 +338,11 @@ export function PatchesClient({ agents: initialAgents, totalPending: initPending
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "install", packages: pkgNames }),
         });
-        if (res.ok) success += pkgNames.length;
+        if (res.ok) {
+          const data = await res.json();
+          success += pkgNames.length;
+          if (data.command?.id) trackCommand(data.command.id);
+        }
       } catch { /* ignore */ }
     }
 
@@ -429,6 +496,31 @@ export function PatchesClient({ agents: initialAgents, totalPending: initPending
           </CardContent>
         </Card>
       </div>
+
+      {/* Live Command Tracker */}
+      {(showTracker && trackedCommands.length > 0) && (
+        <Card className="border-2" style={{ borderColor: "var(--brand-primary)" }}>
+          <CardContent className="pt-3 pb-3">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
+                <Terminal className="h-4 w-4" />
+                Live Command Status
+                {trackedCommands.some((c) => c.status === "PENDING" || c.status === "SENT" || c.status === "EXECUTING") && (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: "var(--brand-primary)" }} />
+                )}
+              </h3>
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => { setShowTracker(false); setTrackedIds([]); setTrackedCommands([]); }}>
+                <XCircle className="h-3 w-3" />
+              </Button>
+            </div>
+            <div className="space-y-2">
+              {trackedCommands.map((cmd) => (
+                <CommandStatusRow key={cmd.id} cmd={cmd} />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 p-1 rounded-lg" style={{ background: "var(--bg-secondary)" }}>
@@ -1022,5 +1114,90 @@ function HistoryRow({
         </tr>
       )}
     </>
+  );
+}
+
+// ─── Command Status Row (Live Tracker) ──────────────────────────────────────
+
+function CommandStatusRow({ cmd }: { cmd: TrackedCommand }) {
+  const [showOutput, setShowOutput] = useState(false);
+
+  const typeLabel: Record<string, string> = {
+    INSTALL_PACKAGES: "Install",
+    SYSTEM_UPGRADE: "Upgrade",
+    UNINSTALL_PACKAGES: "Uninstall",
+    ROLLBACK_PACKAGE: "Rollback",
+    COLLECT_PACKAGES: "Refresh",
+  };
+
+  const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string; pulse?: boolean }> = {
+    PENDING: { color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400", icon: <Clock className="h-3.5 w-3.5" />, label: "Waiting for agent...", pulse: true },
+    SENT: { color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400", icon: <ArrowUpCircle className="h-3.5 w-3.5" />, label: "Sent to agent", pulse: true },
+    EXECUTING: { color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400", icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />, label: "Executing on server...", pulse: true },
+    COMPLETED: { color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", icon: <CheckCircle2 className="h-3.5 w-3.5" />, label: "Completed" },
+    FAILED: { color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", icon: <XCircle className="h-3.5 w-3.5" />, label: "Failed" },
+  };
+
+  const s = statusConfig[cmd.status] || statusConfig.PENDING;
+  const elapsed = cmd.completedAt
+    ? Math.round((new Date(cmd.completedAt).getTime() - new Date(cmd.createdAt).getTime()) / 1000)
+    : Math.round((Date.now() - new Date(cmd.createdAt).getTime()) / 1000);
+
+  let payload: { packages?: string[]; type?: string } = {};
+  try { payload = JSON.parse(cmd.payload); } catch { /* ignore */ }
+  const detail = payload.packages?.join(", ") || payload.type || "";
+
+  let resultText = "";
+  if (cmd.result) {
+    try {
+      const r = JSON.parse(cmd.result);
+      resultText = typeof r === "string" ? r : r.output || r.stdout || JSON.stringify(r, null, 2);
+    } catch {
+      resultText = cmd.result;
+    }
+  }
+
+  return (
+    <div className={`rounded-lg p-3 ${s.pulse ? "animate-pulse" : ""}`} style={{ background: "var(--bg-secondary)" }}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className={`p-1.5 rounded-md ${s.color}`}>
+            {s.icon}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                {typeLabel[cmd.type] || cmd.type}
+              </span>
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                {cmd.agent.name}
+              </span>
+            </div>
+            <p className="text-xs truncate" style={{ color: "var(--text-secondary)" }}>
+              {detail && <span className="font-mono">{detail.length > 80 ? detail.slice(0, 80) + "..." : detail}</span>}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>
+            {elapsed}s
+          </span>
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${s.color}`}>
+            {s.label}
+          </span>
+          {resultText && (
+            <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={() => setShowOutput(!showOutput)}>
+              <Terminal className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
+      </div>
+      {showOutput && resultText && (
+        <pre className="mt-2 text-xs p-2 rounded overflow-x-auto max-h-48"
+             style={{ background: "var(--bg-primary)", color: "var(--text-secondary)" }}>
+          {resultText.slice(0, 5000)}
+        </pre>
+      )}
+    </div>
   );
 }
