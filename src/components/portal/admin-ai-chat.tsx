@@ -997,7 +997,15 @@ function EmptyState({ onQuickAction }: { onQuickAction: (text: string) => void }
             key={s.label}
             onClick={() => onQuickAction(s.prompt)}
             className="text-left px-3 py-2.5 rounded-xl border text-sm transition-all hover:scale-[1.02]"
-            style={{ background: "var(--bg-secondary)", borderColor: "var(--border)", color: "var(--text-primary)" }}
+            style={{ background: "transparent", borderColor: "var(--border)", color: "var(--text-secondary)" }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "var(--bg-secondary)";
+              e.currentTarget.style.color = "var(--text-primary)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = "var(--text-secondary)";
+            }}
           >
             <span className="font-medium">{s.label}</span>
           </button>
@@ -1012,23 +1020,18 @@ function EmptyState({ onQuickAction }: { onQuickAction: (text: string) => void }
 function MessageBubble({ message, onQuickReply }: { message: ChatMessage; onQuickReply: (text: string) => void }) {
   const isUser = message.role === "user";
 
-  // Detect numbered choices (1. Option, 2. Option, etc.)
-  const numberedChoices: { num: string; text: string }[] = [];
+  // Parse AI-driven suggestions from <!--suggestions:["..."]-->
+  let suggestions: string[] = [];
+  let displayContent = message.content;
   if (!isUser && message.content) {
-    const choiceRegex = /^\s*(\d+)\.\s+\*{0,2}(.+?)\*{0,2}\s*(?:—|--|:|\n|$)/gm;
-    let match;
-    while ((match = choiceRegex.exec(message.content)) !== null) {
-      const text = match[2].replace(/\*+/g, "").trim();
-      if (text.length > 2 && text.length < 120) {
-        numberedChoices.push({ num: match[1], text });
-      }
+    const sugMatch = message.content.match(/<!--suggestions:\[([\s\S]*?)\]-->/);
+    if (sugMatch) {
+      try {
+        suggestions = JSON.parse(`[${sugMatch[1]}]`);
+      } catch { /* ignore parse errors */ }
+      displayContent = message.content.replace(/<!--suggestions:\[[\s\S]*?\]-->/, "").trimEnd();
     }
   }
-  const hasChoices = numberedChoices.length >= 2;
-
-  // Detect if the assistant is asking for yes/no confirmation
-  const isAskingConfirmation = !isUser && message.content &&
-    /\b(proceed|confirm|go ahead|shall I|should I|want me to)\b.*\?/i.test(message.content);
 
   const hasContentBlocks = !isUser && message.contentBlocks && message.contentBlocks.length > 0;
 
@@ -1036,7 +1039,7 @@ function MessageBubble({ message, onQuickReply }: { message: ChatMessage; onQuic
     <div
       key={key}
       className={cn(
-        "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
+        "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed animate-msg-in",
         isUser ? "rounded-br-md" : "rounded-bl-md"
       )}
       style={
@@ -1055,11 +1058,12 @@ function MessageBubble({ message, onQuickReply }: { message: ChatMessage; onQuic
         // Interleaved rendering: text → tools → text in order
         message.contentBlocks!.map((block, i) => {
           if (block.type === "text" && block.text) {
-            return renderTextBubble(block.text, `block-${i}`);
+            const blockText = block.text.replace(/<!--suggestions:\[[\s\S]*?\]-->/, "").trimEnd();
+            return blockText ? renderTextBubble(blockText, `block-${i}`) : null;
           }
           if (block.type === "tool_group" && block.toolIds) {
             return (
-              <div key={`block-${i}`} className="w-full space-y-2">
+              <div key={`block-${i}`} className="w-full space-y-2 animate-msg-in">
                 {block.toolIds.map((id) => {
                   const tc = message.toolCalls?.find((t) => t.id === id);
                   return tc ? <ToolCard key={tc.id} tool={tc} /> : null;
@@ -1073,61 +1077,43 @@ function MessageBubble({ message, onQuickReply }: { message: ChatMessage; onQuic
         // Fallback for loaded conversations / user messages
         <>
           {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
-            <div className="w-full space-y-2">
+            <div className="w-full space-y-2 animate-msg-in">
               {message.toolCalls.map((tc) => (
                 <ToolCard key={tc.id} tool={tc} />
               ))}
             </div>
           )}
-          {message.content && renderTextBubble(message.content)}
+          {displayContent && renderTextBubble(displayContent)}
         </>
       )}
 
-      {/* Multi-choice option buttons */}
-      {hasChoices && (
-        <div className="grid gap-2 max-w-[85%]" style={{ gridTemplateColumns: numberedChoices.length <= 3 ? `repeat(${numberedChoices.length}, 1fr)` : "repeat(2, 1fr)" }}>
-          {numberedChoices.map((choice) => (
+      {/* AI-driven suggestion buttons */}
+      {suggestions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 max-w-[85%] animate-msg-in">
+          {suggestions.map((label, i) => (
             <button
-              key={choice.num}
-              onClick={() => onQuickReply(`${choice.num}. ${choice.text}`)}
-              className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-[13px] font-semibold transition-all hover:scale-[1.02] active:scale-[0.97]"
+              key={i}
+              onClick={() => onQuickReply(label)}
+              className="px-3 py-1.5 rounded-lg text-xs transition-all hover:scale-[1.02] active:scale-[0.97] border"
               style={{
-                background: "var(--brand-primary)",
-                color: "white",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                background: "transparent",
+                color: "var(--text-secondary)",
+                borderColor: "var(--border)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "var(--bg-secondary)";
+                e.currentTarget.style.color = "var(--text-primary)";
+                e.currentTarget.style.borderColor = "var(--text-muted)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.color = "var(--text-secondary)";
+                e.currentTarget.style.borderColor = "var(--border)";
               }}
             >
-              <span
-                className="w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0"
-                style={{ background: "rgba(255,255,255,0.25)" }}
-              >
-                {choice.num}
-              </span>
-              <span className="text-left leading-tight">{choice.text}</span>
+              {label}
             </button>
           ))}
-        </div>
-      )}
-
-      {/* Quick yes/no confirmation buttons */}
-      {isAskingConfirmation && (
-        <div className="flex gap-2">
-          <button
-            onClick={() => onQuickReply("Yes, proceed.")}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:scale-[1.02] active:scale-[0.97]"
-            style={{ background: "#16a34a", boxShadow: "0 2px 8px rgba(22,163,74,0.3)" }}
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            Yes, proceed
-          </button>
-          <button
-            onClick={() => onQuickReply("No, cancel.")}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:scale-[1.02] active:scale-[0.97]"
-            style={{ background: "#dc2626", boxShadow: "0 2px 8px rgba(220,38,38,0.3)" }}
-          >
-            <XCircle className="w-3.5 h-3.5" />
-            No, cancel
-          </button>
         </div>
       )}
     </div>

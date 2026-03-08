@@ -462,6 +462,13 @@
 .gcs-ping    { animation: gcs-ping-soft 2s ease-out  infinite; }
 .gcs-scan    { animation: gcs-scan     2.5s linear    infinite; }
 
+/* ── GcsGuard AI chat message animation ───────────────────── */
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-msg-in { animation: msg-in 0.3s ease-out both; }
+
 /* ── GcsGuard AI shake animation ───────────────────── */
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
