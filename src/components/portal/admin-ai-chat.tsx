@@ -100,6 +100,7 @@ export function AdminAIChat() {
   const [streamingStatus, setStreamingStatus] = useState("Connecting...");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Conversation state
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -337,6 +338,9 @@ export function AdminAIChat() {
     setStreamingStatus("Connecting...");
     setIsStreaming(true);
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       const allMessages = [...messages, userMsg].map((m) => ({
         role: m.role,
@@ -354,6 +358,7 @@ export function AdminAIChat() {
           currentPath: pathname,
           conversationId: activeConversationId,
         }),
+        signal: controller.signal,
       });
 
       if (res.status === 401) {
@@ -409,12 +414,20 @@ export function AdminAIChat() {
         )
       );
     } finally {
+      abortRef.current = null;
       setIsStreaming(false);
       // Refresh conversation list
       loadConversations();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input, isStreaming, sessionToken, messages, pathname, activeConversationId]);
+
+  const stopStreaming = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+  }, []);
 
   // Human-readable status for tool names
   const toolStatusLabel = (tool: string): string => {
@@ -795,6 +808,7 @@ export function AdminAIChat() {
                 onSend={sendMessage}
                 onKeyDown={handleKeyDown}
                 onClear={clearChat}
+                onStop={stopStreaming}
               />
             )}
           </div>
@@ -880,7 +894,7 @@ function PinGate({
 // ─── Chat View ────────────────────────────────────────────────────────────────
 
 function ChatView({
-  messages, input, setInput, isStreaming, streamingStatus, messagesEndRef, inputRef, onSend, onKeyDown, onClear,
+  messages, input, setInput, isStreaming, streamingStatus, messagesEndRef, inputRef, onSend, onKeyDown, onClear, onStop,
 }: {
   messages: ChatMessage[];
   input: string;
@@ -892,6 +906,7 @@ function ChatView({
   onSend: (text?: string) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
   onClear: () => void;
+  onStop: () => void;
 }) {
   return (
     <>
@@ -910,7 +925,16 @@ function ChatView({
               <div className="w-1.5 h-1.5 rounded-full bg-current animate-bounce" style={{ animationDelay: "150ms" }} />
               <div className="w-1.5 h-1.5 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} />
             </div>
-            <span className="text-xs">{streamingStatus}</span>
+            <span className="text-xs flex-1">{streamingStatus}</span>
+            <button
+              onClick={onStop}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs border transition-all hover:scale-[1.02] active:scale-[0.97]"
+              style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+              title="Stop AI"
+            >
+              <div className="w-2.5 h-2.5 rounded-sm" style={{ background: "var(--text-secondary)" }} />
+              Stop
+            </button>
           </div>
         )}
 
@@ -951,14 +975,25 @@ function ChatView({
             }}
             disabled={isStreaming}
           />
-          <button
-            onClick={() => onSend()}
-            disabled={!input.trim() || isStreaming}
-            className="flex items-center justify-center w-8 h-8 rounded-lg text-white transition-all disabled:opacity-30"
-            style={{ background: "var(--brand-primary)" }}
-          >
-            {isStreaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          </button>
+          {isStreaming ? (
+            <button
+              onClick={onStop}
+              className="flex items-center justify-center w-8 h-8 rounded-lg transition-all hover:scale-105"
+              style={{ background: "rgba(239,68,68,0.15)", color: "#ef4444" }}
+              title="Stop AI"
+            >
+              <div className="w-3 h-3 rounded-sm bg-current" />
+            </button>
+          ) : (
+            <button
+              onClick={() => onSend()}
+              disabled={!input.trim()}
+              className="flex items-center justify-center w-8 h-8 rounded-lg text-white transition-all disabled:opacity-30"
+              style={{ background: "var(--brand-primary)" }}
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          )}
         </div>
         <p className="text-[11px] mt-1.5 text-center" style={{ color: "var(--text-muted)" }}>
           Shift+Enter for newline · ESC to close
