@@ -273,7 +273,7 @@ export const adminTools: ToolDef[] = [
   },
   {
     name: "check_agent_command",
-    description: "Check the REAL result of a command sent to a GcsGuard agent. Returns the actual command output from the server. Use this after send_agent_command to get the REAL output (not database status — the actual stdout/stderr from the server). You MUST call this for EVERY command you send to verify it actually worked. Pass the commandId returned by send_agent_command. If the command hasn't completed yet, it will tell you to wait and try again.",
+    description: "Wait for and get the REAL result of a command sent to a GcsGuard agent. This tool AUTOMATICALLY WAITS up to 90 seconds, polling every 10 seconds until the command completes. You do NOT need to wait or sleep before calling this — just call it immediately after send_agent_command and it handles the waiting. Returns the actual stdout/stderr output from the server. You MUST call this for EVERY command you send.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -997,21 +997,43 @@ async function sendAgentCommand(input: ToolInput) {
     commandId: command.id,
     type: input.type,
     agentName: agent.name,
-    message: `Command ${input.type} queued for ${agent.name}. The agent will execute it on the next heartbeat (~30s). You MUST call check_agent_command with commandId "${command.id}" after ~60 seconds to get the REAL result.`,
+    message: `Command ${input.type} queued for ${agent.name}. NOW call check_agent_command("${command.id}") IMMEDIATELY — it will automatically wait for the result. Do NOT try to wait yourself.`,
   };
 }
 
 async function checkAgentCommand(input: ToolInput) {
-  const command = await db.guardCommand.findUnique({
-    where: { id: input.commandId },
+  const commandId = input.commandId;
+  const maxWaitMs = 90_000; // wait up to 90 seconds
+  const pollIntervalMs = 10_000; // check every 10 seconds
+  const startTime = Date.now();
+
+  let command = await db.guardCommand.findUnique({
+    where: { id: commandId },
     include: { agent: { select: { name: true, hostname: true } } },
   });
-  if (!command) return { error: `Command ${input.commandId} not found` };
+  if (!command) return { error: `Command ${commandId} not found` };
 
+  // Poll until COMPLETED/FAILED or timeout
+  while (
+    (command.status === "PENDING" || command.status === "SENT") &&
+    Date.now() - startTime < maxWaitMs
+  ) {
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    command = await db.guardCommand.findUnique({
+      where: { id: commandId },
+      include: { agent: { select: { name: true, hostname: true } } },
+    });
+    if (!command) return { error: `Command ${commandId} disappeared during polling` };
+  }
+
+  const elapsedSec = Math.round((Date.now() - startTime) / 1000);
+
+  // Still not done after timeout
   if (command.status === "PENDING") {
     return {
       status: "PENDING",
-      message: "Command has NOT been picked up by the agent yet. The agent may be offline or the heartbeat hasn't fired. Wait 30 seconds and try again.",
+      waitedSeconds: elapsedSec,
+      message: `Waited ${elapsedSec}s but the agent has NOT picked up this command. The agent may be offline or unreachable. Check if the agent is online.`,
       agentName: command.agent?.name,
     };
   }
@@ -1019,7 +1041,8 @@ async function checkAgentCommand(input: ToolInput) {
   if (command.status === "SENT") {
     return {
       status: "SENT",
-      message: "Command was delivered to the agent but no result yet. The agent is still executing. Wait 30 seconds and try again.",
+      waitedSeconds: elapsedSec,
+      message: `Waited ${elapsedSec}s. Command was delivered to the agent but it never reported results. The command may have timed out or crashed on the agent. Consider re-sending.`,
       agentName: command.agent?.name,
     };
   }
@@ -1041,9 +1064,10 @@ async function checkAgentCommand(input: ToolInput) {
     agentName: command.agent?.name,
     agentHostname: command.agent?.hostname,
     completedAt: command.completedAt,
+    waitedSeconds: elapsedSec,
     message: command.status === "COMPLETED"
-      ? `Command COMPLETED. The REAL output from the server is in the 'realOutput' field above. Read it carefully — this is what actually happened on the server.`
-      : `Command FAILED. The REAL error output is in the 'realOutput' field above. Diagnose why it failed and send a corrected command.`,
+      ? `Command COMPLETED after ${elapsedSec}s. The REAL output from the server is in 'realOutput'. This is what actually happened.`
+      : `Command FAILED after ${elapsedSec}s. The REAL error is in 'realOutput'. Diagnose why and send a corrected command.`,
   };
 }
 
