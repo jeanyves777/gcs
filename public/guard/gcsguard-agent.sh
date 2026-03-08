@@ -1587,15 +1587,35 @@ execute_commands() {
     return
   fi
 
-  # Parse each command (basic JSON parsing with jq if available, fallback to grep)
+  # Parse ALL commands at once into temp files (avoids repeated python3 calls on huge JSON)
+  local cmd_dir="/tmp/gcsguard-cmds-$$"
+  mkdir -p "$cmd_dir"
   local count
-  count=$(echo "$commands" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+  count=$(python3 -c "
+import json, sys, os
+try:
+    cmds = json.loads(sys.argv[1])
+    d = sys.argv[2]
+    for i, c in enumerate(cmds):
+        with open(f'{d}/{i}.id', 'w') as f: f.write(c.get('id',''))
+        with open(f'{d}/{i}.type', 'w') as f: f.write(c.get('type',''))
+        with open(f'{d}/{i}.payload', 'w') as f: f.write(json.dumps(c.get('payload',{})))
+    print(len(cmds))
+except Exception as e:
+    print(f'0', file=sys.stdout)
+    print(f'Parse error: {e}', file=sys.stderr)
+" "$commands" "$cmd_dir" 2>/dev/null || echo "0")
 
   for ((i=0; i<count; i++)); do
     local cmd_id cmd_type payload output status
-    cmd_id=$(echo "$commands" | python3 -c "import sys,json; print(json.load(sys.stdin)[$i]['id'])" 2>/dev/null)
-    cmd_type=$(echo "$commands" | python3 -c "import sys,json; print(json.load(sys.stdin)[$i]['type'])" 2>/dev/null)
-    payload=$(echo "$commands" | python3 -c "import sys,json; d=json.load(sys.stdin)[$i]['payload']; print(json.dumps(d))" 2>/dev/null)
+    cmd_id=$(cat "$cmd_dir/$i.id" 2>/dev/null)
+    cmd_type=$(cat "$cmd_dir/$i.type" 2>/dev/null)
+    payload=$(cat "$cmd_dir/$i.payload" 2>/dev/null)
+
+    if [[ -z "$cmd_type" ]]; then
+      log "WARNING: Empty command type for index $i, skipping"
+      continue
+    fi
 
     log "Executing command: $cmd_type ($cmd_id)"
 
@@ -1845,6 +1865,9 @@ print(json.dumps(entry))
       results="${results%]},${json_entry}]"
     fi
   done
+
+  # Cleanup temp files
+  rm -rf "$cmd_dir" 2>/dev/null
 
   echo "$results"
 }
