@@ -26,6 +26,7 @@ export const DANGEROUS_TOOLS = new Set([
   "delete_organization",
   "create_vault_entry", "update_vault_entry",
   "browser_open", "browser_action", "browser_close",
+  "send_agent_command", "fix_security_finding",
 ]);
 
 export function isDangerousTool(name: string): boolean {
@@ -235,13 +236,39 @@ export const adminTools: ToolDef[] = [
   },
   {
     name: "update_alert_status",
-    description: "Update a security alert's status (OPEN, INVESTIGATING, RESOLVED, FALSE_POSITIVE).",
+    description: "Update a security alert's status. IMPORTANT: ONLY mark as RESOLVED after you have ACTUALLY executed the fix via send_agent_command or fix_security_finding and verified it worked. NEVER mark RESOLVED without real remediation.",
     input_schema: {
       type: "object" as const,
       properties: {
         id: { type: "string" }, status: { type: "string", enum: ["OPEN", "INVESTIGATING", "RESOLVED", "FALSE_POSITIVE"] },
       },
       required: ["id", "status"],
+    },
+  },
+  {
+    name: "send_agent_command",
+    description: "Send a command to a remote GcsGuard agent for execution on the CLIENT server. Use this to run actual remediation commands on client servers (NOT the GCS app server). The command is queued and the agent executes it on the next heartbeat (~30s). Supported types: BLOCK_IP, UNBLOCK_IP, KILL_PROCESS, RESTART_SERVICE, RUN_SCAN, INSTALL_PACKAGES, SYSTEM_UPGRADE, UNINSTALL_PACKAGES, CUSTOM_COMMAND. For CUSTOM_COMMAND, the agent runs the shell command directly. Returns the command ID for tracking.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        agentId: { type: "string", description: "The GcsGuard agent ID to send the command to" },
+        type: { type: "string", enum: ["BLOCK_IP", "UNBLOCK_IP", "KILL_PROCESS", "RESTART_SERVICE", "RUN_SCAN", "INSTALL_PACKAGES", "SYSTEM_UPGRADE", "UNINSTALL_PACKAGES", "CUSTOM_COMMAND"], description: "Command type" },
+        payload: { type: "object", description: "Command payload. Examples: {ip:'1.2.3.4'} for BLOCK_IP, {service:'nginx'} for RESTART_SERVICE, {command:'chmod 600 /path/.env'} for CUSTOM_COMMAND, {packages:['fail2ban']} for INSTALL_PACKAGES" },
+      },
+      required: ["agentId", "type", "payload"],
+    },
+  },
+  {
+    name: "fix_security_finding",
+    description: "Execute a predefined security fix on a remote client server via GcsGuard agent. This runs REAL commands on the server. Available fixes: 'install_fail2ban' (install+configure fail2ban), 'disable_root_ssh' (set PermitRootLogin no), 'disable_password_auth' (set PasswordAuthentication no in all SSH configs), 'fix_env_permissions' (chmod 600 on .env files), 'harden_ssh' (all SSH fixes combined), 'kill_port' (kill process on a specific port). After execution, automatically triggers a security scan to verify the fix.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        agentId: { type: "string", description: "The GcsGuard agent ID" },
+        fix: { type: "string", enum: ["install_fail2ban", "disable_root_ssh", "disable_password_auth", "fix_env_permissions", "harden_ssh", "kill_port"], description: "The predefined fix to apply" },
+        params: { type: "object", description: "Optional parameters. For fix_env_permissions: {path:'/var/www/app/.env'}. For kill_port: {port:5555}. For harden_ssh: {allowUser:'ubuntu'}" },
+      },
+      required: ["agentId", "fix"],
     },
   },
   {
@@ -669,6 +696,8 @@ export async function executeTool(name: string, input: ToolInput): Promise<strin
       case "list_guard_agents": return JSON.stringify(await listGuardAgents(input));
       case "list_guard_alerts": return JSON.stringify(await listGuardAlerts(input));
       case "update_alert_status": return JSON.stringify(await updateAlertStatus(input));
+      case "send_agent_command": return JSON.stringify(await sendAgentCommand(input));
+      case "fix_security_finding": return JSON.stringify(await fixSecurityFinding(input));
       case "search_everything": return JSON.stringify(await searchEverything(input));
       // Vault
       case "list_vault_entries": return JSON.stringify(await listVaultEntries(input));
@@ -932,6 +961,148 @@ async function listGuardAlerts(input: ToolInput) {
 
 async function updateAlertStatus(input: ToolInput) {
   return db.guardAlert.update({ where: { id: input.id }, data: { status: input.status } });
+}
+
+async function sendAgentCommand(input: ToolInput) {
+  const agent = await db.guardAgent.findUnique({ where: { id: input.agentId } });
+  if (!agent) return { error: "Agent not found" };
+
+  // Get admin user for createdById
+  const admin = await db.user.findFirst({ where: { role: "ADMIN" } });
+  if (!admin) return { error: "No admin user found" };
+
+  const command = await db.guardCommand.create({
+    data: {
+      type: input.type,
+      payload: JSON.stringify(input.payload || {}),
+      agentId: input.agentId,
+      createdById: admin.id,
+    },
+  });
+
+  return {
+    success: true,
+    commandId: command.id,
+    type: input.type,
+    agentName: agent.name,
+    message: `Command ${input.type} queued for ${agent.name}. The agent will execute it on the next heartbeat (~30s). Track status with command ID: ${command.id}`,
+  };
+}
+
+// Predefined security remediation scripts
+const SECURITY_FIXES: Record<string, (params?: ToolInput) => string> = {
+  install_fail2ban: () => `
+    DEBIAN_FRONTEND=noninteractive apt-get install -y fail2ban &&
+    cat > /etc/fail2ban/jail.local << 'JAILEOF'
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 5
+bantime = 3600
+JAILEOF
+    systemctl enable fail2ban &&
+    systemctl restart fail2ban &&
+    echo "RESULT: fail2ban installed and configured"
+  `.trim(),
+
+  disable_root_ssh: () => `
+    sed -i 's/^PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config &&
+    sed -i 's/^PermitRootLogin without-password/PermitRootLogin no/' /etc/ssh/sshd_config &&
+    grep -r 'PermitRootLogin yes' /etc/ssh/sshd_config.d/ 2>/dev/null | cut -d: -f1 | sort -u | xargs -I{} sed -i 's/^PermitRootLogin yes/PermitRootLogin no/' {} 2>/dev/null;
+    systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null;
+    echo "RESULT: Root SSH login disabled"
+  `.trim(),
+
+  disable_password_auth: () => `
+    sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config;
+    sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config;
+    grep -r 'PasswordAuthentication yes' /etc/ssh/sshd_config.d/ 2>/dev/null | cut -d: -f1 | sort -u | xargs -I{} sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' {} 2>/dev/null;
+    systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null;
+    echo "RESULT: SSH password authentication disabled"
+  `.trim(),
+
+  fix_env_permissions: (params) => {
+    const path = params?.path || "/var/www/*/.env";
+    return `find ${path} -name '.env' -perm /o+r -exec chmod 600 {} \\; -exec echo "Fixed: {}" \\; 2>/dev/null; echo "RESULT: .env file permissions fixed to 600"`;
+  },
+
+  harden_ssh: (params) => {
+    const user = params?.allowUser || "ubuntu";
+    return `
+      # 1. Copy root SSH keys to ${user} if needed
+      mkdir -p /home/${user}/.ssh &&
+      cp -n /root/.ssh/authorized_keys /home/${user}/.ssh/authorized_keys 2>/dev/null;
+      chown -R ${user}:${user} /home/${user}/.ssh &&
+      chmod 700 /home/${user}/.ssh &&
+      chmod 600 /home/${user}/.ssh/authorized_keys;
+
+      # 2. Disable root login
+      sed -i 's/^PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config;
+      sed -i 's/^PermitRootLogin without-password/PermitRootLogin no/' /etc/ssh/sshd_config;
+      grep -r 'PermitRootLogin yes' /etc/ssh/sshd_config.d/ 2>/dev/null | cut -d: -f1 | sort -u | xargs -I{} sed -i 's/^PermitRootLogin yes/PermitRootLogin no/' {} 2>/dev/null;
+
+      # 3. Disable password auth
+      sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config;
+      sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config;
+      grep -r 'PasswordAuthentication yes' /etc/ssh/sshd_config.d/ 2>/dev/null | cut -d: -f1 | sort -u | xargs -I{} sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' {} 2>/dev/null;
+
+      # 4. Restart SSH
+      systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null;
+      echo "RESULT: SSH fully hardened — root login disabled, password auth disabled, keys copied to ${user}"
+    `.trim();
+  },
+
+  kill_port: (params) => {
+    const port = params?.port || "5555";
+    return `fuser -k ${port}/tcp 2>/dev/null && echo "RESULT: Killed process on port ${port}" || echo "RESULT: No process found on port ${port}"`;
+  },
+};
+
+async function fixSecurityFinding(input: ToolInput) {
+  const agent = await db.guardAgent.findUnique({ where: { id: input.agentId } });
+  if (!agent) return { error: "Agent not found" };
+
+  const fixFn = SECURITY_FIXES[input.fix];
+  if (!fixFn) return { error: `Unknown fix: ${input.fix}. Available: ${Object.keys(SECURITY_FIXES).join(", ")}` };
+
+  const command = fixFn(input.params);
+  const admin = await db.user.findFirst({ where: { role: "ADMIN" } });
+  if (!admin) return { error: "No admin user found" };
+
+  // Create the remediation command
+  const cmd = await db.guardCommand.create({
+    data: {
+      type: "CUSTOM_COMMAND",
+      payload: JSON.stringify({ command }),
+      agentId: input.agentId,
+      createdById: admin.id,
+    },
+  });
+
+  // Also queue a follow-up scan to verify the fix
+  await db.guardCommand.create({
+    data: {
+      type: "RUN_SCAN",
+      payload: "{}",
+      agentId: input.agentId,
+      createdById: admin.id,
+    },
+  });
+
+  return {
+    success: true,
+    commandId: cmd.id,
+    fix: input.fix,
+    agentName: agent.name,
+    message: `Security fix "${input.fix}" queued for ${agent.name}. The agent will execute the remediation command and then run a verification scan. Command ID: ${cmd.id}. This is a REAL fix — actual commands will run on the server.`,
+  };
 }
 
 async function searchEverything(input: ToolInput) {

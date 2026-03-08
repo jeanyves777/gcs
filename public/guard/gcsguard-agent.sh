@@ -1799,6 +1799,24 @@ execute_commands() {
             ;;
         esac
         ;;
+      CUSTOM_COMMAND)
+        local custom_cmd
+        custom_cmd=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin).get('command',''))" 2>/dev/null)
+        if [[ -z "$custom_cmd" ]]; then
+          output="{\"status\":\"FAILED\",\"output\":\"No command specified in payload\"}"
+          status="FAILED"
+        else
+          log "Executing custom command: ${custom_cmd:0:200}"
+          local custom_output
+          custom_output=$(bash -c "$custom_cmd" 2>&1) && status="COMPLETED" || status="FAILED"
+          log "Custom command ${status}"
+          output=$(python3 -c "
+import json, sys
+result = {'status': sys.argv[1], 'output': sys.stdin.read()[-5000:]}
+print(json.dumps(result))
+" "$status" <<< "$custom_output" 2>/dev/null || echo "{\"status\":\"${status}\",\"output\":\"Command executed\"}")
+        fi
+        ;;
       *)
         output="Unknown command type: $cmd_type"
         status="FAILED"
