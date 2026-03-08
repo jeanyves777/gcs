@@ -997,7 +997,7 @@ async function sendAgentCommand(input: ToolInput) {
     commandId: command.id,
     type: input.type,
     agentName: agent.name,
-    message: `Command ${input.type} queued for ${agent.name}. NOW call check_agent_command("${command.id}") IMMEDIATELY — it will automatically wait for the result. Do NOT try to wait yourself.`,
+    NEXT_ACTION_REQUIRED: `IMMEDIATELY call check_agent_command with commandId "${command.id}". Do NOT write any text to the user before calling check_agent_command. Do NOT generate status tables. Do NOT say "let me wait". Just call the tool NOW.`,
   };
 }
 
@@ -1183,7 +1183,7 @@ async function fixSecurityFinding(input: ToolInput) {
     commandId: cmd.id,
     fix: input.fix,
     agentName: agent.name,
-    message: `Security fix "${input.fix}" queued for ${agent.name}. The agent will execute the remediation command and then run a verification scan. Command ID: ${cmd.id}. This is a REAL fix — actual commands will run on the server.`,
+    NEXT_ACTION_REQUIRED: `IMMEDIATELY call check_agent_command with commandId "${cmd.id}". Do NOT write any text to the user first. Do NOT generate status tables. Just call check_agent_command NOW.`,
   };
 }
 

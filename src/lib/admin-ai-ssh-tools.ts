@@ -136,6 +136,16 @@ export async function sshSearchCode(input: ToolInput): Promise<string> {
 }
 
 export async function sshRunCommand(input: ToolInput): Promise<string> {
+  // Block psql queries against GuardCommand — AI must use check_agent_command instead
+  const cmdLower = (input.command || "").toLowerCase();
+  if (cmdLower.includes("guardcommand") && (cmdLower.includes("psql") || cmdLower.includes("select"))) {
+    return JSON.stringify({
+      stdout: "",
+      stderr: "BLOCKED: Do not query GuardCommand via psql. Use the check_agent_command tool instead — it waits for the result automatically and returns the real server output.",
+      exitCode: 1,
+    });
+  }
+
   const cwd = input.cwd || APP_DIR;
   const timeout = input.timeout || 120000;
   const cmd = `cd ${JSON.stringify(cwd)} && ${input.command}`;
