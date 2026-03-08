@@ -272,6 +272,17 @@ export const adminTools: ToolDef[] = [
     },
   },
   {
+    name: "check_agent_command",
+    description: "Check the REAL result of a command sent to a GcsGuard agent. Returns the actual command output from the server. Use this after send_agent_command to get the REAL output (not database status — the actual stdout/stderr from the server). You MUST call this for EVERY command you send to verify it actually worked. Pass the commandId returned by send_agent_command. If the command hasn't completed yet, it will tell you to wait and try again.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        commandId: { type: "string", description: "The command ID returned by send_agent_command" },
+      },
+      required: ["commandId"],
+    },
+  },
+  {
     name: "search_everything",
     description: "Search across organizations, users, projects, invoices, and tickets by a keyword.",
     input_schema: {
@@ -697,6 +708,7 @@ export async function executeTool(name: string, input: ToolInput): Promise<strin
       case "list_guard_alerts": return JSON.stringify(await listGuardAlerts(input));
       case "update_alert_status": return JSON.stringify(await updateAlertStatus(input));
       case "send_agent_command": return JSON.stringify(await sendAgentCommand(input));
+      case "check_agent_command": return JSON.stringify(await checkAgentCommand(input));
       case "fix_security_finding": return JSON.stringify(await fixSecurityFinding(input));
       case "search_everything": return JSON.stringify(await searchEverything(input));
       // Vault
@@ -985,7 +997,53 @@ async function sendAgentCommand(input: ToolInput) {
     commandId: command.id,
     type: input.type,
     agentName: agent.name,
-    message: `Command ${input.type} queued for ${agent.name}. The agent will execute it on the next heartbeat (~30s). Track status with command ID: ${command.id}`,
+    message: `Command ${input.type} queued for ${agent.name}. The agent will execute it on the next heartbeat (~30s). You MUST call check_agent_command with commandId "${command.id}" after ~60 seconds to get the REAL result.`,
+  };
+}
+
+async function checkAgentCommand(input: ToolInput) {
+  const command = await db.guardCommand.findUnique({
+    where: { id: input.commandId },
+    include: { agent: { select: { name: true, hostname: true } } },
+  });
+  if (!command) return { error: `Command ${input.commandId} not found` };
+
+  if (command.status === "PENDING") {
+    return {
+      status: "PENDING",
+      message: "Command has NOT been picked up by the agent yet. The agent may be offline or the heartbeat hasn't fired. Wait 30 seconds and try again.",
+      agentName: command.agent?.name,
+    };
+  }
+
+  if (command.status === "SENT") {
+    return {
+      status: "SENT",
+      message: "Command was delivered to the agent but no result yet. The agent is still executing. Wait 30 seconds and try again.",
+      agentName: command.agent?.name,
+    };
+  }
+
+  // COMPLETED or FAILED — parse and return the REAL output
+  let realOutput = command.result || "No output captured";
+  try {
+    const parsed = JSON.parse(command.result || "{}");
+    realOutput = parsed.output || parsed.error || command.result || "No output";
+  } catch {
+    // result is plain text, use as-is
+  }
+
+  return {
+    status: command.status,
+    commandType: command.type,
+    payload: command.payload,
+    realOutput,
+    agentName: command.agent?.name,
+    agentHostname: command.agent?.hostname,
+    completedAt: command.completedAt,
+    message: command.status === "COMPLETED"
+      ? `Command COMPLETED. The REAL output from the server is in the 'realOutput' field above. Read it carefully — this is what actually happened on the server.`
+      : `Command FAILED. The REAL error output is in the 'realOutput' field above. Diagnose why it failed and send a corrected command.`,
   };
 }
 
