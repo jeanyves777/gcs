@@ -70,6 +70,7 @@ export default function UnlockPage() {
 
           {recoveryStep === "newpin" && (
             <PinPad
+              key="newpin"
               label="Create new PIN"
               onSubmit={(p) => { setNewPin(p); setRecoveryStep("confirm"); }}
             />
@@ -77,6 +78,7 @@ export default function UnlockPage() {
 
           {recoveryStep === "confirm" && (
             <PinPad
+              key="confirm-recovery"
               label="Confirm new PIN"
               error={localError}
               loading={loading}

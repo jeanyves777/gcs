@@ -78,7 +78,7 @@ export default function SetupPage() {
   if (step === "pin") {
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
-        <PinPad onSubmit={handleFirstPin} label="Create a 6-digit PIN" error={error} />
+        <PinPad key="create" onSubmit={handleFirstPin} label="Create a 6-digit PIN" error={error} />
       </div>
     );
   }
@@ -87,6 +87,7 @@ export default function SetupPage() {
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
         <PinPad
+          key="confirm"
           onSubmit={handleConfirmPin}
           label="Confirm your PIN"
           error={error}

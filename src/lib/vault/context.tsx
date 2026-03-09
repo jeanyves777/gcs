@@ -64,10 +64,16 @@ export function VaultProvider({ children }: { children: ReactNode }) {
   const masterKeyRef = useRef<CryptoKey | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Check vault status on mount
+  // Check vault status on mount (guard against SSR — no indexedDB on server)
   useEffect(() => {
+    if (typeof window === "undefined" || typeof indexedDB === "undefined") {
+      setLoading(false);
+      return;
+    }
     isVaultInitialized().then((init) => {
       setStatus(init ? "locked" : "uninitialized");
+      setLoading(false);
+    }).catch(() => {
       setLoading(false);
     });
   }, []);
