@@ -15,6 +15,8 @@ const services = [
   { href: "/services/enterprise", label: "Enterprise Solutions" },
   { href: "/services/cloud", label: "Cloud Management" },
   { href: "/services/cybersecurity", label: "Cybersecurity" },
+  { href: "/services/ai-integration", label: "AI Integration" },
+  { href: "/password-manager", label: "Password Vault" },
 ];
 
 const navLinks = [
