@@ -134,6 +134,9 @@ export default function SettingsPage() {
                 </svg>
                 {connecting ? "Connecting..." : "Connect Google Drive"}
               </button>
+              {lastError && (
+                <p className="text-red-400 text-xs text-center">{lastError}</p>
+              )}
             </>
           ) : (
             <>

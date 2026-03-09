@@ -33,9 +33,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const [lastError, setLastError] = useState<string | null>(null);
   const [hasCloudBackup, setHasCloudBackup] = useState(false);
 
-  // Load config on mount
+  // Load config + preload Google script on mount
   useEffect(() => {
     if (typeof window === "undefined") return;
+    gdrive.preloadGisScript();
     getMeta(SYNC_CONFIG_KEY).then((raw) => {
       if (raw && typeof raw === "object") {
         setConfig(raw as CloudSyncConfig);

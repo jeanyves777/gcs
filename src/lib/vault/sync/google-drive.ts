@@ -5,27 +5,26 @@ const VAULT_FILENAME = "gcs-vault.json";
 
 let accessToken: string | null = null;
 let tokenExpiry = 0;
+let gisLoaded = false;
 
-// Dynamically load the Google Identity Services script
-function loadGisScript(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (document.getElementById("gis-script")) {
-      resolve();
-      return;
-    }
-    const script = document.createElement("script");
-    script.id = "gis-script";
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load Google Identity Services"));
-    document.head.appendChild(script);
-  });
+// Preload the Google Identity Services script (call early, e.g. on mount)
+export function preloadGisScript(): void {
+  if (typeof document === "undefined") return;
+  if (document.getElementById("gis-script")) {
+    gisLoaded = true;
+    return;
+  }
+  const script = document.createElement("script");
+  script.id = "gis-script";
+  script.src = "https://accounts.google.com/gsi/client";
+  script.async = true;
+  script.onload = () => { gisLoaded = true; };
+  document.head.appendChild(script);
 }
 
 function getClientId(): string {
   const id = process.env.NEXT_PUBLIC_GOOGLE_DRIVE_CLIENT_ID;
-  if (!id) throw new Error("Google Drive Client ID not configured");
+  if (!id) throw new Error("Google Drive Client ID not configured. Set NEXT_PUBLIC_GOOGLE_DRIVE_CLIENT_ID.");
   return id;
 }
 
@@ -34,7 +33,10 @@ export function isConnected(): boolean {
 }
 
 export async function connect(): Promise<{ email: string }> {
-  await loadGisScript();
+  // GIS script should already be loaded via preloadGisScript()
+  if (!gisLoaded || !(window as any).google?.accounts?.oauth2) {
+    throw new Error("Google Identity Services not loaded. Please refresh and try again.");
+  }
 
   return new Promise((resolve, reject) => {
     const client = (window as any).google.accounts.oauth2.initTokenClient({
@@ -55,6 +57,9 @@ export async function connect(): Promise<{ email: string }> {
           .then((r) => r.json())
           .then((info) => resolve({ email: info.email || "Connected" }))
           .catch(() => resolve({ email: "Connected" }));
+      },
+      error_callback: (err: any) => {
+        reject(new Error(err?.message || "OAuth popup was closed or blocked"));
       },
     });
     client.requestAccessToken();
