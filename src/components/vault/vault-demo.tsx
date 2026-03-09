@@ -135,22 +135,22 @@ export function VaultDemo() {
 
       {/* Floating encryption indicators */}
       <div className="absolute -left-8 top-1/4 vault-demo-float-left">
-        <div className="bg-blue-500/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-blue-500/20 text-[10px] text-blue-300">
+        <div className="bg-blue-500/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-blue-500/20 text-[10px] text-blue-600 dark:text-blue-300">
           AES-256-GCM
         </div>
       </div>
       <div className="absolute -right-6 top-1/3 vault-demo-float-right">
-        <div className="bg-green-500/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-green-500/20 text-[10px] text-green-300">
+        <div className="bg-green-500/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-green-500/20 text-[10px] text-green-600 dark:text-green-300">
           PBKDF2 600K
         </div>
       </div>
       <div className="absolute -left-4 bottom-1/3 vault-demo-float-left" style={{ animationDelay: "1s" }}>
-        <div className="bg-purple-500/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-purple-500/20 text-[10px] text-purple-300">
+        <div className="bg-purple-500/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-purple-500/20 text-[10px] text-purple-600 dark:text-purple-300">
           Zero-Knowledge
         </div>
       </div>
       <div className="absolute -right-10 bottom-1/4 vault-demo-float-right" style={{ animationDelay: "1.5s" }}>
-        <div className="bg-yellow-500/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-yellow-500/20 text-[10px] text-yellow-300">
+        <div className="bg-yellow-500/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-yellow-500/20 text-[10px] text-yellow-600 dark:text-yellow-300">
           Local Only
         </div>
       </div>

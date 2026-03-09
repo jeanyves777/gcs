@@ -1,5 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
+import { Download, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -34,10 +36,8 @@ export function InstallPrompt() {
 
   if (installed) {
     return (
-      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/10 text-green-400 text-sm">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
+      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/10 text-green-600 dark:text-green-400 text-sm">
+        <Check className="w-4 h-4" />
         Installed
       </div>
     );
@@ -45,11 +45,11 @@ export function InstallPrompt() {
 
   if (!deferredPrompt) {
     return (
-      <div className="text-center space-y-2">
-        <p className="text-white/50 text-sm">
-          Open this page in Chrome, Edge, or Safari to install as an app.
+      <div className="text-center space-y-1">
+        <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+          Open in Chrome, Edge, or Safari to install as an app.
         </p>
-        <p className="text-white/30 text-xs">
+        <p className="text-xs" style={{ color: "var(--text-secondary)", opacity: 0.6 }}>
           iOS: Tap Share &rarr; Add to Home Screen
         </p>
       </div>
@@ -57,16 +57,9 @@ export function InstallPrompt() {
   }
 
   return (
-    <button
-      onClick={handleInstall}
-      className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition-all hover:scale-105 active:scale-95 shadow-xl shadow-blue-600/20"
-    >
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-        <polyline points="7 10 12 15 17 10" />
-        <line x1="12" y1="15" x2="12" y2="3" />
-      </svg>
+    <Button onClick={handleInstall} variant="outline" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+      <Download className="mr-2 h-4 w-4" />
       Install GCS Vault
-    </button>
+    </Button>
   );
 }
