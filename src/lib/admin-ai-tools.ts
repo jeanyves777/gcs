@@ -954,7 +954,7 @@ async function listGuardAgents(input: ToolInput) {
   if (input.organizationId) where.organizationId = input.organizationId;
   const agents = await db.guardAgent.findMany({
     where, orderBy: { name: "asc" }, take: 25,
-    select: { id: true, name: true, hostname: true, ipAddress: true, status: true, lastHeartbeat: true, organization: { select: { name: true } }, _count: { select: { alerts: true } } },
+    select: { id: true, name: true, hostname: true, ipAddress: true, os: true, distro: true, distroVersion: true, packageManager: true, status: true, lastHeartbeat: true, organization: { select: { name: true } }, _count: { select: { alerts: true } } },
   });
   return { count: agents.length, agents };
 }
@@ -997,6 +997,14 @@ async function sendAgentCommand(input: ToolInput) {
     commandId: command.id,
     type: input.type,
     agentName: agent.name,
+    serverInfo: {
+      os: agent.os,
+      distro: agent.distro,
+      distroVersion: agent.distroVersion,
+      packageManager: agent.packageManager,
+      hostname: agent.hostname,
+      ip: agent.ipAddress,
+    },
     NEXT_ACTION_REQUIRED: `IMMEDIATELY call check_agent_command with commandId "${command.id}". Do NOT write any text to the user before calling check_agent_command. Do NOT generate status tables. Do NOT say "let me wait". Just call the tool NOW.`,
   };
 }

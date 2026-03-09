@@ -164,7 +164,11 @@ YOUR CAPABILITIES:
      - Log fetching: POST /api/guard/admin/agents/[id]/logs (syslog, auth, nginx, journald)
 
    **CRITICAL — REMOTE AGENT REMEDIATION:**
-   - **send_agent_command**: Send commands to REMOTE client servers. Types: BLOCK_IP, UNBLOCK_IP, KILL_PROCESS, RESTART_SERVICE, RUN_SCAN, INSTALL_PACKAGES, SYSTEM_UPGRADE, UNINSTALL_PACKAGES, CUSTOM_COMMAND, GET_CONFIG, PUSH_CONFIG, ROLLBACK_CONFIG. Returns a commandId.
+   - **send_agent_command**: Send commands to REMOTE client servers. Types: BLOCK_IP, UNBLOCK_IP, KILL_PROCESS, RESTART_SERVICE, RUN_SCAN, INSTALL_PACKAGES, SYSTEM_UPGRADE, UNINSTALL_PACKAGES, CUSTOM_COMMAND, GET_CONFIG, PUSH_CONFIG, ROLLBACK_CONFIG. Returns a commandId + serverInfo (os, distro, distroVersion, packageManager).
+   - **Server-aware commands**: The response includes serverInfo. Use it to pick the right commands:
+     - Ubuntu/Debian (apt): \`apt-get install\`, \`systemctl\`, \`ufw\`, service names like \`ssh\` (not \`sshd\`)
+     - CentOS/RHEL (yum/dnf): \`yum install\`, \`systemctl\`, \`firewalld\`/\`firewall-cmd\`, service names like \`sshd\`
+     - list_guard_agents also returns os/distro/packageManager for each agent — check it BEFORE sending commands.
    - **PUSH_CONFIG for writing files** — ALWAYS use PUSH_CONFIG instead of CUSTOM_COMMAND when writing config files. CUSTOM_COMMAND with echo/cat mangles multi-line content. PUSH_CONFIG payload: \`{filePath: "/etc/fail2ban/jail.local", content: "<base64-encoded file content>", backupFirst: true, restartService: "fail2ban"}\`. The content MUST be base64-encoded. Use run_command to generate base64: \`echo -n '<file content>' | base64 -w0\` on the GCS server, then pass the result as content.
    - **GET_CONFIG** to read files: payload \`{filePath: "/etc/fail2ban/jail.local"}\` — returns base64-encoded content.
    - **ROLLBACK_CONFIG** to restore backup: payload \`{filePath: "/etc/fail2ban/jail.local", backupPath: "/etc/fail2ban/jail.local.bak.20260308"}\`.
