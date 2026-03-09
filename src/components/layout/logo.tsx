@@ -12,15 +12,15 @@ interface LogoProps {
 }
 
 const wordmarkSizes = {
-  sm: { width: 90,  height: 30 },
-  md: { width: 112, height: 38 },
-  lg: { width: 140, height: 47 },
+  sm: { width: 78,  height: 26 },
+  md: { width: 96,  height: 32 },
+  lg: { width: 115, height: 38 },
 };
 
 const taglineSize = {
-  sm: "text-[8px]",
-  md: "text-[9px]",
-  lg: "text-[10px]",
+  sm: "text-[7px]",
+  md: "text-[8px]",
+  lg: "text-[9px]",
 };
 
 const iconMarkSizes = {
@@ -58,7 +58,7 @@ export function Logo({ className, size = "md", iconOnly = false }: LogoProps) {
         priority
       />
       <span
-        className={cn("font-semibold tracking-wide leading-none mt-0.5", taglineSize[size])}
+        className={cn("font-semibold tracking-wide leading-none -mt-0.5", taglineSize[size])}
         style={{ color: "#1565C0" }}
       >
         General Computing Solutions
