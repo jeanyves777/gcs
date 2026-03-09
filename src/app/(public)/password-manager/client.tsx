@@ -3,7 +3,7 @@ import Link from "next/link";
 import { FadeUp, FadeIn, StaggerContainer, StaggerItem } from "@/components/shared/motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Lock, Shield, Clock, Key, Eye, RefreshCw, CheckCircle2, Download } from "lucide-react";
+import { ArrowRight, Lock, Shield, Clock, Key, Eye, RefreshCw, CheckCircle2, Download, Cloud } from "lucide-react";
 import { VaultDemo } from "@/components/vault/vault-demo";
 import { InstallPrompt } from "@/components/vault/install-prompt";
 
@@ -38,6 +38,11 @@ const FEATURES = [
     title: "Recovery Key System",
     desc: "During setup, you receive a 32-character recovery key. If you forget your PIN, this key can decrypt your vault and let you set a new one. Keep it safe — it's your only backup.",
   },
+  {
+    icon: Cloud,
+    title: "Google Drive Cloud Backup",
+    desc: "Optionally back up your encrypted vault to your own Google Drive. Your data is encrypted before it ever leaves your device — Google only sees an encrypted blob. You stay in full control.",
+  },
 ];
 
 const STEPS = [
@@ -60,9 +65,10 @@ const STEPS = [
 
 const TRUST_POINTS = [
   "No account or registration required",
-  "No data sent to any server — ever",
+  "No unencrypted data leaves your device — ever",
   "Open encryption standards (Web Crypto API)",
   "Works offline as an installable web app",
+  "Optional encrypted Google Drive backup",
   "Export your data anytime as JSON",
   "Free forever — no premium, no ads",
 ];
@@ -84,7 +90,7 @@ export function VaultLandingClient() {
               </h1>
               <p className="text-lg max-w-2xl mb-8" style={{ color: "var(--text-secondary)" }}>
                 GCS Vault is a free, installable web app that encrypts your credentials with
-                AES-256-GCM and stores them locally. No server. No cloud. No account. Just security.
+                AES-256-GCM and stores them locally. Optionally back up to your own Google Drive — encrypted before upload. No account. Just security.
               </p>
               <div className="flex flex-wrap gap-3 items-center">
                 <Button asChild className="text-white" style={{ background: "var(--brand-primary)" }}>
@@ -170,6 +176,75 @@ export function VaultLandingClient() {
         </div>
       </section>
 
+      {/* Cloud Backup */}
+      <section className="section-padding" style={{ background: "var(--bg-secondary)" }}>
+        <div className="container-gcs max-w-4xl">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <FadeUp>
+              <Badge className="mb-4" style={{ background: "var(--bg-tertiary)", color: "var(--brand-primary)", border: "1px solid var(--border)" }}>
+                <Cloud className="w-3 h-3 mr-1" /> Cloud Backup
+              </Badge>
+              <h2 className="font-bold mb-4" style={{ fontFamily: "var(--font-display)" }}>
+                Encrypted backup to{" "}
+                <span className="text-gradient">your Google Drive</span>
+              </h2>
+              <p className="mb-6" style={{ color: "var(--text-secondary)" }}>
+                Worried about losing your vault if you clear browser data? Connect your Google Drive and back up your encrypted vault with one click. Your data is encrypted with AES-256-GCM before upload — Google never sees your passwords.
+              </p>
+              <div className="space-y-3">
+                {[
+                  "Encrypted before upload — zero-knowledge stays intact",
+                  "Stored in a hidden app folder only GCS Vault can access",
+                  "One-click backup and restore",
+                  "Completely optional — works fine without it",
+                ].map((point) => (
+                  <div key={point} className="flex items-start gap-2">
+                    <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--brand-primary)" }} />
+                    <span className="text-sm" style={{ color: "var(--text-primary)" }}>{point}</span>
+                  </div>
+                ))}
+              </div>
+            </FadeUp>
+            <FadeIn delay={0.2}>
+              <div className="rounded-2xl p-6 border" style={{ background: "var(--bg-primary)", borderColor: "var(--border)" }}>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 pb-4 border-b" style={{ borderColor: "var(--border)" }}>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "rgba(var(--brand-primary-rgb, 21,101,192), 0.1)" }}>
+                      <Cloud className="w-5 h-5" style={{ color: "var(--brand-primary)" }} />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>Cloud Backup</p>
+                      <p className="text-xs" style={{ color: "var(--text-secondary)" }}>Google Drive</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm" style={{ color: "var(--text-secondary)" }}>Status</span>
+                      <span className="text-xs font-medium px-2 py-1 rounded-full" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}>Connected</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm" style={{ color: "var(--text-secondary)" }}>Last backup</span>
+                      <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Just now</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm" style={{ color: "var(--text-secondary)" }}>Auto-backup</span>
+                      <div className="w-9 h-5 rounded-full relative" style={{ background: "var(--brand-primary)" }}>
+                        <div className="absolute right-0.5 top-0.5 w-4 h-4 rounded-full bg-white" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="pt-3 border-t" style={{ borderColor: "var(--border)" }}>
+                    <p className="text-xs text-center" style={{ color: "var(--text-secondary)" }}>
+                      Your vault is encrypted before upload
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </FadeIn>
+          </div>
+        </div>
+      </section>
+
       {/* Technical details */}
       <section className="section-padding" style={{ background: "var(--bg-secondary)" }}>
         <div className="container-gcs max-w-4xl">
@@ -186,6 +261,7 @@ export function VaultLandingClient() {
                   { label: "// Per-Credential Encryption", content: <>credential &rarr; JSON &rarr; <span style={{ color: "var(--brand-primary)" }}>AES-256-GCM</span>(master key, random 12-byte IV) &rarr; ciphertext</> },
                   { label: "// Recovery", content: <>Recovery key (32 chars) &rarr; <span style={{ color: "var(--brand-primary)" }}>PBKDF2</span>(separate salt) &rarr; unwraps same master key</> },
                   { label: "// Storage", content: <><span style={{ color: "var(--brand-primary)" }}>IndexedDB</span> (browser-local) &rarr; encrypted blobs only &rarr; no server calls</> },
+                  { label: "// Cloud Backup", content: <>Vault snapshot &rarr; <span style={{ color: "var(--brand-primary)" }}>AES-256-GCM encrypted</span> &rarr; base64 JSON &rarr; Google Drive <span style={{ color: "var(--brand-primary)" }}>appDataFolder</span> (hidden, app-only)</> },
                 ].map((item) => (
                   <div key={item.label}>
                     <p className="mb-1" style={{ color: "var(--brand-primary)" }}>{item.label}</p>

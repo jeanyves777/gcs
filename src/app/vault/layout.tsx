@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { VaultProvider } from "@/lib/vault/context";
+import { SyncProvider } from "@/lib/vault/sync/context";
 import "@/app/globals.css";
 
 export const metadata: Metadata = {
@@ -24,7 +25,9 @@ export const viewport: Viewport = {
 export default function VaultLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-[#0A1929] text-white">
-      <VaultProvider>{children}</VaultProvider>
+      <VaultProvider>
+        <SyncProvider>{children}</SyncProvider>
+      </VaultProvider>
       <script
         dangerouslySetInnerHTML={{
           __html: `
