@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useVault } from "@/lib/vault/context";
 import { VaultHeader } from "@/components/vault/vault-header";
@@ -8,14 +8,19 @@ import { CredentialCard } from "@/components/vault/credential-card";
 const CATEGORIES = ["all", "general", "social", "email", "finance", "work", "shopping", "development"];
 
 export default function DashboardPage() {
-  const { credentials, staleCredentials, removeCredential, status } = useVault();
+  const { credentials, staleCredentials, removeCredential, verifyPin, status } = useVault();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const router = useRouter();
 
+  useEffect(() => {
+    if (status !== "unlocked") {
+      router.replace("/vault");
+    }
+  }, [status, router]);
+
   if (status !== "unlocked") {
-    router.replace("/vault");
     return null;
   }
 
@@ -132,6 +137,7 @@ export default function DashboardPage() {
                   onEdit={(id) => router.push(`/vault/edit/${id}`)}
                   onDelete={handleDelete}
                   isStale={staleIds.has(cred.id)}
+                  onVerifyPin={verifyPin}
                 />
                 {deleteConfirm === cred.id && (
                   <div className="absolute inset-0 bg-red-900/80 backdrop-blur-sm rounded-2xl flex items-center justify-center gap-4 z-10">

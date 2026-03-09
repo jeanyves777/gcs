@@ -47,8 +47,13 @@ export default function EditCredentialPage({ params }: { params: Promise<{ id: s
     });
   }, [id, status, getDecryptedCredential]);
 
+  useEffect(() => {
+    if (status !== "unlocked") {
+      router.replace("/vault");
+    }
+  }, [status, router]);
+
   if (status !== "unlocked") {
-    router.replace("/vault");
     return null;
   }
 

@@ -51,6 +51,7 @@ interface VaultContextType {
   removeCredential: (id: string) => Promise<void>;
   getDecryptedCredential: (id: string) => Promise<VaultCredential | null>;
   resetVault: () => Promise<void>;
+  verifyPin: (pin: string) => Promise<boolean>;
   staleCredentials: VaultCredential[];
 }
 
@@ -296,6 +297,19 @@ export function VaultProvider({ children }: { children: ReactNode }) {
     setCredentials([]);
   }, []);
 
+  const verifyPin = useCallback(async (pin: string): Promise<boolean> => {
+    try {
+      const salt = (await getMeta("salt")) as Uint8Array;
+      const wrapped = (await getMeta("wrappedMasterKey")) as ArrayBuffer;
+      const iv = (await getMeta("wrappedMasterKeyIv")) as Uint8Array;
+      const pinKey = await deriveKeyFromPin(pin, salt);
+      await unwrapKey(wrapped, iv, pinKey);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const NINETY_DAYS = 90 * 24 * 60 * 60 * 1000;
   const staleCredentials = credentials.filter(
     (c) => Date.now() - c.updatedAt > NINETY_DAYS
@@ -317,6 +331,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         removeCredential,
         getDecryptedCredential,
         resetVault,
+        verifyPin,
         staleCredentials,
       }}
     >

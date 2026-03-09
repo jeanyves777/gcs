@@ -56,8 +56,8 @@ export default function SetupPage() {
       const exists = await connectGoogleDrive();
       setBackupExists(exists);
       setShowRestorePrompt(true);
-    } catch {
-      setError(syncError || "Failed to connect to Google Drive");
+    } catch (err: any) {
+      setError(err?.message || "Failed to connect to Google Drive");
     }
     setGoogleLoading(false);
   };
@@ -67,8 +67,8 @@ export default function SetupPage() {
     try {
       await restoreFromCloud();
       // restoreFromCloud reloads the page
-    } catch {
-      setError(syncError || "Failed to restore vault");
+    } catch (err: any) {
+      setError(err?.message || "Failed to restore vault");
       setGoogleLoading(false);
     }
   };

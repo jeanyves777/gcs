@@ -52,8 +52,8 @@ export default function UnlockPage() {
       } else {
         setLocalError("No vault backup found in your Google Drive.");
       }
-    } catch {
-      setLocalError(syncError || "Failed to connect to Google Drive");
+    } catch (err: any) {
+      setLocalError(err?.message || "Failed to connect to Google Drive");
     }
     setGoogleLoading(false);
   };
@@ -63,8 +63,8 @@ export default function UnlockPage() {
     try {
       await restoreFromCloud();
       // restoreFromCloud reloads the page
-    } catch {
-      setLocalError(syncError || "Failed to restore vault");
+    } catch (err: any) {
+      setLocalError(err?.message || "Failed to restore vault");
       setGoogleLoading(false);
     }
   };

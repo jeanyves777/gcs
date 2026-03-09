@@ -8,7 +8,7 @@ interface VaultHeaderProps {
   showLock?: boolean;
 }
 
-export function VaultHeader({ title = "GCS Vault", showBack = false, showLock = true }: VaultHeaderProps) {
+export function VaultHeader({ title = "Password Vault", showBack = false, showLock = true }: VaultHeaderProps) {
   const { lockVault, status } = useVault();
   const router = useRouter();
 

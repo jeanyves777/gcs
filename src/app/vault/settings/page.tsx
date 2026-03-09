@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useVault } from "@/lib/vault/context";
 import { useSync } from "@/lib/vault/sync/context";
@@ -16,8 +16,13 @@ export default function SettingsPage() {
   const [exportDone, setExportDone] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
+  useEffect(() => {
+    if (status !== "unlocked") {
+      router.replace("/vault");
+    }
+  }, [status, router]);
+
   if (status !== "unlocked") {
-    router.replace("/vault");
     return null;
   }
 

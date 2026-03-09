@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useVault } from "@/lib/vault/context";
 import { VaultHeader } from "@/components/vault/vault-header";
@@ -28,8 +28,13 @@ export default function AddCredentialPage() {
     symbols: true,
   });
 
+  useEffect(() => {
+    if (status !== "unlocked") {
+      router.replace("/vault");
+    }
+  }, [status, router]);
+
   if (status !== "unlocked") {
-    router.replace("/vault");
     return null;
   }
 

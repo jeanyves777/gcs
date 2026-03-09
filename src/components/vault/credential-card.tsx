@@ -1,12 +1,14 @@
 "use client";
 import { useState } from "react";
 import type { VaultCredential } from "@/lib/vault/types";
+import { PinPad } from "./pin-pad";
 
 interface CredentialCardProps {
   credential: VaultCredential;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   isStale?: boolean;
+  onVerifyPin: (pin: string) => Promise<boolean>;
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -19,9 +21,11 @@ const CATEGORY_COLORS: Record<string, string> = {
   development: "bg-orange-500",
 };
 
-export function CredentialCard({ credential, onEdit, onDelete, isStale }: CredentialCardProps) {
+export function CredentialCard({ credential, onEdit, onDelete, isStale, onVerifyPin }: CredentialCardProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [showPinPrompt, setShowPinPrompt] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
 
   const copyToClipboard = async (text: string, field: string) => {
     await navigator.clipboard.writeText(text);
@@ -29,11 +33,51 @@ export function CredentialCard({ credential, onEdit, onDelete, isStale }: Creden
     setTimeout(() => setCopied(null), 2000);
   };
 
+  const handleShowPassword = () => {
+    if (showPassword) {
+      setShowPassword(false);
+      return;
+    }
+    setShowPinPrompt(true);
+    setPinError(null);
+  };
+
+  const handlePinSubmit = async (pin: string) => {
+    const valid = await onVerifyPin(pin);
+    if (valid) {
+      setShowPinPrompt(false);
+      setShowPassword(true);
+      setPinError(null);
+      // Auto-hide after 30 seconds
+      setTimeout(() => setShowPassword(false), 30000);
+    } else {
+      setPinError("Incorrect PIN");
+    }
+  };
+
   const favicon = credential.siteUrl
     ? `https://www.google.com/s2/favicons?domain=${new URL(credential.siteUrl.startsWith("http") ? credential.siteUrl : `https://${credential.siteUrl}`).hostname}&sz=32`
     : null;
 
   const daysOld = Math.floor((Date.now() - credential.updatedAt) / (1000 * 60 * 60 * 24));
+
+  if (showPinPrompt) {
+    return (
+      <div className="bg-white/5 rounded-2xl p-4 border border-blue-500/30">
+        <div className="text-center mb-3">
+          <p className="text-white/60 text-sm">Enter PIN to view password for</p>
+          <p className="text-white font-medium">{credential.siteName}</p>
+        </div>
+        <PinPad onSubmit={handlePinSubmit} label="Enter PIN" error={pinError} />
+        <button
+          onClick={() => { setShowPinPrompt(false); setPinError(null); }}
+          className="w-full mt-3 text-center text-white/40 hover:text-white/60 text-sm transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className={`bg-white/5 rounded-2xl p-4 border transition-all hover:bg-white/8 ${isStale ? "border-yellow-500/30" : "border-white/5"}`}>
@@ -86,7 +130,7 @@ export function CredentialCard({ credential, onEdit, onDelete, isStale }: Creden
           </div>
           <div className="flex gap-1 ml-2">
             <button
-              onClick={() => setShowPassword(!showPassword)}
+              onClick={handleShowPassword}
               className="text-xs px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors"
             >
               {showPassword ? "Hide" : "Show"}
