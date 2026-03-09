@@ -5,21 +5,47 @@ const VAULT_FILENAME = "gcs-vault.json";
 
 let accessToken: string | null = null;
 let tokenExpiry = 0;
-let gisLoaded = false;
+let gisPromise: Promise<void> | null = null;
 
-// Preload the Google Identity Services script (call early, e.g. on mount)
-export function preloadGisScript(): void {
-  if (typeof document === "undefined") return;
-  if (document.getElementById("gis-script")) {
-    gisLoaded = true;
-    return;
+// Load GIS script, returns a promise. Safe to call multiple times.
+function ensureGisLoaded(): Promise<void> {
+  if (gisPromise) return gisPromise;
+
+  if (typeof document === "undefined") {
+    return Promise.reject(new Error("Cannot load scripts during SSR"));
   }
-  const script = document.createElement("script");
-  script.id = "gis-script";
-  script.src = "https://accounts.google.com/gsi/client";
-  script.async = true;
-  script.onload = () => { gisLoaded = true; };
-  document.head.appendChild(script);
+
+  // Already loaded (e.g. by a previous page visit)
+  if ((window as any).google?.accounts?.oauth2) {
+    gisPromise = Promise.resolve();
+    return gisPromise;
+  }
+
+  gisPromise = new Promise((resolve, reject) => {
+    const existing = document.getElementById("gis-script");
+    if (existing) {
+      // Script tag exists but hasn't loaded yet — wait for it
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", () => reject(new Error("Failed to load Google Identity Services")));
+      // In case it already loaded between our check and adding the listener
+      if ((window as any).google?.accounts?.oauth2) resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.id = "gis-script";
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Failed to load Google Identity Services"));
+    document.head.appendChild(script);
+  });
+
+  return gisPromise;
+}
+
+// Preload — fire and forget (call on mount so script starts downloading early)
+export function preloadGisScript(): void {
+  ensureGisLoaded().catch(() => {});
 }
 
 function getClientId(): string {
@@ -33,9 +59,11 @@ export function isConnected(): boolean {
 }
 
 export async function connect(): Promise<{ email: string }> {
-  // GIS script should already be loaded via preloadGisScript()
-  if (!gisLoaded || !(window as any).google?.accounts?.oauth2) {
-    throw new Error("Google Identity Services not loaded. Please refresh and try again.");
+  // Wait for GIS script to load (should be fast if preloaded)
+  await ensureGisLoaded();
+
+  if (!(window as any).google?.accounts?.oauth2) {
+    throw new Error("Google Identity Services failed to initialize. Please refresh.");
   }
 
   return new Promise((resolve, reject) => {
