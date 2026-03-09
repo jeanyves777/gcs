@@ -233,7 +233,7 @@ export function VaultLandingClient() {
               Free forever. No ads. No tracking. No server. Just you and your encrypted vault.
             </p>
             <div className="flex flex-wrap justify-center gap-4">
-              <Button asChild size="lg" variant="outline" className="border-white/30 text-white hover:bg-white/10">
+              <Button asChild size="lg" className="bg-white hover:bg-white/90 font-semibold" style={{ color: "var(--brand-primary)" }}>
                 <Link href="/vault">Get Started Free <ArrowRight className="ml-2 h-4 w-4" /></Link>
               </Button>
             </div>
