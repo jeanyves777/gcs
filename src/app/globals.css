@@ -543,6 +543,42 @@
   animation: reviews-scroll 35s linear infinite;
 }
 
+/* ── Vault Demo animations ───────────────────────────────── */
+@keyframes vault-demo-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(59,130,246,0); }
+}
+@keyframes vault-demo-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes vault-demo-slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes vault-demo-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes vault-demo-bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+@keyframes vault-demo-pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.vault-demo-pulse { animation: vault-demo-pulse 2s ease-in-out infinite; }
+.vault-demo-fade-in { opacity: 0; animation: vault-demo-fade-in 0.6s ease-out forwards; }
+.vault-demo-slide-up { opacity: 0; animation: vault-demo-slide-up 0.5s ease-out forwards; }
+.vault-demo-float-left { animation: vault-demo-float 3s ease-in-out infinite; }
+.vault-demo-float-right { animation: vault-demo-float 3.5s ease-in-out infinite 0.5s; }
+.vault-demo-bounce { animation: vault-demo-bounce 2s ease-in-out infinite; }
+.vault-demo-pulse-slow { animation: vault-demo-pulse-slow 2s ease-in-out infinite; }
+.vault-demo-type { overflow: hidden; white-space: nowrap; border-right: 2px solid rgba(255,255,255,0.3); animation: vault-demo-fade-in 0.5s ease-out forwards, gcs-cursor 1s step-end infinite; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
 .reviews-marquee-container:hover .reviews-marquee {
   animation-play-state: paused;
 }

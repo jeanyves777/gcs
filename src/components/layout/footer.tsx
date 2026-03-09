@@ -18,6 +18,7 @@ const footerLinks = {
     { href: "/services/cloud", label: "Cloud Management" },
     { href: "/services/cybersecurity", label: "Cybersecurity" },
     { href: "/services/ai-integration", label: "AI Integration" },
+    { href: "/password-manager", label: "Password Vault" },
   ],
   support: [
     { href: "/auth/login", label: "Client Portal" },

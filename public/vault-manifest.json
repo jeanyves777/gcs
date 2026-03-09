@@ -1,0 +1,27 @@
+{
+  "name": "GCS Password Vault",
+  "short_name": "GCS Vault",
+  "description": "Secure, encrypted password manager. Zero-knowledge. Your data never leaves your device.",
+  "start_url": "/vault",
+  "scope": "/vault",
+  "display": "standalone",
+  "background_color": "#0A1929",
+  "theme_color": "#0A1929",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/vault-icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/vault-icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["security", "utilities"],
+  "lang": "en"
+}

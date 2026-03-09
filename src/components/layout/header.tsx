@@ -49,6 +49,11 @@ const services = [
     label: "AI Integration",
     description: "Embed AI automation into your workflows and products.",
   },
+  {
+    href: "/password-manager",
+    label: "Password Vault",
+    description: "Free encrypted password manager — zero-knowledge, local-only.",
+  },
 ];
 
 export function Header() {

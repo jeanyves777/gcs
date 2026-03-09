@@ -15,6 +15,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: "/services/cloud", priority: 0.8, changeFrequency: "monthly" as const },
     { url: "/services/cybersecurity", priority: 0.8, changeFrequency: "monthly" as const },
     { url: "/services/ai-integration", priority: 0.8, changeFrequency: "monthly" as const },
+    { url: "/password-manager", priority: 0.8, changeFrequency: "monthly" as const },
     { url: "/portfolio", priority: 0.7, changeFrequency: "monthly" as const },
     { url: "/blog", priority: 0.7, changeFrequency: "weekly" as const },
     { url: "/contact", priority: 0.9, changeFrequency: "monthly" as const },
