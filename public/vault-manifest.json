@@ -3,7 +3,7 @@
   "short_name": "Password Vault",
   "description": "Secure, encrypted password manager. Zero-knowledge. Your data never leaves your device.",
   "start_url": "/vault",
-  "scope": "/vault",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0A1929",
   "theme_color": "#0A1929",

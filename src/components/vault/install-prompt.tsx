@@ -47,10 +47,10 @@ export function InstallPrompt() {
     return (
       <div className="text-center space-y-1">
         <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-          Open in Chrome, Edge, or Safari to install as an app.
+          Open <a href="/vault" style={{ color: "var(--brand-primary)", textDecoration: "underline" }}>/vault</a> in your browser to install as an app.
         </p>
         <p className="text-xs" style={{ color: "var(--text-secondary)", opacity: 0.6 }}>
-          iOS: Tap Share &rarr; Add to Home Screen
+          iOS: Open /vault &rarr; Share &rarr; Add to Home Screen
         </p>
       </div>
     );
@@ -59,7 +59,7 @@ export function InstallPrompt() {
   return (
     <Button onClick={handleInstall} variant="outline" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
       <Download className="mr-2 h-4 w-4" />
-      Install GCS Vault
+      Install Password Vault
     </Button>
   );
 }
