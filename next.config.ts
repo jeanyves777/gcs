@@ -2,12 +2,12 @@ import type { NextConfig } from "next";
 
 const ContentSecurityPolicy = `
   default-src 'self';
-  script-src 'self' 'unsafe-inline' https://js.stripe.com;
-  style-src 'self' 'unsafe-inline';
+  script-src 'self' 'unsafe-inline' https://js.stripe.com https://accounts.google.com https://apis.google.com;
+  style-src 'self' 'unsafe-inline' https://accounts.google.com;
   img-src 'self' data: blob: https://*.gravatar.com https://*.githubusercontent.com https://*.stripe.com;
   font-src 'self' data:;
-  connect-src 'self' https://api.stripe.com;
-  frame-src 'self' https://js.stripe.com https://hooks.stripe.com;
+  connect-src 'self' https://api.stripe.com https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com;
+  frame-src 'self' https://js.stripe.com https://hooks.stripe.com https://accounts.google.com;
   object-src 'none';
   base-uri 'self';
   form-action 'self';
