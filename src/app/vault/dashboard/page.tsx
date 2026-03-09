@@ -159,7 +159,7 @@ export default function DashboardPage() {
       {/* FAB - Add button */}
       <button
         onClick={() => router.push("/vault/add")}
-        className="fixed bottom-6 right-6 w-14 h-14 rounded-2xl bg-blue-600 hover:bg-blue-500 shadow-xl shadow-blue-600/30 flex items-center justify-center text-white text-2xl transition-all hover:scale-105 active:scale-95 z-40"
+        className="fixed bottom-20 right-6 w-14 h-14 rounded-2xl bg-blue-600 hover:bg-blue-500 shadow-xl shadow-blue-600/30 flex items-center justify-center text-white text-2xl transition-all hover:scale-105 active:scale-95 z-40"
       >
         +
       </button>

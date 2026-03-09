@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { VaultProvider } from "@/lib/vault/context";
 import { SyncProvider } from "@/lib/vault/sync/context";
 import "@/app/globals.css";
@@ -28,6 +29,11 @@ export default function VaultLayout({ children }: { children: React.ReactNode })
       <VaultProvider>
         <SyncProvider>{children}</SyncProvider>
       </VaultProvider>
+      <Script
+        src="https://accounts.google.com/gsi/client"
+        strategy="afterInteractive"
+        id="gis-script"
+      />
       <script
         dangerouslySetInnerHTML={{
           __html: `

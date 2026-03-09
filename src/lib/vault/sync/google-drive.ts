@@ -5,48 +5,29 @@ const VAULT_FILENAME = "gcs-vault.json";
 
 let accessToken: string | null = null;
 let tokenExpiry = 0;
-let gisPromise: Promise<void> | null = null;
 
-// Load GIS script, returns a promise. Safe to call multiple times.
-function ensureGisLoaded(): Promise<void> {
-  if (gisPromise) return gisPromise;
-
-  if (typeof document === "undefined") {
-    return Promise.reject(new Error("Cannot load scripts during SSR"));
-  }
-
-  // Already loaded (e.g. by a previous page visit)
+// Wait for the GIS script (loaded via Next.js <Script> in vault layout)
+function waitForGis(timeoutMs = 10000): Promise<void> {
   if ((window as any).google?.accounts?.oauth2) {
-    gisPromise = Promise.resolve();
-    return gisPromise;
+    return Promise.resolve();
   }
-
-  gisPromise = new Promise((resolve, reject) => {
-    const existing = document.getElementById("gis-script");
-    if (existing) {
-      // Script tag exists but hasn't loaded yet — wait for it
-      existing.addEventListener("load", () => resolve());
-      existing.addEventListener("error", () => reject(new Error("Failed to load Google Identity Services")));
-      // In case it already loaded between our check and adding the listener
-      if ((window as any).google?.accounts?.oauth2) resolve();
-      return;
-    }
-    const script = document.createElement("script");
-    script.id = "gis-script";
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load Google Identity Services"));
-    document.head.appendChild(script);
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    const check = () => {
+      if ((window as any).google?.accounts?.oauth2) {
+        resolve();
+      } else if (Date.now() - start > timeoutMs) {
+        reject(new Error("Google Identity Services took too long to load. Check your internet connection."));
+      } else {
+        setTimeout(check, 100);
+      }
+    };
+    check();
   });
-
-  return gisPromise;
 }
 
-// Preload — fire and forget (call on mount so script starts downloading early)
-export function preloadGisScript(): void {
-  ensureGisLoaded().catch(() => {});
-}
+// No-op — GIS is now loaded by Next.js <Script> in the vault layout
+export function preloadGisScript(): void {}
 
 function getClientId(): string {
   const id = process.env.NEXT_PUBLIC_GOOGLE_DRIVE_CLIENT_ID;
@@ -59,12 +40,7 @@ export function isConnected(): boolean {
 }
 
 export async function connect(): Promise<{ email: string }> {
-  // Wait for GIS script to load (should be fast if preloaded)
-  await ensureGisLoaded();
-
-  if (!(window as any).google?.accounts?.oauth2) {
-    throw new Error("Google Identity Services failed to initialize. Please refresh.");
-  }
+  await waitForGis();
 
   return new Promise((resolve, reject) => {
     const client = (window as any).google.accounts.oauth2.initTokenClient({
