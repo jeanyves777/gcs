@@ -5,12 +5,12 @@ import { SyncProvider } from "@/lib/vault/sync/context";
 import "@/app/globals.css";
 
 export const metadata: Metadata = {
-  title: "GCS Password Vault",
+  title: "Password Vault",
   description: "Secure, encrypted password manager. Zero-knowledge. Your data never leaves your device.",
   manifest: "/vault-manifest.json",
   appleWebApp: {
     capable: true,
-    title: "GCS Vault",
+    title: "Password Vault",
     statusBarStyle: "black-translucent",
   },
 };

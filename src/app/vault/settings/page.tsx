@@ -27,7 +27,7 @@ export default function SettingsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `gcs-vault-export-${new Date().toISOString().split("T")[0]}.json`;
+    a.download = `vault-export-${new Date().toISOString().split("T")[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
     setExportDone(true);

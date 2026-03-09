@@ -21,7 +21,7 @@ const FEATURES = [
   {
     icon: Clock,
     title: "90-Day Rotation Reminders",
-    desc: "GCS Vault tracks password age and alerts you when credentials are older than 90 days. One-click password regeneration with our built-in cryptographic generator.",
+    desc: "Password Vault tracks password age and alerts you when credentials are older than 90 days. One-click password regeneration with our built-in cryptographic generator.",
   },
   {
     icon: Key,
@@ -89,12 +89,12 @@ export function VaultLandingClient() {
                 <span className="text-gradient">Your Device Only.</span>
               </h1>
               <p className="text-lg max-w-2xl mb-8" style={{ color: "var(--text-secondary)" }}>
-                GCS Vault is a free, installable web app that encrypts your credentials with
+                Password Vault is a free, installable web app that encrypts your credentials with
                 AES-256-GCM and stores them locally. Optionally back up to your own Google Drive — encrypted before upload. No account. Just security.
               </p>
               <div className="flex flex-wrap gap-3 items-center">
                 <Button asChild className="text-white" style={{ background: "var(--brand-primary)" }}>
-                  <Link href="/vault">Launch GCS Vault <ArrowRight className="ml-2 h-4 w-4" /></Link>
+                  <Link href="/vault">Launch Password Vault <ArrowRight className="ml-2 h-4 w-4" /></Link>
                 </Button>
                 <InstallPrompt />
               </div>
@@ -194,7 +194,7 @@ export function VaultLandingClient() {
               <div className="space-y-3">
                 {[
                   "Encrypted before upload — zero-knowledge stays intact",
-                  "Stored in a hidden app folder only GCS Vault can access",
+                  "Stored in a hidden app folder only Password Vault can access",
                   "One-click backup and restore",
                   "Completely optional — works fine without it",
                 ].map((point) => (
@@ -274,14 +274,14 @@ export function VaultLandingClient() {
         </div>
       </section>
 
-      {/* Trust / Why GCS Vault */}
+      {/* Trust / Why Password Vault */}
       <section className="section-padding" style={{ background: "var(--bg-primary)" }}>
         <div className="container-gcs max-w-4xl">
           <FadeUp>
             <div className="text-center mb-12">
               <h2 className="font-bold mb-4" style={{ fontFamily: "var(--font-display)" }}>
                 Why trust{" "}
-                <span className="text-gradient">GCS Vault</span>?
+                <span className="text-gradient">Password Vault</span>?
               </h2>
             </div>
           </FadeUp>

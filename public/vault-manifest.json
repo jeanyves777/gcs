@@ -1,6 +1,6 @@
 {
-  "name": "GCS Password Vault",
-  "short_name": "GCS Vault",
+  "name": "Password Vault",
+  "short_name": "Password Vault",
   "description": "Secure, encrypted password manager. Zero-knowledge. Your data never leaves your device.",
   "start_url": "/vault",
   "scope": "/vault",

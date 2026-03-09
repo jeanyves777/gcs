@@ -16,10 +16,11 @@ interface SyncContextType {
   config: CloudSyncConfig | null;
   syncStatus: "idle" | "syncing" | "error" | "success";
   lastError: string | null;
-  connectGoogleDrive: () => Promise<void>;
+  connectGoogleDrive: () => Promise<boolean>; // returns true if cloud backup exists
   disconnectCloud: () => Promise<void>;
   syncNow: () => Promise<void>;
   toggleAutoSync: (enabled: boolean) => Promise<void>;
+  restoreFromCloud: () => Promise<void>;
   hasCloudBackup: boolean;
 }
 
@@ -53,7 +54,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const connectGoogleDrive = useCallback(async () => {
+  const connectGoogleDrive = useCallback(async (): Promise<boolean> => {
     setLastError(null);
     try {
       const { email } = await gdrive.connect();
@@ -69,7 +70,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
       // Check if there's an existing backup
       const remote = await gdrive.download();
-      setHasCloudBackup(!!remote);
+      const exists = !!remote;
+      setHasCloudBackup(exists);
+      return exists;
     } catch (err: any) {
       setLastError(err.message || "Failed to connect");
       throw err;
@@ -156,6 +159,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         disconnectCloud,
         syncNow,
         toggleAutoSync,
+        restoreFromCloud,
         hasCloudBackup,
       }}
     >
