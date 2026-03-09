@@ -247,13 +247,13 @@ export const adminTools: ToolDef[] = [
   },
   {
     name: "send_agent_command",
-    description: "Send a command to a remote GcsGuard agent for execution on the CLIENT server. Use this to run actual remediation commands on client servers (NOT the GCS app server). The command is queued and the agent executes it on the next heartbeat (~30s). Supported types: BLOCK_IP, UNBLOCK_IP, KILL_PROCESS, RESTART_SERVICE, RUN_SCAN, INSTALL_PACKAGES, SYSTEM_UPGRADE, UNINSTALL_PACKAGES, CUSTOM_COMMAND. For CUSTOM_COMMAND, the agent runs the shell command directly. Returns the command ID for tracking.",
+    description: "Send a command to a remote GcsGuard agent for execution on the CLIENT server. The command is queued and the agent executes it on the next heartbeat (~30s). IMPORTANT: For writing config files, ALWAYS use PUSH_CONFIG (not CUSTOM_COMMAND) — it uses base64 encoding so multi-line content won't get mangled. Returns the command ID — you MUST immediately call check_agent_command with it.",
     input_schema: {
       type: "object" as const,
       properties: {
         agentId: { type: "string", description: "The GcsGuard agent ID to send the command to" },
-        type: { type: "string", enum: ["BLOCK_IP", "UNBLOCK_IP", "KILL_PROCESS", "RESTART_SERVICE", "RUN_SCAN", "INSTALL_PACKAGES", "SYSTEM_UPGRADE", "UNINSTALL_PACKAGES", "CUSTOM_COMMAND"], description: "Command type" },
-        payload: { type: "object", description: "Command payload. Examples: {ip:'1.2.3.4'} for BLOCK_IP, {service:'nginx'} for RESTART_SERVICE, {command:'chmod 600 /path/.env'} for CUSTOM_COMMAND, {packages:['fail2ban']} for INSTALL_PACKAGES" },
+        type: { type: "string", enum: ["BLOCK_IP", "UNBLOCK_IP", "KILL_PROCESS", "RESTART_SERVICE", "RUN_SCAN", "INSTALL_PACKAGES", "SYSTEM_UPGRADE", "UNINSTALL_PACKAGES", "CUSTOM_COMMAND", "GET_CONFIG", "PUSH_CONFIG", "ROLLBACK_CONFIG", "COLLECT_SERVICES", "COLLECT_PACKAGES"], description: "Command type" },
+        payload: { type: "object", description: "Command payload. Examples: {ip:'1.2.3.4'} for BLOCK_IP, {service:'nginx'} for RESTART_SERVICE, {command:'ufw status'} for CUSTOM_COMMAND, {packages:['fail2ban']} for INSTALL_PACKAGES, {filePath:'/etc/fail2ban/jail.local',content:'<base64>',backupFirst:true,restartService:'fail2ban'} for PUSH_CONFIG, {filePath:'/etc/fail2ban/jail.local'} for GET_CONFIG" },
       },
       required: ["agentId", "type", "payload"],
     },

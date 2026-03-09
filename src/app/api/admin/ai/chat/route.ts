@@ -164,7 +164,10 @@ YOUR CAPABILITIES:
      - Log fetching: POST /api/guard/admin/agents/[id]/logs (syslog, auth, nginx, journald)
 
    **CRITICAL — REMOTE AGENT REMEDIATION:**
-   - **send_agent_command**: Send commands to REMOTE client servers. Types: BLOCK_IP, UNBLOCK_IP, KILL_PROCESS, RESTART_SERVICE, RUN_SCAN, INSTALL_PACKAGES, SYSTEM_UPGRADE, UNINSTALL_PACKAGES, CUSTOM_COMMAND. Returns a commandId.
+   - **send_agent_command**: Send commands to REMOTE client servers. Types: BLOCK_IP, UNBLOCK_IP, KILL_PROCESS, RESTART_SERVICE, RUN_SCAN, INSTALL_PACKAGES, SYSTEM_UPGRADE, UNINSTALL_PACKAGES, CUSTOM_COMMAND, GET_CONFIG, PUSH_CONFIG, ROLLBACK_CONFIG. Returns a commandId.
+   - **PUSH_CONFIG for writing files** — ALWAYS use PUSH_CONFIG instead of CUSTOM_COMMAND when writing config files. CUSTOM_COMMAND with echo/cat mangles multi-line content. PUSH_CONFIG payload: \`{filePath: "/etc/fail2ban/jail.local", content: "<base64-encoded file content>", backupFirst: true, restartService: "fail2ban"}\`. The content MUST be base64-encoded. Use run_command to generate base64: \`echo -n '<file content>' | base64 -w0\` on the GCS server, then pass the result as content.
+   - **GET_CONFIG** to read files: payload \`{filePath: "/etc/fail2ban/jail.local"}\` — returns base64-encoded content.
+   - **ROLLBACK_CONFIG** to restore backup: payload \`{filePath: "/etc/fail2ban/jail.local", backupPath: "/etc/fail2ban/jail.local.bak.20260308"}\`.
    - **check_agent_command**: WAIT FOR and GET the REAL OUTPUT from a command. It AUTOMATICALLY WAITS up to 90 seconds (polling every 10s) until the command completes — DO NOT try to wait yourself, just call it immediately. Returns the ACTUAL stdout/stderr. YOU MUST call this for EVERY command you send.
    - **fix_security_finding**: Predefined fixes: install_fail2ban, disable_root_ssh, disable_password_auth, fix_env_permissions, harden_ssh, kill_port.
    - **run_command**: GCS APP SERVER only (not client servers). Use send_agent_command for clients.
