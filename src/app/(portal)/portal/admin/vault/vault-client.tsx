@@ -426,13 +426,18 @@ export function VaultClient({ initialEntries }: { initialEntries: VaultEntry[] }
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        {entry.url && (
-                          <a href={entry.url} target="_blank" rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-xs flex items-center gap-1 hover:underline" style={{ color: "var(--brand-primary)" }}>
-                            <ExternalLink className="w-3 h-3" /> {new URL(entry.url).hostname}
-                          </a>
-                        )}
+                        {entry.url && (() => {
+                          const fullUrl = entry.url.match(/^https?:\/\//) ? entry.url : `https://${entry.url}`;
+                          let hostname = entry.url;
+                          try { hostname = new URL(fullUrl).hostname; } catch { /* use raw */ }
+                          return (
+                            <a href={fullUrl} target="_blank" rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-xs flex items-center gap-1 hover:underline" style={{ color: "var(--brand-primary)" }}>
+                              <ExternalLink className="w-3 h-3" /> {hostname}
+                            </a>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-xs" style={{ color: "var(--text-secondary)" }}>{entry.createdByName}</td>
                       <td className="px-4 py-3 text-xs" style={{ color: "var(--text-muted)" }}>
