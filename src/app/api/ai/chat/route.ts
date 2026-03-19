@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const SYSTEM_PROMPT = `You are the GCS AI Assistant for Global Computing Solutions (GCS), a leading Managed IT & Software provider based in the US.
+const SYSTEM_PROMPT = `You are the GCS AI Assistant for General Computing Solutions (GCS), a leading Managed IT & Software provider based in the US.
 
 Your role is to help website visitors learn about GCS services and guide them toward becoming clients.
 

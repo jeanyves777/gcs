@@ -154,7 +154,7 @@ export function PaymentPageClient({ invoice }: { invoice: InvoiceSummary }) {
                 G
               </div>
               <div>
-                <p className="font-bold leading-tight">Global Computing Solutions</p>
+                <p className="font-bold leading-tight">General Computing Solutions</p>
                 <p className="text-xs opacity-75">Managed IT & Software Solutions</p>
               </div>
             </div>

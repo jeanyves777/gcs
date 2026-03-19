@@ -41,7 +41,7 @@ export function ReceiptClient({ invoice, redirectStatus }: Props) {
   const isSuccess = paymentStatus === "succeeded" || invoice.status === "PAID";
 
   const GCS = {
-    name: "Global Computing Solutions",
+    name: "General Computing Solutions",
     email: "billing@itatgcs.com",
     website: "www.itatgcs.com",
   };

@@ -37,7 +37,7 @@ const statusConfig: Record<string, { label: string; bg: string; color: string; i
 };
 
 const GCS = {
-  name: "Global Computing Solutions",
+  name: "General Computing Solutions",
   tagline: "Managed IT & Software Solutions",
   email: "billing@itatgcs.com",
   website: "www.itatgcs.com",

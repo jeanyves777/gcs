@@ -161,7 +161,7 @@ function parseSections(text: string): Section[] {
   });
 
   // The first segment (before the first ## heading) is often a preamble
-  // like "### Prepared by Global Computing Solutions — Confidential\n---"
+  // like "### Prepared by General Computing Solutions — Confidential\n---"
   // Merge its meaningful content into Business Overview; discard boilerplate.
   if (raw.length > 1) {
     const first = raw[0];

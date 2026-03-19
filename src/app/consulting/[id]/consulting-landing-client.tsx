@@ -1099,7 +1099,7 @@ export function ConsultingLandingClient({ pitch }: { pitch: Pitch }) {
           <a href="mailto:info@itatgcs.com" style={{ color: "#1565C0", textDecoration: "none" }}>info@itatgcs.com</a>
         </p>
         <p style={{ margin: 0, color: "#9CA3AF", fontSize: 11 }}>
-          © {new Date().getFullYear()} Global Computing Solutions. All rights reserved.
+          © {new Date().getFullYear()} General Computing Solutions. All rights reserved.
         </p>
       </footer>
     </div>

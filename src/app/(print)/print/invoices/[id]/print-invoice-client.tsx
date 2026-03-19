@@ -28,7 +28,7 @@ const fmt = (n: number, currency = "USD") =>
 const fmtDate = (d: Date | string) =>
   new Date(d).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 
-const GCS = { name: "Global Computing Solutions", email: "billing@itatgcs.com", website: "www.itatgcs.com" };
+const GCS = { name: "General Computing Solutions", email: "billing@itatgcs.com", website: "www.itatgcs.com" };
 
 export function PrintInvoiceClient({ invoice }: Props) {
   useEffect(() => {

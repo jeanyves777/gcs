@@ -11,7 +11,7 @@ export const maxDuration = 300;
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const PITCH_SYSTEM_PROMPT = `You are GCS's elite AI sales intelligence analyst AND penetration testing expert. Global Computing Solutions (GCS) is a premier Managed IT & Software Solutions provider offering:
+const PITCH_SYSTEM_PROMPT = `You are GCS's elite AI sales intelligence analyst AND penetration testing expert. General Computing Solutions (GCS) is a premier Managed IT & Software Solutions provider offering:
 
 - **Managed IT Services**: 24/7 monitoring, helpdesk (Tier 1–3), patch management, IT strategy & vCIO
 - **Cybersecurity**: Vulnerability assessments, endpoint protection (EDR), SIEM, compliance (SOC2, HIPAA, PCI-DSS, NIST), penetration testing
