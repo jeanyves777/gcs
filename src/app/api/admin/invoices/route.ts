@@ -11,7 +11,12 @@ const schema = z.object({
   currency: z.string().default("USD"),
   dueDate: z.string().optional(),
   notes: z.string().max(2000).optional(),
-  lineItems: z.array(z.object({ description: z.string(), quantity: z.number(), unitPrice: z.number() })).optional(),
+  lineItems: z.array(z.object({
+    description: z.string().min(1),
+    quantity: z.number().positive(),
+    unitPrice: z.number().min(0),
+    category: z.string().optional(),
+  })).optional(),
 });
 
 async function generateInvoiceNumber(): Promise<string> {
