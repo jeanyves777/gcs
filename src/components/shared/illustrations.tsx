@@ -196,7 +196,7 @@ export function AboutIllustration() {
       <FloatingCard className="-bottom-4 -right-4" delay="2">
         <div className="flex items-center gap-1.5">
           <StatusDot color="#22C55E" />
-          <p className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>Remote-First · Worldwide</p>
+          <p className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>Remote-First · US-Based</p>
         </div>
       </FloatingCard>
     </div>

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { FadeUp, FadeIn } from "@/components/shared/motion";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Mail, Phone, MapPin, Clock } from "lucide-react";
+import { Mail, Phone, Clock } from "lucide-react";
 import { ContactForm } from "./contact-form";
 import { ContactIllustration } from "@/components/shared/illustrations";
 
@@ -13,8 +13,7 @@ export const metadata: Metadata = {
 
 const contactInfo = [
   { icon: Mail, label: "Email us", value: "info@itatgcs.com", href: "mailto:info@itatgcs.com" },
-  { icon: Phone, label: "Call us", value: "+1 (555) 123-4567", href: "tel:+15551234567" },
-  { icon: MapPin, label: "Location", value: "Remote-First · Available Worldwide", href: null },
+  { icon: Phone, label: "Call us", value: "(413) 412-0438", href: "tel:+14134120438" },
   { icon: Clock, label: "Response time", value: "Within 1 business day", href: null },
 ];
 

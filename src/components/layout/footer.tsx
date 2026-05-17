@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Mail, Phone, MapPin, Linkedin, Twitter, Github } from "lucide-react";
+import { Mail, Phone, Linkedin, Twitter, Github } from "lucide-react";
 import { Logo } from "./logo";
 import { Separator } from "@/components/ui/separator";
 
@@ -57,8 +57,7 @@ export function Footer() {
             <div className="mt-6 space-y-2">
               {[
                 { icon: Mail, text: "info@itatgcs.com", href: "mailto:info@itatgcs.com" },
-                { icon: Phone, text: "+1 (555) 123-4567", href: "tel:+15551234567" },
-                { icon: MapPin, text: "Available Worldwide, Remote-First", href: null },
+                { icon: Phone, text: "(413) 412-0438", href: "tel:+14134120438" },
               ].map(({ icon: Icon, text, href }) => (
                 <div key={text} className="flex items-center gap-2.5">
                   <Icon className="h-4 w-4 flex-shrink-0" style={{ color: "var(--brand-primary)" }} />
