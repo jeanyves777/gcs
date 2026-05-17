@@ -50,6 +50,11 @@ const services = [
     description: "Embed AI automation into your workflows and products.",
   },
   {
+    href: "/services/local-seo",
+    label: "Local SEO & Google Business",
+    description: "Get found by local customers on Google Search and Google Maps.",
+  },
+  {
     href: "/password-manager",
     label: "Password Vault",
     description: "Free encrypted password manager — zero-knowledge, local-only.",

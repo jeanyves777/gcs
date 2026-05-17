@@ -787,3 +787,142 @@ export function CareersIllustration() {
     </div>
   );
 }
+
+// ─── Local SEO — Google Business Profile Dashboard ──────────────────────────
+
+export function LocalSEOIllustration() {
+  const metrics = [
+    { label: "Profile Views", value: "1,284", delta: "+18%" },
+    { label: "Direction Requests", value: "94", delta: "+31%" },
+    { label: "Calls", value: "47", delta: "+22%" },
+  ];
+
+  const keywords = [
+    { term: "IT support near me", rank: 2 },
+    { term: "managed IT services", rank: 1 },
+    { term: "computer repair shop", rank: 3 },
+  ];
+
+  return (
+    <div className="relative w-full max-w-[460px] mx-auto mt-6 mb-10">
+      <Glow />
+      <div
+        className="relative rounded-2xl overflow-hidden shadow-2xl gcs-float-1"
+        style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
+      >
+        <WindowChrome title="Local SEO Dashboard — Google Business" />
+
+        {/* Map mockup */}
+        <div className="relative h-28 overflow-hidden" style={{ background: "var(--bg-tertiary)" }}>
+          {[20, 40, 60, 80].map((x) => (
+            <div key={x} className="absolute top-0 bottom-0 w-px opacity-20" style={{ left: `${x}%`, background: "var(--border)" }} />
+          ))}
+          {[33, 66].map((y) => (
+            <div key={y} className="absolute left-0 right-0 h-px opacity-20" style={{ top: `${y}%`, background: "var(--border)" }} />
+          ))}
+          <div className="absolute" style={{ left: "44%", top: "22%" }}>
+            <div
+              className="w-7 h-7 rounded-full flex items-center justify-center shadow-lg"
+              style={{ background: "var(--brand-primary)" }}
+            >
+              <span className="text-white text-[10px] font-black">GCS</span>
+            </div>
+            <div
+              className="absolute left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 -mt-1"
+              style={{ background: "var(--brand-primary)" }}
+            />
+          </div>
+          {[{ l: "26%", t: "54%" }, { l: "64%", t: "38%" }].map((pos, i) => (
+            <div
+              key={i}
+              className="absolute w-3.5 h-3.5 rounded-full opacity-40"
+              style={{ left: pos.l, top: pos.t, background: "var(--text-muted)" }}
+            />
+          ))}
+          <div
+            className="absolute bottom-2 left-3 text-[9px] font-semibold px-2 py-0.5 rounded-full"
+            style={{ background: "rgba(21,101,192,0.12)", color: "var(--brand-primary)", border: "1px solid rgba(21,101,192,0.2)" }}
+          >
+            ★ Local 3-Pack
+          </div>
+        </div>
+
+        {/* Metrics */}
+        <div className="grid grid-cols-3 gap-2 p-3 border-b" style={{ borderColor: "var(--border)" }}>
+          {metrics.map(({ label, value, delta }) => (
+            <div key={label} className="rounded-xl p-2.5 text-center" style={{ background: "var(--bg-secondary)" }}>
+              <p className="text-[10px] uppercase tracking-wider truncate" style={{ color: "var(--text-muted)" }}>{label}</p>
+              <p className="text-sm font-black mt-0.5" style={{ color: "var(--brand-primary)" }}>{value}</p>
+              <p className="text-[10px] font-semibold" style={{ color: "#22C55E" }}>{delta}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Keyword rankings */}
+        <div className="p-4 border-b" style={{ borderColor: "var(--border)" }}>
+          <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: "var(--text-muted)" }}>
+            Keyword Rankings
+          </p>
+          <div className="space-y-2">
+            {keywords.map(({ term, rank }) => (
+              <div key={term} className="flex items-center gap-3">
+                <span
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black flex-shrink-0"
+                  style={{
+                    background: rank === 1 ? "rgba(21,101,192,0.15)" : "var(--bg-tertiary)",
+                    color: rank === 1 ? "var(--brand-primary)" : "var(--text-secondary)",
+                  }}
+                >
+                  #{rank}
+                </span>
+                <span className="text-xs flex-1 truncate" style={{ color: "var(--text-secondary)" }}>{term}</span>
+                <ProgressBar pct={rank === 1 ? 90 : rank === 2 ? 72 : 55} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Review score */}
+        <div className="px-4 py-3 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest mb-1" style={{ color: "var(--text-muted)" }}>
+              Review Score
+            </p>
+            <div className="flex items-center gap-1.5">
+              <span className="text-lg font-black" style={{ color: "var(--text-primary)" }}>4.8</span>
+              <div className="flex gap-0.5">
+                {[1,2,3,4,5].map((s) => (
+                  <span key={s} className="text-xs" style={{ color: s <= 4 ? "#F59E0B" : "var(--bg-tertiary)" }}>★</span>
+                ))}
+              </div>
+              <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>128 reviews</span>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>Last post</p>
+            <p className="text-xs font-semibold" style={{ color: "var(--brand-primary)" }}>2 days ago</p>
+          </div>
+        </div>
+      </div>
+
+      <FloatingCard className="-top-3 -right-4" delay="2">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "rgba(34,197,94,0.15)" }}>
+            <span className="text-xs">📍</span>
+          </div>
+          <div>
+            <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>Ranking #1 locally</p>
+            <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>managed IT services</p>
+          </div>
+        </div>
+      </FloatingCard>
+
+      <div
+        className="absolute -bottom-3 -left-4 rounded-xl px-4 py-2 shadow-lg gcs-float-3"
+        style={{ background: "var(--brand-primary)" }}
+      >
+        <p className="text-xs font-semibold text-white">Monthly Report Ready</p>
+      </div>
+    </div>
+  );
+}

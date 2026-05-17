@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, HeadphonesIcon, Code2, Server, Cloud, Shield, BrainCircuit } from "lucide-react";
+import { ArrowRight, HeadphonesIcon, Code2, Server, Cloud, Shield, BrainCircuit, MapPin } from "lucide-react";
 import { FadeUp, FadeIn, StaggerContainer, StaggerItem } from "@/components/shared/motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,14 @@ const services = [
     tagline: "Automate with intelligence",
     features: ["Document processing & extraction", "Custom LLM-powered tools", "Workflow AI automation", "Chatbots & assistants"],
     color: "var(--brand-accent)",
+  },
+  {
+    icon: MapPin,
+    title: "Local SEO & Google Business",
+    href: "/services/local-seo",
+    tagline: "Get found where customers search",
+    features: ["Google Business Profile optimization", "Local 3-Pack targeting", "Weekly posts & review management", "Keyword tracking & monthly reporting"],
+    color: "var(--success)",
   },
 ];
 
